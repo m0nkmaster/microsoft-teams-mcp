@@ -9,6 +9,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { TeamsSearchResult, SearchPaginationResult } from '../types/teams.js';
+import {
+  stripHtml,
+  buildMessageLink,
+  parseJwtProfile,
+  parsePeopleResults,
+  parseSearchResults,
+  type PersonSearchResult,
+  type UserProfile,
+} from '../utils/parsers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -38,15 +47,8 @@ interface DirectSearchResult {
   pagination: SearchPaginationResult;
 }
 
-export interface UserProfile {
-  id: string;           // Azure AD object ID (oid)
-  mri: string;          // Teams MRI (8:orgid:guid)
-  email: string;        // User principal name / email
-  displayName: string;  // Full display name
-  givenName?: string;   // First name
-  surname?: string;     // Last name
-  tenantId?: string;    // Azure tenant ID
-}
+// Re-export UserProfile from parsers for backward compatibility
+export type { UserProfile } from '../utils/parsers.js';
 
 /**
  * Gets the current user's profile from cached JWT tokens.
@@ -80,39 +82,9 @@ export function getMe(): UserProfile | null {
         
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
         
-        // Look for tokens with user info
-        if (payload.oid && payload.name) {
-          const profile: UserProfile = {
-            id: payload.oid,
-            mri: `8:orgid:${payload.oid}`,
-            email: payload.upn || payload.preferred_username || payload.email || '',
-            displayName: payload.name,
-            tenantId: payload.tid,
-          };
-          
-          // Try to extract given name and surname
-          if (payload.given_name) {
-            profile.givenName = payload.given_name;
-          }
-          if (payload.family_name) {
-            profile.surname = payload.family_name;
-          }
-          
-          // If no given/family name, try to parse from displayName
-          if (!profile.givenName && profile.displayName.includes(',')) {
-            // Format: "Surname, GivenName"
-            const parts = profile.displayName.split(',').map(s => s.trim());
-            if (parts.length === 2) {
-              profile.surname = parts[0];
-              profile.givenName = parts[1];
-            }
-          } else if (!profile.givenName && profile.displayName.includes(' ')) {
-            // Format: "GivenName Surname"
-            const parts = profile.displayName.split(' ');
-            profile.givenName = parts[0];
-            profile.surname = parts.slice(1).join(' ');
-          }
-          
+        // Use shared parsing function
+        const profile = parseJwtProfile(payload);
+        if (profile) {
           return profile;
         }
       } catch {
@@ -319,37 +291,12 @@ export async function directSearch(
 
   const data = await response.json();
   
-  // Parse results
-  const results: TeamsSearchResult[] = [];
-  let total: number | undefined;
-
-  const entitySets = data.EntitySets as unknown[] | undefined;
-  if (Array.isArray(entitySets)) {
-    for (const entitySet of entitySets) {
-      const es = entitySet as Record<string, unknown>;
-      const resultSets = es.ResultSets as unknown[] | undefined;
-      
-      if (Array.isArray(resultSets)) {
-        for (const resultSet of resultSets) {
-          const rs = resultSet as Record<string, unknown>;
-          
-          // Try to get total
-          const rsTotal = rs.Total ?? rs.TotalCount ?? rs.TotalEstimate;
-          if (typeof rsTotal === 'number') {
-            total = rsTotal;
-          }
-          
-          const items = rs.Results as unknown[] | undefined;
-          if (Array.isArray(items)) {
-            for (const item of items) {
-              const parsed = parseV2Result(item as Record<string, unknown>);
-              if (parsed) results.push(parsed);
-            }
-          }
-        }
-      }
-    }
-  }
+  // Use shared parsing function
+  const { results, total } = parseSearchResults(
+    data.EntitySets as unknown[] | undefined,
+    from,
+    size
+  );
 
   const maxResults = options.maxResults ?? size;
   const limitedResults = results.slice(0, maxResults);
@@ -593,18 +540,8 @@ export interface SendMessageResult {
   error?: string;
 }
 
-/** Person search result from Substrate suggestions API. */
-export interface PersonSearchResult {
-  id: string;              // Azure AD object ID
-  mri: string;             // Teams MRI (8:orgid:guid)
-  displayName: string;     // Full display name
-  email?: string;          // Primary email address
-  givenName?: string;      // First name
-  surname?: string;        // Last name
-  jobTitle?: string;       // Job title
-  department?: string;     // Department
-  companyName?: string;    // Company name
-}
+// Re-export PersonSearchResult from parsers for backward compatibility
+export type { PersonSearchResult } from '../utils/parsers.js';
 
 /** Search people results with count. */
 export interface PeopleSearchResults {
@@ -799,23 +736,8 @@ export async function searchPeople(
 
   const data = await response.json();
   
-  // Parse results from Groups[].Suggestions[]
-  const results: PersonSearchResult[] = [];
-  
-  const groups = data.Groups as unknown[] | undefined;
-  if (Array.isArray(groups)) {
-    for (const group of groups) {
-      const g = group as Record<string, unknown>;
-      const suggestions = g.Suggestions as unknown[] | undefined;
-      
-      if (Array.isArray(suggestions)) {
-        for (const suggestion of suggestions) {
-          const parsed = parsePersonSuggestion(suggestion as Record<string, unknown>);
-          if (parsed) results.push(parsed);
-        }
-      }
-    }
-  }
+  // Use shared parsing function
+  const results = parsePeopleResults(data.Groups as unknown[] | undefined);
 
   return {
     results,
@@ -888,23 +810,8 @@ export async function getFrequentContacts(
 
   const data = await response.json();
   
-  // Parse results from Groups[].Suggestions[]
-  const contacts: PersonSearchResult[] = [];
-  
-  const groups = data.Groups as unknown[] | undefined;
-  if (Array.isArray(groups)) {
-    for (const group of groups) {
-      const g = group as Record<string, unknown>;
-      const suggestions = g.Suggestions as unknown[] | undefined;
-      
-      if (Array.isArray(suggestions)) {
-        for (const suggestion of suggestions) {
-          const parsed = parsePersonSuggestion(suggestion as Record<string, unknown>);
-          if (parsed) contacts.push(parsed);
-        }
-      }
-    }
-  }
+  // Use shared parsing function
+  const contacts = parsePeopleResults(data.Groups as unknown[] | undefined);
 
   return {
     contacts,
@@ -1309,21 +1216,7 @@ export async function getThreadMessages(
   }
 }
 
-/**
- * Strips HTML tags from content for display.
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// stripHtml is imported from ../utils/parsers.js
 
 /**
  * Internal function to set the saved state of a message.
@@ -1380,175 +1273,11 @@ async function setMessageSavedState(
   }
 }
 
-/**
- * Parses a person suggestion from the Substrate API response.
- */
-function parsePersonSuggestion(item: Record<string, unknown>): PersonSearchResult | null {
-  const id = item.Id as string;
-  if (!id) return null;
+// parsePersonSuggestion is imported from ../utils/parsers.js
 
-  // Extract Azure AD object ID from the Id field (format: "guid@tenantId" or just "guid")
-  const objectId = id.split('@')[0];
-  
-  // Build MRI if not provided
-  const mri = (item.MRI as string) || `8:orgid:${objectId}`;
-  
-  const displayName = item.DisplayName as string || '';
-  
-  // EmailAddresses can be an array
-  const emailAddresses = item.EmailAddresses as string[] | undefined;
-  const email = emailAddresses?.[0];
+// Re-export buildMessageLink for backward compatibility
+export { buildMessageLink };
 
-  return {
-    id: objectId,
-    mri,
-    displayName,
-    email,
-    givenName: item.GivenName as string | undefined,
-    surname: item.Surname as string | undefined,
-    jobTitle: item.JobTitle as string | undefined,
-    department: item.Department as string | undefined,
-    companyName: item.CompanyName as string | undefined,
-  };
-}
+// extractMessageTimestamp is imported from ../utils/parsers.js
 
-/**
- * Builds a deep link to open a message in Teams.
- * 
- * Format: https://teams.microsoft.com/l/message/{conversationId}/{messageTimestamp}
- * 
- * @param conversationId - The conversation/thread ID (e.g., "19:xxx@thread.tacv2")
- * @param messageTimestamp - The message timestamp in epoch milliseconds
- */
-export function buildMessageLink(
-  conversationId: string,
-  messageTimestamp: string | number
-): string {
-  const timestamp = typeof messageTimestamp === 'string' ? messageTimestamp : String(messageTimestamp);
-  return `https://teams.microsoft.com/l/message/${encodeURIComponent(conversationId)}/${timestamp}`;
-}
-
-/**
- * Extracts a timestamp-based message ID from various sources.
- * Teams uses epoch milliseconds as message IDs in URLs.
- */
-function extractMessageTimestamp(
-  source: Record<string, unknown> | undefined,
-  timestamp?: string
-): string | undefined {
-  // Try to get from Source fields that contain the original message ID
-  if (source) {
-    // Check for MessageId or Id in various formats
-    const messageId = source.MessageId ?? source.OriginalMessageId ?? source.ReferenceObjectId;
-    if (typeof messageId === 'string' && /^\d{13}$/.test(messageId)) {
-      return messageId;
-    }
-    
-    // Check ClientConversationId which might have ;messageid=xxx suffix
-    const clientConvId = source.ClientConversationId as string | undefined;
-    if (clientConvId && clientConvId.includes(';messageid=')) {
-      const match = clientConvId.match(/;messageid=(\d+)/);
-      if (match) {
-        return match[1];
-      }
-    }
-  }
-  
-  // Fall back to parsing from ISO timestamp
-  if (timestamp) {
-    try {
-      const date = new Date(timestamp);
-      if (!isNaN(date.getTime())) {
-        return String(date.getTime());
-      }
-    } catch {
-      // Ignore parsing errors
-    }
-  }
-  
-  return undefined;
-}
-
-/**
- * Parses a v2 query result item.
- */
-function parseV2Result(item: Record<string, unknown>): TeamsSearchResult | null {
-  const content = item.HitHighlightedSummary as string || 
-                  item.Summary as string || 
-                  '';
-  
-  if (content.length < 5) return null;
-
-  const id = item.Id as string || 
-             item.ReferenceId as string || 
-             `v2-${Date.now()}`;
-
-  // Strip HTML from content
-  const cleanContent = content
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const source = item.Source as Record<string, unknown> | undefined;
-
-  // Extract conversationId from extension fields or source properties
-  // The API returns the Teams thread ID in several places:
-  // - Source.Extensions.SkypeSpaces_ConversationPost_Extension_SkypeGroupId
-  // - Source.ClientThreadId
-  // - Source.ClientConversationId (includes ;messageid=xxx suffix)
-  let conversationId: string | undefined;
-  if (source) {
-    // Check Extensions object first (most reliable)
-    const extensions = source.Extensions as Record<string, unknown> | undefined;
-    if (extensions) {
-      const extId = extensions.SkypeSpaces_ConversationPost_Extension_SkypeGroupId;
-      if (typeof extId === 'string' && extId.length > 0) {
-        conversationId = extId;
-      }
-    }
-    
-    // Fallback to ClientThreadId
-    if (!conversationId) {
-      const clientThreadId = source.ClientThreadId;
-      if (typeof clientThreadId === 'string' && clientThreadId.length > 0) {
-        conversationId = clientThreadId;
-      }
-    }
-    
-    // Fallback to ClientConversationId (strip ;messageid= suffix if present)
-    if (!conversationId) {
-      const clientConvId = source.ClientConversationId;
-      if (typeof clientConvId === 'string' && clientConvId.length > 0) {
-        conversationId = clientConvId.split(';')[0];
-      }
-    }
-  }
-
-  const timestamp = source?.ReceivedTime as string || source?.CreatedDateTime as string;
-  
-  // Build message link if we have the required data
-  let messageLink: string | undefined;
-  if (conversationId) {
-    const messageTimestamp = extractMessageTimestamp(source, timestamp);
-    if (messageTimestamp) {
-      messageLink = buildMessageLink(conversationId, messageTimestamp);
-    }
-  }
-
-  return {
-    id,
-    type: 'message',
-    content: cleanContent,
-    sender: source?.From as string || source?.Sender as string,
-    timestamp,
-    channelName: source?.ChannelName as string || source?.Topic as string,
-    teamName: source?.TeamName as string || source?.GroupName as string,
-    conversationId,
-    messageId: item.ReferenceId as string,
-    messageLink,
-  };
-}
+// parseV2Result is imported from ../utils/parsers.js

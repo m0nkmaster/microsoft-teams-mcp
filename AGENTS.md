@@ -21,8 +21,14 @@ src/
 │   ├── search.ts         # Browser-based search (fallback)
 │   ├── messages.ts       # Message extraction from DOM
 │   └── api-interceptor.ts # Network request interception
-└── types/
-    └── teams.ts          # TypeScript interfaces
+├── utils/
+│   ├── parsers.ts        # Pure parsing functions (testable)
+│   └── parsers.test.ts   # Unit tests for parsers
+├── __fixtures__/
+│   └── api-responses.ts  # Mock API responses for testing
+├── types/
+│   └── teams.ts          # TypeScript interfaces
+└── test/                 # Integration test tools (CLI, MCP harness)
 ```
 
 ## Key Design Decisions
@@ -378,7 +384,54 @@ Reference: `teams-export/teams-export.js` contains a working bookmarklet with pr
 ### Capturing New API Endpoints
 Run `npm run research`, perform actions in Teams, and check the terminal output for captured requests.
 
-## Testing Approach
+## Unit Testing
+
+The project uses Vitest for unit testing pure functions. Tests focus on outcomes, not implementations.
+
+### Running Tests
+
+```bash
+npm test              # Run all tests once
+npm run test:watch    # Run tests in watch mode
+npm run test:coverage # Run tests with coverage report
+npm run typecheck     # TypeScript type checking only
+```
+
+### Test Structure
+
+- **`src/utils/parsers.ts`**: Pure parsing functions extracted for testability
+- **`src/utils/parsers.test.ts`**: Unit tests for all parsing functions
+- **`src/__fixtures__/api-responses.ts`**: Mock API response data based on real API structures
+
+### What's Tested
+
+The unit tests cover:
+- HTML stripping and entity decoding (`stripHtml`)
+- Teams deep link generation (`buildMessageLink`)
+- Message timestamp extraction (`extractMessageTimestamp`)
+- Person suggestion parsing (`parsePersonSuggestion`)
+- Search result parsing (`parseV2Result`, `parseSearchResults`)
+- JWT profile extraction (`parseJwtProfile`)
+- Token expiry calculations (`calculateTokenStatus`)
+- People results parsing (`parsePeopleResults`)
+
+### Adding New Tests
+
+When adding new parsing logic:
+1. Add the pure function to `src/utils/parsers.ts`
+2. Add fixture data to `src/__fixtures__/api-responses.ts` based on real API responses
+3. Write tests in `src/utils/parsers.test.ts` that verify expected outputs
+
+### CI/CD
+
+GitHub Actions runs on every push and PR:
+- Type checking (`npm run typecheck`)
+- Unit tests (`npm test`)
+- Build (`npm run build`)
+
+See `.github/workflows/ci.yml` for the workflow configuration.
+
+## Integration Testing
 
 Due to the nature of browser automation against a live service:
 - Use `npm run test:mcp -- search "query"` to test via the full MCP protocol layer
@@ -458,3 +511,4 @@ Based on API research, these tools could be implemented:
 - `@modelcontextprotocol/sdk`: MCP protocol implementation
 - `playwright`: Browser automation
 - `zod`: Runtime input validation
+- `vitest`: Unit testing framework (dev)
