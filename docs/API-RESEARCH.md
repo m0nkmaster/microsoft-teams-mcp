@@ -111,6 +111,18 @@ This document captures findings from researching the Microsoft Teams web applica
 | `subject:` | `subject:budget` | In message subject |
 | `hasattachment:true` | - | Has files attached |
 
+**Finding Mentions:**
+To find messages where you were @mentioned, search for your display name in quotes:
+```
+"Macdonald, Rob"              # Find mentions of you
+"Macdonald, Rob" from:diego   # Mentions from Diego
+```
+
+**Combining Operators:**
+```
+from:john sent:lastweek # John's messages last week
+```
+
 ---
 
 ### 1.2 Substrate v1 Suggestions (Autocomplete/Type-ahead)

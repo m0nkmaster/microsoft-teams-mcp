@@ -704,6 +704,17 @@ function parseV2Result(item: Record<string, unknown>): TeamsSearchResult | null 
 
   const source = item.Source as Record<string, unknown> | undefined;
 
+  // Extract conversationId from extension fields
+  // The API returns it as Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String
+  let conversationId: string | undefined;
+  if (source) {
+    // Try direct extension field name
+    conversationId = source['Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String'] as string
+      || source['SkypeGroupId'] as string
+      || source['ConversationId'] as string
+      || source['ThreadId'] as string;
+  }
+
   return {
     id,
     type: 'message',
@@ -712,6 +723,7 @@ function parseV2Result(item: Record<string, unknown>): TeamsSearchResult | null 
     timestamp: source?.ReceivedTime as string || source?.CreatedDateTime as string,
     channelName: source?.ChannelName as string || source?.Topic as string,
     teamName: source?.TeamName as string || source?.GroupName as string,
+    conversationId,
     messageId: item.ReferenceId as string,
   };
 }
