@@ -39,13 +39,13 @@ import {
 const TOOLS: Tool[] = [
   {
     name: 'teams_search',
-    description: 'Search for messages in Microsoft Teams. Returns matching messages with sender, timestamp, content, and pagination info. The API uses offset-based pagination with from/size parameters.',
+    description: 'Search for messages in Microsoft Teams. Returns matching messages with sender, timestamp, content, conversationId (for replies), and pagination info. Supports search operators: from:email, sent:today/lastweek, in:channel, hasattachment:true, "Name" for @mentions. Combine with NOT to exclude (e.g., NOT from:me).',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The search query to find messages',
+          description: 'Search query with optional operators. Examples: "budget report", "from:sarah@co.com sent:lastweek", "\"Rob Smith\" NOT from:rob@co.com" (find @mentions of Rob)',
         },
         maxResults: {
           type: 'number',
@@ -128,6 +128,7 @@ const SendMessageInputSchema = z.object({
   content: z.string().min(1, 'Message content cannot be empty'),
   conversationId: z.string().optional().default('48:notes'),
 });
+
 
 // Server state
 let browserManager: BrowserManager | null = null;

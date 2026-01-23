@@ -69,21 +69,46 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 
 | Tool | Purpose |
 |------|---------|
-| `teams_search` | Search messages with query, supports pagination (from, size) |
+| `teams_search` | Search messages with query operators, supports pagination |
 | `teams_send_message` | Send a message to a Teams conversation |
+| `teams_get_me` | Get current user profile (email, name, ID) |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
+
+### Design Philosophy
+
+The toolset follows a **minimal tool philosophy**: fewer, more powerful tools that AI can compose together. Rather than convenience wrappers for common patterns, the AI builds queries using search operators.
 
 ### teams_search Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| query | string | required | Search query |
+| query | string | required | Search query with optional operators |
 | from | number | 0 | Starting offset for pagination |
 | size | number | 25 | Page size |
 | maxResults | number | 25 | Maximum results to return |
 
-Response includes `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, and `nextFrom`.
+**Search Operators:**
+
+| Operator | Example | Description |
+|----------|---------|-------------|
+| `from:` | `from:sarah@company.com` | Messages from a person |
+| `sent:` | `sent:today`, `sent:lastweek` | Messages by date |
+| `in:` | `in:project-alpha` | Messages in a channel |
+| `"Name"` | `"Rob Smith"` | Find @mentions (display name in quotes) |
+| `NOT` | `NOT from:me` | Exclude results |
+| `hasattachment:` | `hasattachment:true` | Messages with files |
+
+**Finding @mentions:** Use `teams_get_me` to get the user's display name, then search with:
+```
+"Display Name" NOT from:user@email.com
+```
+
+**Response** includes:
+- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`
+- `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, `nextFrom`
+
+The `conversationId` enables replying to search results via `teams_send_message`.
 
 ### teams_send_message Parameters
 
@@ -93,6 +118,10 @@ Response includes `pagination` object with `from`, `size`, `returned`, `total` (
 | conversationId | string | `48:notes` | Conversation to send to. Default is self-chat (notes). |
 
 **Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
+
+### teams_get_me Parameters
+
+No parameters. Returns current user's profile including `id`, `mri`, `email`, `displayName`, and `tenantId`.
 
 ## Development Commands
 
