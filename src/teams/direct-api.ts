@@ -688,6 +688,10 @@ export async function searchPeople(
     throw new Error('No valid token available. Browser login required.');
   }
 
+  // Generate unique IDs for this request (required by the API)
+  const cvid = crypto.randomUUID();
+  const logicalId = crypto.randomUUID();
+
   const body = {
     EntityRequests: [{
       Query: {
@@ -708,6 +712,8 @@ export async function searchPeople(
         'CompanyName',
       ],
     }],
+    cvid,
+    logicalId,
   };
 
   const response = await fetch(
@@ -762,6 +768,10 @@ export async function getFrequentContacts(
     throw new Error('No valid token available. Browser login required.');
   }
 
+  // Generate unique IDs for this request (required by the API)
+  const cvid = crypto.randomUUID();
+  const logicalId = crypto.randomUUID();
+
   const body = {
     EntityRequests: [{
       Query: {
@@ -782,6 +792,8 @@ export async function getFrequentContacts(
         'CompanyName',
       ],
     }],
+    cvid,
+    logicalId,
   };
 
   const response = await fetch(
