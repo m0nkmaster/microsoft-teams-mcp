@@ -637,7 +637,7 @@ Based on discovered APIs, here are potential tools to implement:
 
 | Tool | API | Notes |
 |------|-----|-------|
-| `teams_send_message` | chatsvc messages API | Captured but risky - could spam |
+| `teams_send_message` | chatsvc messages API | ✅ Implemented (uses skypetoken cookies) |
 | `teams_get_presence` | Not captured | Would need WebSocket/SignalR |
 | `teams_unread` | Client-side filter | Use consumptionhorizon comparison |
 

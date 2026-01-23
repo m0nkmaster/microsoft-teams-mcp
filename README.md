@@ -43,6 +43,12 @@ npm run cli -- search "query" --browser
 
 # Output as JSON
 npm run cli -- search "query" --json
+
+# Send a message to yourself (notes)
+npm run cli -- send "Hello from Teams MCP!"
+
+# Send to specific conversation
+npm run cli -- send "Message" --to "conversation-id"
 ```
 
 ### MCP Server
@@ -78,6 +84,7 @@ Or for development:
 | Tool | Description |
 |------|-------------|
 | `teams_search` | Search messages with query, pagination (from, size, maxResults) |
+| `teams_send_message` | Send a message to a Teams conversation (default: self-chat) |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
 

@@ -48,9 +48,16 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 
 ### Token Management
 - Tokens are extracted from browser localStorage after a successful search
-- The Substrate search token (`SubstrateSearch-Internal.ReadWrite` scope) is required
+- The Substrate search token (`SubstrateSearch-Internal.ReadWrite` scope) is required for search
 - Tokens typically expire after ~1 hour
 - Expired tokens trigger automatic browser fallback
+
+### Messaging Authentication
+Messaging uses a different auth mechanism than search:
+- **Search**: Uses JWT Bearer tokens from MSAL localStorage entries
+- **Messaging**: Uses session cookies (`skypetoken_asm`, `authtoken`) from Playwright's `storageState()`
+
+The `extractMessageAuth()` function in `direct-api.ts` extracts these cookies for sending messages without needing an active browser.
 
 ### Session Persistence
 Playwright's `storageState()` is used to save and restore browser sessions. This means:
@@ -63,6 +70,7 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 | Tool | Purpose |
 |------|---------|
 | `teams_search` | Search messages with query, supports pagination (from, size) |
+| `teams_send_message` | Send a message to a Teams conversation |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
 
@@ -76,6 +84,15 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 | maxResults | number | 25 | Maximum results to return |
 
 Response includes `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, and `nextFrom`.
+
+### teams_send_message Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| content | string | required | Message content (HTML supported) |
+| conversationId | string | `48:notes` | Conversation to send to. Default is self-chat (notes). |
+
+**Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
 
 ## Development Commands
 
@@ -109,6 +126,12 @@ npm run test:mcp -- status
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json
+
+# Send a message to yourself (notes)
+npm run test:mcp -- send "Hello from MCP!"
+
+# Send to specific conversation
+npm run test:mcp -- send "Message" --to "conversation-id"
 ```
 
 ### Direct CLI Tools
@@ -131,6 +154,12 @@ npm run cli -- search "your query" --json
 
 # Pagination: get page 2 (results 25-49)
 npm run cli -- search "your query" --from 25 --size 25
+
+# Send a message to yourself (notes)
+npm run cli -- send "Hello from CLI!"
+
+# Send to specific conversation
+npm run cli -- send "Message" --to "conversation-id"
 
 # Login flow
 npm run cli -- login
@@ -240,14 +269,14 @@ See `docs/API-RESEARCH.md` for full endpoint documentation with request/response
 
 Based on API research, these tools could be implemented:
 
-| Tool | API | Difficulty |
-|------|-----|------------|
-| `teams_get_me` | Delve person API | Easy |
-| `teams_search_people` | Substrate suggestions | Easy |
-| `teams_get_person` | Delve person API | Easy |
-| `teams_get_channel_posts` | CSA containers API | Medium |
-| `teams_get_files` | AllFiles API | Medium |
-| `teams_send_message` | chatsvc messages API | Medium (risky) |
+| Tool | API | Difficulty | Status |
+|------|-----|------------|--------|
+| `teams_get_me` | Delve person API | Easy | Pending |
+| `teams_search_people` | Substrate suggestions | Easy | Pending |
+| `teams_get_person` | Delve person API | Easy | Pending |
+| `teams_get_channel_posts` | CSA containers API | Medium | Pending |
+| `teams_get_files` | AllFiles API | Medium | Pending |
+| `teams_send_message` | chatsvc messages API | Medium | ✅ Implemented |
 
 ### Not Yet Feasible
 - **Chat list / Favorites** - Data loaded at startup, not in separate API
