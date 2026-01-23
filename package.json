@@ -10,10 +10,14 @@
     "dev": "tsx src/index.ts",
     "research": "tsx src/research/explore.ts",
     "research:search": "tsx src/research/search-research.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:manual": "tsx src/test/manual-test.ts",
     "test:mcp": "tsx src/test/mcp-harness.ts",
     "cli": "tsx src/test/cli.ts",
-    "debug:search": "tsx src/test/debug-search.ts"
+    "debug:search": "tsx src/test/debug-search.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "mcp",
@@ -30,6 +34,7 @@
   "devDependencies": {
     "@types/node": "^20.10.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.18"
   }
 }

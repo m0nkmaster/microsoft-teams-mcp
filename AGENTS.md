@@ -21,8 +21,14 @@ src/
 │   ├── search.ts         # Browser-based search (fallback)
 │   ├── messages.ts       # Message extraction from DOM
 │   └── api-interceptor.ts # Network request interception
-└── types/
-    └── teams.ts          # TypeScript interfaces
+├── utils/
+│   ├── parsers.ts        # Pure parsing functions (testable)
+│   └── parsers.test.ts   # Unit tests for parsers
+├── __fixtures__/
+│   └── api-responses.ts  # Mock API responses for testing
+├── types/
+│   └── teams.ts          # TypeScript interfaces
+└── test/                 # Integration test tools (CLI, MCP harness)
 ```
 
 ## Key Design Decisions
@@ -52,12 +58,37 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 - Tokens typically expire after ~1 hour
 - Expired tokens trigger automatic browser fallback
 
-### Messaging Authentication
-Messaging uses a different auth mechanism than search:
-- **Search**: Uses JWT Bearer tokens from MSAL localStorage entries
-- **Messaging**: Uses session cookies (`skypetoken_asm`, `authtoken`) from Playwright's `storageState()`
+### Authentication Patterns
+Different Teams APIs use different authentication mechanisms:
 
-The `extractMessageAuth()` function in `direct-api.ts` extracts these cookies for sending messages without needing an active browser.
+| API | Auth Method | Helper Function |
+|-----|-------------|-----------------|
+| **Search** (Substrate v2/query) | JWT Bearer token from MSAL | `getValidToken()` |
+| **People/Suggestions** (Substrate v1/suggestions) | Same JWT + `cvid`/`logicalId` fields | `getValidToken()` |
+| **Messaging** (chatsvc) | `skypetoken_asm` cookie | `extractMessageAuth()` |
+| **Favorites** (csa/conversationFolders) | CSA token from MSAL + `skypetoken_asm` | `extractCsaToken()` + `extractMessageAuth()` |
+| **Threads** (chatsvc) | `skypetoken_asm` cookie | `extractMessageAuth()` |
+
+**Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
+
+### Conversation Types
+
+The chatsvc conversation API returns `threadProperties` with type information:
+
+| Type | `threadType` | `productThreadType` | Notes |
+|------|--------------|---------------------|-------|
+| Standard Channel | `topic` | `TeamsStandardChannel` | Has `groupId`, name in `topicThreadTopic` |
+| Team (General) | `space` | `TeamsTeam` | Team root, name in `spaceThreadTopic` |
+| Private Channel | `space` | `TeamsPrivateChannel` | Has `groupId`, name in `topicThreadTopic` |
+| Meeting Chat | `meeting` | `Meeting` | Name in `topic` |
+| Group Chat | `chat` | `Chat` | Name in `topic` or from members |
+| 1:1 Chat | `chat` | `OneOnOne` | Name from other participant |
+
+**Name sources:**
+- `topicThreadTopic`: Channel name (for channels within a team)
+- `spaceThreadTopic`: Team name (for team root conversations)
+- `topic`: Meeting title or user-set chat topic
+- For chats without topics: extract from `members` array or recent messages
 
 ### Session Persistence
 Playwright's `storageState()` is used to save and restore browser sessions. This means:
@@ -72,8 +103,16 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 | `teams_search` | Search messages with query operators, supports pagination |
 | `teams_send_message` | Send a message to a Teams conversation |
 | `teams_get_me` | Get current user profile (email, name, ID) |
+| `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
+| `teams_search_people` | Search for people by name or email |
 | `teams_login` | Trigger manual login (visible browser) |
-| `teams_status` | Check authentication and session state |
+| `teams_status` | Check auth status (search, messaging, favorites tokens) |
+| `teams_get_favorites` | Get pinned/favourite conversations |
+| `teams_add_favorite` | Pin a conversation to favourites |
+| `teams_remove_favorite` | Unpin a conversation from favourites |
+| `teams_save_message` | Bookmark a message |
+| `teams_unsave_message` | Remove bookmark from a message |
+| `teams_get_thread` | Get messages from a conversation/thread |
 
 ### Design Philosophy
 
@@ -92,23 +131,57 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 
 | Operator | Example | Description |
 |----------|---------|-------------|
-| `from:` | `from:sarah@company.com` | Messages from a person |
+| `from:` | `from:sarah@company.com` | Messages from a person (use actual email) |
 | `sent:` | `sent:today`, `sent:lastweek` | Messages by date |
 | `in:` | `in:project-alpha` | Messages in a channel |
 | `"Name"` | `"Rob Smith"` | Find @mentions (display name in quotes) |
-| `NOT` | `NOT from:me` | Exclude results |
+| `NOT` | `NOT from:user@email.com` | Exclude results |
 | `hasattachment:` | `hasattachment:true` | Messages with files |
 
-**Finding @mentions:** Use `teams_get_me` to get the user's display name, then search with:
-```
-"Display Name" NOT from:user@email.com
-```
+**⚠️ Common Mistakes - What Does NOT Work:**
+
+| Invalid | Why | Use Instead |
+|---------|-----|-------------|
+| `@me` | Not a valid Teams operator | Use `teams_get_me` to get email/name, then search with those |
+| `from:me` | `me` is not recognised | `from:actual.email@company.com` |
+| `to:me` | Not supported | Search for `"Display Name"` to find @mentions |
+| `mentions:me` | Not supported | Search for `"Display Name"` to find @mentions |
+
+**Common Patterns:**
+
+1. **Messages FROM me:**
+   ```
+   # First call teams_get_me to get email, then:
+   from:rob.smith@company.com
+   ```
+
+2. **Messages mentioning me (@mentions):**
+   ```
+   # First call teams_get_me to get displayName and email, then:
+   "Rob Smith" NOT from:rob.smith@company.com
+   ```
+   The `NOT from:` excludes your own messages where you might have typed your name.
+
+3. **Messages from a specific person:**
+   ```
+   # If you know their email:
+   from:sarah.jones@company.com
+   
+   # If you only know their name, first call teams_search_people to find their email
+   ```
+
+4. **Unread/unanswered questions to me:**
+   ```
+   # Search for mentions with question marks:
+   "Rob Smith" ? NOT from:rob.smith@company.com
+   ```
 
 **Response** includes:
-- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`
+- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`, `messageLink`
 - `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, `nextFrom`
 
 The `conversationId` enables replying to search results via `teams_send_message`.
+The `messageLink` is a direct URL to open the message in Teams (format: `https://teams.microsoft.com/l/message/{conversationId}/{timestamp}`).
 
 ### teams_send_message Parameters
 
@@ -122,6 +195,83 @@ The `conversationId` enables replying to search results via `teams_send_message`
 ### teams_get_me Parameters
 
 No parameters. Returns current user's profile including `id`, `mri`, `email`, `displayName`, and `tenantId`.
+
+### teams_get_frequent_contacts Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | number | 50 | Maximum number of contacts to return (1-500) |
+
+**Response** includes:
+- `contacts[]` with `id`, `mri`, `displayName`, `email`, `givenName`, `surname`, `jobTitle`, `department`, `companyName`
+- `returned` count
+
+**Use case:** When a user refers to someone by first name (e.g., "What's Rob been up to?"), call this tool first to get a ranked list of frequent contacts. Match the name against this list to resolve ambiguity before searching messages.
+
+### teams_search_people Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| query | string | required | Search term (name, email, or partial match) |
+| limit | number | 10 | Maximum number of results (1-50) |
+
+**Response** includes:
+- `results[]` with `id`, `mri`, `displayName`, `email`, `jobTitle`, `department`, `companyName`
+
+Use this when searching for a specific person by name or email, rather than getting the user's common contacts.
+
+### teams_get_favorites Parameters
+
+No parameters.
+
+**Response** includes:
+- `favorites[]` with `conversationId`, `displayName`, `conversationType`
+  - `displayName`: Human-readable name (channel name, chat topic, meeting title, or participant names)
+  - `conversationType`: One of `Channel`, `Chat`, or `Meeting`
+
+Name sources by type:
+- **Channels**: Channel name from Teams API (e.g., "WeaponX Support")
+- **Meetings**: Meeting title/subject
+- **Chats with topic**: The user-set chat topic
+- **Chats without topic**: Participant names extracted from recent messages (e.g., "Smith, John, Jones, Sarah + 2 more")
+
+### teams_add_favorite / teams_remove_favorite Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation ID to pin/unpin |
+
+### teams_save_message / teams_unsave_message Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | Conversation containing the message |
+| messageId | string | required | The message ID to save/unsave |
+
+**Note:** These tools use the same session cookie authentication as messaging.
+
+### teams_get_thread Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation ID to get messages from |
+| limit | number | 50 | Maximum number of messages to return (1-200) |
+
+**Response** includes:
+- `conversationId` - The conversation ID
+- `messageCount` - Number of messages returned
+- `messages[]` with:
+  - `id` - Message ID (numeric string)
+  - `content` - Message content (HTML stripped)
+  - `contentType` - Message type (e.g., "RichText/Html")
+  - `sender` - Object with `mri` and `displayName`
+  - `timestamp` - ISO timestamp
+  - `isFromMe` - Whether message is from the current user
+  - `messageLink` - Direct link to open this message in Teams
+
+**Use case:** Check for replies to a specific message, read thread context before replying, or review recent messages in a conversation. Use the `conversationId` from search results.
+
+**Note:** Messages are sorted oldest-first. This uses the same session cookie authentication as messaging.
 
 ## Development Commands
 
@@ -161,6 +311,20 @@ npm run test:mcp -- send "Hello from MCP!"
 
 # Send to specific conversation
 npm run test:mcp -- send "Message" --to "conversation-id"
+
+# Search for people
+npm run test:mcp -- people "john smith"
+
+# Get favourites
+npm run test:mcp -- favorites
+
+# Save/unsave a message
+npm run test:mcp -- save --to "conversation-id" --message "message-id"
+npm run test:mcp -- unsave --to "conversation-id" --message "message-id"
+
+# Get thread/conversation messages
+npm run test:mcp -- thread --to "conversation-id"
+npm run test:mcp -- thread --to "conversation-id" --limit 20
 ```
 
 ### Direct CLI Tools
@@ -220,6 +384,22 @@ If searches fail with authentication errors:
 - Ensure Playwright browsers are installed: `npx playwright install chromium`
 - Check for existing browser processes that may be blocking
 
+### Search Doesn't Find All Thread Replies
+The Substrate search API is a **full-text search** — it only returns messages matching the search terms. If someone replied to your message but their reply doesn't contain your search keywords, it won't appear in results.
+
+**Example:** Searching for "Easter blockout" won't find a reply that says "Given World of Frozen opens the week before, I'd put a fair amount of money on 'yes'" — even though it's a direct reply.
+
+**Workaround:** After finding a message of interest, use `teams_get_thread` with the `conversationId` to retrieve the full thread context including all replies.
+
+### Message Deep Links
+For channel threaded messages, deep links use:
+- The thread ID (`ClientThreadId`) — the specific thread within a channel
+- The message's own timestamp (`DateTimeReceived`) — the exact message, not the parent
+
+The link format is: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`
+
+Note: The `conversationId` returned in search results for threaded replies will be the thread ID (e.g., `19:0df465dd...@thread.tacv2`) not the channel ID (e.g., `19:-eGaQP4gB...@thread.tacv2`).
+
 ## File Locations
 
 - **Session state**: `./session-state.json` (gitignored)
@@ -248,7 +428,54 @@ Reference: `teams-export/teams-export.js` contains a working bookmarklet with pr
 ### Capturing New API Endpoints
 Run `npm run research`, perform actions in Teams, and check the terminal output for captured requests.
 
-## Testing Approach
+## Unit Testing
+
+The project uses Vitest for unit testing pure functions. Tests focus on outcomes, not implementations.
+
+### Running Tests
+
+```bash
+npm test              # Run all tests once
+npm run test:watch    # Run tests in watch mode
+npm run test:coverage # Run tests with coverage report
+npm run typecheck     # TypeScript type checking only
+```
+
+### Test Structure
+
+- **`src/utils/parsers.ts`**: Pure parsing functions extracted for testability
+- **`src/utils/parsers.test.ts`**: Unit tests for all parsing functions
+- **`src/__fixtures__/api-responses.ts`**: Mock API response data based on real API structures
+
+### What's Tested
+
+The unit tests cover:
+- HTML stripping and entity decoding (`stripHtml`)
+- Teams deep link generation (`buildMessageLink`)
+- Message timestamp extraction (`extractMessageTimestamp`)
+- Person suggestion parsing (`parsePersonSuggestion`)
+- Search result parsing (`parseV2Result`, `parseSearchResults`)
+- JWT profile extraction (`parseJwtProfile`)
+- Token expiry calculations (`calculateTokenStatus`)
+- People results parsing (`parsePeopleResults`)
+
+### Adding New Tests
+
+When adding new parsing logic:
+1. Add the pure function to `src/utils/parsers.ts`
+2. Add fixture data to `src/__fixtures__/api-responses.ts` based on real API responses
+3. Write tests in `src/utils/parsers.test.ts` that verify expected outputs
+
+### CI/CD
+
+GitHub Actions runs on every push and PR:
+- Type checking (`npm run typecheck`)
+- Unit tests (`npm test`)
+- Build (`npm run build`)
+
+See `.github/workflows/ci.yml` for the workflow configuration.
+
+## Integration Testing
 
 Due to the nature of browser automation against a live service:
 - Use `npm run test:mcp -- search "query"` to test via the full MCP protocol layer
@@ -304,10 +531,14 @@ Based on API research, these tools could be implemented:
 |------|-----|------------|--------|
 | `teams_get_me` | JWT token extraction | Easy | ✅ Implemented |
 | `teams_send_message` | chatsvc messages API | Medium | ✅ Implemented |
-| `teams_get_favorites` | conversationFolders API | Easy | Ready |
-| `teams_add_favorite` | conversationFolders API | Easy | Ready |
-| `teams_save_message` | rcmetadata API | Easy | Ready |
-| `teams_search_people` | Substrate suggestions | Easy | Pending |
+| `teams_search_people` | Substrate suggestions | Easy | ✅ Implemented |
+| `teams_get_frequent_contacts` | Substrate peoplecache | Easy | ✅ Implemented |
+| `teams_get_favorites` | conversationFolders API | Easy | ✅ Implemented |
+| `teams_add_favorite` | conversationFolders API | Easy | ✅ Implemented |
+| `teams_remove_favorite` | conversationFolders API | Easy | ✅ Implemented |
+| `teams_save_message` | rcmetadata API | Easy | ✅ Implemented |
+| `teams_unsave_message` | rcmetadata API | Easy | ✅ Implemented |
+| `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
 | `teams_get_person` | Delve person API | Easy | Pending |
 | `teams_get_channel_posts` | CSA containers API | Medium | Pending |
 | `teams_get_files` | AllFiles API | Medium | Pending |
@@ -324,3 +555,4 @@ Based on API research, these tools could be implemented:
 - `@modelcontextprotocol/sdk`: MCP protocol implementation
 - `playwright`: Browser automation
 - `zod`: Runtime input validation
+- `vitest`: Unit testing framework (dev)

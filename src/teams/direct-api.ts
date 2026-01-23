@@ -9,6 +9,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { TeamsSearchResult, SearchPaginationResult } from '../types/teams.js';
+import {
+  stripHtml,
+  buildMessageLink,
+  parseJwtProfile,
+  parsePeopleResults,
+  parseSearchResults,
+  type PersonSearchResult,
+  type UserProfile,
+} from '../utils/parsers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -38,15 +47,8 @@ interface DirectSearchResult {
   pagination: SearchPaginationResult;
 }
 
-export interface UserProfile {
-  id: string;           // Azure AD object ID (oid)
-  mri: string;          // Teams MRI (8:orgid:guid)
-  email: string;        // User principal name / email
-  displayName: string;  // Full display name
-  givenName?: string;   // First name
-  surname?: string;     // Last name
-  tenantId?: string;    // Azure tenant ID
-}
+// Re-export UserProfile from parsers for backward compatibility
+export type { UserProfile } from '../utils/parsers.js';
 
 /**
  * Gets the current user's profile from cached JWT tokens.
@@ -80,39 +82,9 @@ export function getMe(): UserProfile | null {
         
         const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
         
-        // Look for tokens with user info
-        if (payload.oid && payload.name) {
-          const profile: UserProfile = {
-            id: payload.oid,
-            mri: `8:orgid:${payload.oid}`,
-            email: payload.upn || payload.preferred_username || payload.email || '',
-            displayName: payload.name,
-            tenantId: payload.tid,
-          };
-          
-          // Try to extract given name and surname
-          if (payload.given_name) {
-            profile.givenName = payload.given_name;
-          }
-          if (payload.family_name) {
-            profile.surname = payload.family_name;
-          }
-          
-          // If no given/family name, try to parse from displayName
-          if (!profile.givenName && profile.displayName.includes(',')) {
-            // Format: "Surname, GivenName"
-            const parts = profile.displayName.split(',').map(s => s.trim());
-            if (parts.length === 2) {
-              profile.surname = parts[0];
-              profile.givenName = parts[1];
-            }
-          } else if (!profile.givenName && profile.displayName.includes(' ')) {
-            // Format: "GivenName Surname"
-            const parts = profile.displayName.split(' ');
-            profile.givenName = parts[0];
-            profile.surname = parts.slice(1).join(' ');
-          }
-          
+        // Use shared parsing function
+        const profile = parseJwtProfile(payload);
+        if (profile) {
           return profile;
         }
       } catch {
@@ -319,37 +291,12 @@ export async function directSearch(
 
   const data = await response.json();
   
-  // Parse results
-  const results: TeamsSearchResult[] = [];
-  let total: number | undefined;
-
-  const entitySets = data.EntitySets as unknown[] | undefined;
-  if (Array.isArray(entitySets)) {
-    for (const entitySet of entitySets) {
-      const es = entitySet as Record<string, unknown>;
-      const resultSets = es.ResultSets as unknown[] | undefined;
-      
-      if (Array.isArray(resultSets)) {
-        for (const resultSet of resultSets) {
-          const rs = resultSet as Record<string, unknown>;
-          
-          // Try to get total
-          const rsTotal = rs.Total ?? rs.TotalCount ?? rs.TotalEstimate;
-          if (typeof rsTotal === 'number') {
-            total = rsTotal;
-          }
-          
-          const items = rs.Results as unknown[] | undefined;
-          if (Array.isArray(items)) {
-            for (const item of items) {
-              const parsed = parseV2Result(item as Record<string, unknown>);
-              if (parsed) results.push(parsed);
-            }
-          }
-        }
-      }
-    }
-  }
+  // Use shared parsing function
+  const { results, total } = parseSearchResults(
+    data.EntitySets as unknown[] | undefined,
+    from,
+    size
+  );
 
   const maxResults = options.maxResults ?? size;
   const limitedResults = results.slice(0, maxResults);
@@ -538,6 +485,40 @@ export function extractMessageAuth(): MessageAuthInfo | null {
 }
 
 /**
+ * Extracts the CSA (Chat Service Aggregator) token for the conversationFolders API.
+ * This token is different from the chatsvc token and is required for favorites operations.
+ */
+export function extractCsaToken(): string | null {
+  if (!fs.existsSync(SESSION_STATE_PATH)) {
+    return null;
+  }
+
+  try {
+    const state = JSON.parse(fs.readFileSync(SESSION_STATE_PATH, 'utf8'));
+
+    // Look for the MSAL token with chatsvcagg.teams.microsoft.com audience
+    for (const origin of state.origins || []) {
+      for (const item of (origin.localStorage || []) as { name: string; value: string }[]) {
+        if (item.name.includes('chatsvcagg.teams.microsoft.com') && !item.name.startsWith('tmp.')) {
+          try {
+            const data = JSON.parse(item.value) as { secret?: string };
+            if (data.secret) {
+              return data.secret;
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Gets user's display name from session state.
  */
 export function getUserDisplayName(): string | null {
@@ -590,6 +571,54 @@ export interface SendMessageResult {
   success: boolean;
   messageId?: string;
   timestamp?: number;
+  error?: string;
+}
+
+// Re-export PersonSearchResult from parsers for backward compatibility
+export type { PersonSearchResult } from '../utils/parsers.js';
+
+/** Search people results with count. */
+export interface PeopleSearchResults {
+  results: PersonSearchResult[];
+  returned: number;
+}
+
+/** Frequent contacts result. */
+export interface FrequentContactsResult {
+  contacts: PersonSearchResult[];
+  returned: number;
+}
+
+/** A favourite/pinned conversation item. */
+export interface FavoriteItem {
+  conversationId: string;
+  displayName?: string;       // Human-readable name (channel/chat name, or participant names)
+  conversationType?: string;  // e.g., "Chat", "Channel", "Meeting"
+  createdTime?: number;
+  lastUpdatedTime?: number;
+}
+
+/** Response from getting favorites. */
+export interface FavoritesResult {
+  success: boolean;
+  favorites: FavoriteItem[];
+  folderHierarchyVersion?: number;
+  folderId?: string;
+  error?: string;
+}
+
+/** Result of modifying favorites. */
+export interface FavoriteModifyResult {
+  success: boolean;
+  error?: string;
+}
+
+/** Result of saving/unsaving a message. */
+export interface SaveMessageResult {
+  success: boolean;
+  conversationId?: string;
+  messageId?: string;
+  saved?: boolean;
   error?: string;
 }
 
@@ -679,53 +708,789 @@ export async function sendNoteToSelf(content: string): Promise<SendMessageResult
 }
 
 /**
- * Parses a v2 query result item.
+ * Searches for people by name or email using the Substrate suggestions API.
+ * 
+ * Uses the same auth token as message search.
+ * 
+ * @param query - Search term (name, email, or partial match)
+ * @param limit - Maximum number of results (default: 10)
  */
-function parseV2Result(item: Record<string, unknown>): TeamsSearchResult | null {
-  const content = item.HitHighlightedSummary as string || 
-                  item.Summary as string || 
-                  '';
-  
-  if (content.length < 5) return null;
-
-  const id = item.Id as string || 
-             item.ReferenceId as string || 
-             `v2-${Date.now()}`;
-
-  // Strip HTML from content
-  const cleanContent = content
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const source = item.Source as Record<string, unknown> | undefined;
-
-  // Extract conversationId from extension fields
-  // The API returns it as Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String
-  let conversationId: string | undefined;
-  if (source) {
-    // Find the first valid string value from potential field names
-    conversationId = [
-      source['Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String'],
-      source['SkypeGroupId'],
-      source['ConversationId'],
-      source['ThreadId'],
-    ].find((id): id is string => typeof id === 'string' && id.length > 0);
+export async function searchPeople(
+  query: string,
+  limit: number = 10
+): Promise<PeopleSearchResults> {
+  const token = getValidToken();
+  if (!token) {
+    throw new Error('No valid token available. Browser login required.');
   }
 
+  // Generate unique IDs for this request (required by the API)
+  const cvid = crypto.randomUUID();
+  const logicalId = crypto.randomUUID();
+
+  const body = {
+    EntityRequests: [{
+      Query: {
+        QueryString: query,
+        DisplayQueryString: query,
+      },
+      EntityType: 'People',
+      Size: limit,
+      Fields: [
+        'Id',
+        'MRI', 
+        'DisplayName',
+        'EmailAddresses',
+        'GivenName',
+        'Surname',
+        'JobTitle',
+        'Department',
+        'CompanyName',
+      ],
+    }],
+    cvid,
+    logicalId,
+  };
+
+  const response = await fetch(
+    'https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (response.status === 401) {
+    clearTokenCache();
+    throw new Error('Token expired or invalid. Browser login required.');
+  }
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  // Use shared parsing function
+  const results = parsePeopleResults(data.Groups as unknown[] | undefined);
+
   return {
-    id,
-    type: 'message',
-    content: cleanContent,
-    sender: source?.From as string || source?.Sender as string,
-    timestamp: source?.ReceivedTime as string || source?.CreatedDateTime as string,
-    channelName: source?.ChannelName as string || source?.Topic as string,
-    teamName: source?.TeamName as string || source?.GroupName as string,
-    conversationId,
-    messageId: item.ReferenceId as string,
+    results,
+    returned: results.length,
   };
 }
+
+/**
+ * Gets the user's frequently contacted people.
+ * 
+ * Uses the peoplecache scenario which returns contacts ranked by
+ * interaction frequency. Useful for resolving ambiguous names
+ * (e.g., "Rob" → "Rob Smith <rob.smith@company.com>").
+ * 
+ * @param limit - Maximum number of contacts to return (default: 50)
+ */
+export async function getFrequentContacts(
+  limit: number = 50
+): Promise<FrequentContactsResult> {
+  const token = getValidToken();
+  if (!token) {
+    throw new Error('No valid token available. Browser login required.');
+  }
+
+  // Generate unique IDs for this request (required by the API)
+  const cvid = crypto.randomUUID();
+  const logicalId = crypto.randomUUID();
+
+  const body = {
+    EntityRequests: [{
+      Query: {
+        QueryString: '',
+        DisplayQueryString: '',
+      },
+      EntityType: 'People',
+      Size: limit,
+      Fields: [
+        'Id',
+        'MRI',
+        'DisplayName',
+        'EmailAddresses',
+        'GivenName',
+        'Surname',
+        'JobTitle',
+        'Department',
+        'CompanyName',
+      ],
+    }],
+    cvid,
+    logicalId,
+  };
+
+  const response = await fetch(
+    'https://substrate.office.com/search/api/v1/suggestions?scenario=peoplecache',
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (response.status === 401) {
+    clearTokenCache();
+    throw new Error('Token expired or invalid. Browser login required.');
+  }
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  
+  // Use shared parsing function
+  const contacts = parsePeopleResults(data.Groups as unknown[] | undefined);
+
+  return {
+    contacts,
+    returned: contacts.length,
+  };
+}
+
+/** Conversation properties returned from the chatsvc API. */
+interface ConversationProperties {
+  displayName?: string;
+  conversationType?: string;
+}
+
+/**
+ * Extracts unique participant names from recent messages in a conversation.
+ * Used as a fallback when conversation properties don't include member names.
+ */
+async function extractParticipantNamesFromMessages(
+  conversationId: string,
+  auth: MessageAuthInfo,
+  region: string = 'amer'
+): Promise<string | undefined> {
+  const url = `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages?view=msnp24Equivalent&pageSize=10`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+    });
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const data = await response.json() as Record<string, unknown>;
+    const messages = data.messages as Array<Record<string, unknown>> | undefined;
+    
+    if (!messages || messages.length === 0) {
+      return undefined;
+    }
+
+    // Extract unique sender names (excluding the current user)
+    const senderNames = new Set<string>();
+    for (const msg of messages) {
+      const fromMri = msg.from as string || '';
+      const displayName = msg.imdisplayname as string;
+      
+      // Skip messages from self and system messages
+      if (fromMri === auth.userMri || !displayName) {
+        continue;
+      }
+      
+      senderNames.add(displayName);
+    }
+
+    if (senderNames.size === 0) {
+      return undefined;
+    }
+
+    const names = Array.from(senderNames);
+    return names.length <= 3
+      ? names.join(', ')
+      : `${names.slice(0, 3).join(', ')} + ${names.length - 3} more`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Gets properties for a single conversation (name, type, etc.).
+ * 
+ * Uses the chatsvc conversation endpoint to fetch metadata.
+ * 
+ * @param conversationId - The conversation ID
+ * @param auth - Pre-extracted auth info (to avoid repeated extraction)
+ * @param region - Region for the API (default: "amer")
+ */
+async function getConversationProperties(
+  conversationId: string,
+  auth: MessageAuthInfo,
+  region: string = 'amer'
+): Promise<ConversationProperties | null> {
+  const url = `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}?view=msnp24Equivalent`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json() as Record<string, unknown>;
+    
+    // Extract the thread properties which contain the conversation details
+    const threadProps = data.threadProperties as Record<string, unknown> | undefined;
+    const productType = threadProps?.productThreadType as string | undefined;
+    
+    // Try to get display name from various sources
+    let displayName: string | undefined;
+    
+    // For Teams channels: topicThreadTopic is the channel name, topic is fallback
+    if (threadProps?.topicThreadTopic) {
+      displayName = threadProps.topicThreadTopic as string;
+    }
+    
+    // For standard channels: topic is the channel name
+    if (!displayName && threadProps?.topic) {
+      displayName = threadProps.topic as string;
+    }
+    
+    // For Teams (the team itself, not a channel): spaceThreadTopic is the team name
+    if (!displayName && threadProps?.spaceThreadTopic) {
+      displayName = threadProps.spaceThreadTopic as string;
+    }
+    
+    // For group chats: threadtopic may be set
+    if (!displayName && threadProps?.threadtopic) {
+      displayName = threadProps.threadtopic as string;
+    }
+    
+    // For 1:1 chats and group chats without a topic: build from members
+    if (!displayName) {
+      const members = data.members as Array<Record<string, unknown>> | undefined;
+      if (members && members.length > 0) {
+        // Filter out the current user and build a name from the other participants
+        // Check multiple possible field names for the display name
+        const otherMembers = members
+          .filter(m => m.mri !== auth.userMri && m.id !== auth.userMri)
+          .map(m => (m.friendlyName || m.displayName || m.name) as string | undefined)
+          .filter((name): name is string => !!name);
+        
+        if (otherMembers.length > 0) {
+          displayName = otherMembers.length <= 3
+            ? otherMembers.join(', ')
+            : `${otherMembers.slice(0, 3).join(', ')} + ${otherMembers.length - 3} more`;
+        }
+      }
+    }
+    
+    // Determine conversation type from productThreadType or ID patterns
+    let conversationType: string | undefined;
+    
+    // Use productThreadType if available (most accurate)
+    if (productType) {
+      if (productType === 'Meeting') {
+        conversationType = 'Meeting';
+      } else if (productType.includes('Channel') || productType === 'TeamsTeam') {
+        conversationType = 'Channel';
+      } else if (productType === 'Chat' || productType === 'OneOnOne') {
+        conversationType = 'Chat';
+      }
+    }
+    
+    // Fallback to ID pattern detection
+    if (!conversationType) {
+      if (conversationId.includes('meeting_')) {
+        conversationType = 'Meeting';
+      } else if (threadProps?.groupId) {
+        // Has a groupId means it's part of a Team
+        conversationType = 'Channel';
+      } else if (conversationId.includes('@thread.tacv2') || conversationId.includes('@thread.v2')) {
+        conversationType = 'Chat';
+      } else if (conversationId.startsWith('8:')) {
+        conversationType = 'Chat';
+      }
+    }
+    
+    return { displayName, conversationType };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Gets the user's favourite/pinned conversations.
+ * 
+ * Uses the conversationFolders API with CSA token authentication.
+ * Requires both the skypetoken (from cookies) and the CSA token (from MSAL).
+ * 
+ * @param region - Region for the API (default: "amer")
+ */
+export async function getFavorites(region: string = 'amer'): Promise<FavoritesResult> {
+  const auth = extractMessageAuth();
+  const csaToken = extractCsaToken();
+  
+  if (!auth?.skypeToken || !csaToken) {
+    return { success: false, favorites: [], error: 'No valid authentication. Browser login required.' };
+  }
+
+  const url = `https://teams.microsoft.com/api/csa/${region}/api/v1/teams/users/me/conversationFolders?supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`;
+
+  try {
+    // Use GET request to retrieve folders (POST is only for modifications)
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${csaToken}`,
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { 
+        success: false, 
+        favorites: [], 
+        error: `API error: ${response.status} - ${errorText}` 
+      };
+    }
+
+    const data = await response.json();
+    
+    // Find the Favorites folder
+    const folders = data.conversationFolders as unknown[] | undefined;
+    const favoritesFolder = folders?.find((f: unknown) => {
+      const folder = f as Record<string, unknown>;
+      return folder.folderType === 'Favorites';
+    }) as Record<string, unknown> | undefined;
+
+    if (!favoritesFolder) {
+      return {
+        success: true,
+        favorites: [],
+        folderHierarchyVersion: data.folderHierarchyVersion,
+      };
+    }
+
+    const items = favoritesFolder.conversationFolderItems as unknown[] | undefined;
+    const favorites: FavoriteItem[] = (items || []).map((item: unknown) => {
+      const i = item as Record<string, unknown>;
+      return {
+        conversationId: i.conversationId as string,
+        createdTime: i.createdTime as number | undefined,
+        lastUpdatedTime: i.lastUpdatedTime as number | undefined,
+      };
+    });
+
+    // Enrich favorites with display names by fetching conversation properties in parallel
+    // We need the message auth for the chatsvc API (different from CSA auth)
+    if (auth) {
+      const enrichmentPromises = favorites.map(async (fav) => {
+        const props = await getConversationProperties(fav.conversationId, auth, region);
+        if (props) {
+          fav.displayName = props.displayName;
+          fav.conversationType = props.conversationType;
+        }
+        
+        // Fallback: if no display name found, try extracting from recent messages
+        if (!fav.displayName) {
+          const nameFromMessages = await extractParticipantNamesFromMessages(fav.conversationId, auth, region);
+          if (nameFromMessages) {
+            fav.displayName = nameFromMessages;
+          }
+        }
+      });
+      
+      // Wait for all enrichment calls to complete (with a reasonable timeout)
+      await Promise.allSettled(enrichmentPromises);
+    }
+
+    return {
+      success: true,
+      favorites,
+      folderHierarchyVersion: data.folderHierarchyVersion,
+      folderId: favoritesFolder.id as string,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      favorites: [],
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Internal helper to modify the favourites folder (add or remove items).
+ */
+async function modifyFavorite(
+  conversationId: string,
+  action: 'AddItem' | 'RemoveItem',
+  region: string
+): Promise<FavoriteModifyResult> {
+  const auth = extractMessageAuth();
+  const csaToken = extractCsaToken();
+  
+  if (!auth?.skypeToken || !csaToken) {
+    return { success: false, error: 'No valid authentication. Browser login required.' };
+  }
+
+  // Get the current folder state to get the folderId and version
+  const currentState = await getFavorites(region);
+  if (!currentState.success) {
+    return { success: false, error: currentState.error };
+  }
+
+  if (!currentState.folderId) {
+    return { success: false, error: 'Could not find Favorites folder' };
+  }
+
+  const url = `https://teams.microsoft.com/api/csa/${region}/api/v1/teams/users/me/conversationFolders?supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${csaToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+      body: JSON.stringify({
+        folderHierarchyVersion: currentState.folderHierarchyVersion,
+        actions: [
+          {
+            action,
+            folderId: currentState.folderId,
+            itemId: conversationId,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { 
+        success: false, 
+        error: `API error: ${response.status} - ${errorText}` 
+      };
+    }
+
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Adds a conversation to the user's favourites.
+ * 
+ * @param conversationId - The conversation ID to add
+ * @param region - Region for the API (default: "amer")
+ */
+export async function addFavorite(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<FavoriteModifyResult> {
+  return modifyFavorite(conversationId, 'AddItem', region);
+}
+
+/**
+ * Removes a conversation from the user's favourites.
+ * 
+ * @param conversationId - The conversation ID to remove
+ * @param region - Region for the API (default: "amer")
+ */
+export async function removeFavorite(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<FavoriteModifyResult> {
+  return modifyFavorite(conversationId, 'RemoveItem', region);
+}
+
+/**
+ * Saves (bookmarks) a message.
+ * 
+ * @param conversationId - The conversation ID containing the message
+ * @param messageId - The message ID to save (numeric string)
+ * @param region - Region for the API (default: "amer")
+ */
+export async function saveMessage(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<SaveMessageResult> {
+  return setMessageSavedState(conversationId, messageId, true, region);
+}
+
+/**
+ * Unsaves (removes bookmark from) a message.
+ * 
+ * @param conversationId - The conversation ID containing the message
+ * @param messageId - The message ID to unsave (numeric string)
+ * @param region - Region for the API (default: "amer")
+ */
+export async function unsaveMessage(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<SaveMessageResult> {
+  return setMessageSavedState(conversationId, messageId, false, region);
+}
+
+/** A message from a thread/conversation. */
+export interface ThreadMessage {
+  id: string;                    // Message ID (numeric string timestamp)
+  content: string;               // Message content (may contain HTML)
+  contentType: string;           // e.g., "RichText/Html", "Text"
+  sender: {
+    mri: string;                 // Sender's MRI (8:orgid:guid)
+    displayName?: string;        // Sender's display name
+  };
+  timestamp: string;             // ISO timestamp
+  conversationId: string;        // Parent conversation ID
+  clientMessageId?: string;      // Client-generated message ID
+  isFromMe?: boolean;            // Whether this message is from the current user
+  messageLink?: string;          // Direct link to open this message in Teams
+}
+
+/** Result of getting thread messages. */
+export interface GetThreadResult {
+  success: boolean;
+  conversationId?: string;
+  messages?: ThreadMessage[];
+  error?: string;
+}
+
+/**
+ * Gets messages from a Teams conversation/thread.
+ * 
+ * This retrieves messages from a conversation, which can be:
+ * - A 1:1 or group chat
+ * - A channel thread
+ * - Self-notes (48:notes)
+ * 
+ * @param conversationId - The conversation ID (e.g., "19:abc@thread.tacv2")
+ * @param options - Optional parameters for pagination
+ * @param options.limit - Maximum number of messages to return (default: 50)
+ * @param options.startTime - Only get messages after this timestamp (epoch ms)
+ * @param region - Region for the API (default: "amer")
+ */
+export async function getThreadMessages(
+  conversationId: string,
+  options: { limit?: number; startTime?: number } = {},
+  region: string = 'amer'
+): Promise<GetThreadResult> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return { success: false, error: 'No valid authentication. Browser login required.' };
+  }
+
+  const limit = options.limit ?? 50;
+  
+  // Build URL with query parameters
+  let url = `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages?view=msnp24Equivalent&pageSize=${limit}`;
+  
+  if (options.startTime) {
+    url += `&startTime=${options.startTime}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { 
+        success: false, 
+        error: `API error: ${response.status} - ${errorText}` 
+      };
+    }
+
+    const data = await response.json();
+    
+    // Parse messages from the response
+    // The API returns { messages: [...] } array
+    const rawMessages = data.messages as unknown[] | undefined;
+    
+    if (!Array.isArray(rawMessages)) {
+      return {
+        success: true,
+        conversationId,
+        messages: [],
+      };
+    }
+
+    const messages: ThreadMessage[] = [];
+    
+    for (const raw of rawMessages) {
+      const msg = raw as Record<string, unknown>;
+      
+      // Skip non-message types (e.g., typing indicators, control messages)
+      const messageType = msg.messagetype as string;
+      if (!messageType || messageType.startsWith('Control/') || messageType === 'ThreadActivity/AddMember') {
+        continue;
+      }
+      
+      const id = msg.id as string || msg.originalarrivaltime as string;
+      if (!id) continue;
+      
+      const content = msg.content as string || '';
+      const contentType = msg.messagetype as string || 'Text';
+      
+      // Parse sender info
+      const fromMri = msg.from as string || '';
+      const displayName = msg.imdisplayname as string || msg.displayName as string;
+      
+      const timestamp = msg.originalarrivaltime as string || 
+                       msg.composetime as string || 
+                       new Date(parseInt(id, 10)).toISOString();
+      
+      // Build message link - id is already the timestamp in milliseconds
+      const messageLink = /^\d+$/.test(id) 
+        ? buildMessageLink(conversationId, id)
+        : undefined;
+      
+      messages.push({
+        id,
+        content: stripHtml(content),
+        contentType,
+        sender: {
+          mri: fromMri,
+          displayName,
+        },
+        timestamp,
+        conversationId,
+        clientMessageId: msg.clientmessageid as string,
+        isFromMe: fromMri === auth.userMri,
+        messageLink,
+      });
+    }
+
+    // Sort by timestamp (oldest first)
+    messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return {
+      success: true,
+      conversationId,
+      messages,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+// stripHtml is imported from ../utils/parsers.js
+
+/**
+ * Internal function to set the saved state of a message.
+ */
+async function setMessageSavedState(
+  conversationId: string,
+  messageId: string,
+  saved: boolean,
+  region: string
+): Promise<SaveMessageResult> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return { success: false, error: 'No valid authentication. Browser login required.' };
+  }
+
+  const url = `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/rcmetadata/${messageId}`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+      body: JSON.stringify({
+        s: saved ? 1 : 0,
+        mid: parseInt(messageId, 10),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { 
+        success: false, 
+        error: `API error: ${response.status} - ${errorText}` 
+      };
+    }
+
+    return {
+      success: true,
+      conversationId,
+      messageId,
+      saved,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Unknown error',
+    };
+  }
+}
+
+// parsePersonSuggestion is imported from ../utils/parsers.js
+
+// Re-export buildMessageLink for backward compatibility
+export { buildMessageLink };
+
+// extractMessageTimestamp is imported from ../utils/parsers.js
+
+// parseV2Result is imported from ../utils/parsers.js
