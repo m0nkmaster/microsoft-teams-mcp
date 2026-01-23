@@ -67,30 +67,17 @@ export function buildMessageLink(
 /**
  * Extracts a timestamp-based message ID from various sources.
  * Teams uses epoch milliseconds as message IDs in URLs.
+ * 
+ * IMPORTANT: For channel threaded replies, the ;messageid= in ClientConversationId
+ * is the PARENT thread's ID, not this message's ID. We must prefer the actual
+ * message timestamp (DateTimeReceived/DateTimeSent) for accurate deep links.
  */
 export function extractMessageTimestamp(
   source: Record<string, unknown> | undefined,
   timestamp?: string
 ): string | undefined {
-  // Try to get from Source fields that contain the original message ID
-  if (source) {
-    // Check for MessageId or Id in various formats
-    const messageId = source.MessageId ?? source.OriginalMessageId ?? source.ReferenceObjectId;
-    if (typeof messageId === 'string' && /^\d{13}$/.test(messageId)) {
-      return messageId;
-    }
-    
-    // Check ClientConversationId which might have ;messageid=xxx suffix
-    const clientConvId = source.ClientConversationId as string | undefined;
-    if (clientConvId && clientConvId.includes(';messageid=')) {
-      const match = clientConvId.match(/;messageid=(\d+)/);
-      if (match) {
-        return match[1];
-      }
-    }
-  }
-  
-  // Fall back to parsing from ISO timestamp
+  // FIRST: Try to compute from the message's own timestamp
+  // This is the most reliable for channel threaded replies
   if (timestamp) {
     try {
       const date = new Date(timestamp);
@@ -99,6 +86,26 @@ export function extractMessageTimestamp(
       }
     } catch {
       // Ignore parsing errors
+    }
+  }
+  
+  // SECOND: Try explicit MessageId fields
+  if (source) {
+    // Check for MessageId or Id in various formats
+    const messageId = source.MessageId ?? source.OriginalMessageId ?? source.ReferenceObjectId;
+    if (typeof messageId === 'string' && /^\d{13}$/.test(messageId)) {
+      return messageId;
+    }
+    
+    // LAST RESORT: Check ClientConversationId for ;messageid=xxx suffix
+    // NOTE: For threaded replies, this is the PARENT message ID, so only use
+    // if we couldn't get the actual timestamp above
+    const clientConvId = source.ClientConversationId as string | undefined;
+    if (clientConvId && clientConvId.includes(';messageid=')) {
+      const match = clientConvId.match(/;messageid=(\d+)/);
+      if (match) {
+        return match[1];
+      }
     }
   }
   
@@ -157,22 +164,24 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
   const source = item.Source as Record<string, unknown> | undefined;
 
   // Extract conversationId from extension fields or source properties
+  // For channel threaded replies, we want the thread ID (ClientThreadId) not the channel ID
   let conversationId: string | undefined;
   if (source) {
-    // Check Extensions object first (most reliable)
-    const extensions = source.Extensions as Record<string, unknown> | undefined;
-    if (extensions) {
-      const extId = extensions.SkypeSpaces_ConversationPost_Extension_SkypeGroupId;
-      if (typeof extId === 'string' && extId.length > 0) {
-        conversationId = extId;
-      }
+    // Check ClientThreadId first - this is the specific thread for channel replies
+    // Using this ensures the deep link goes to the correct thread context
+    const clientThreadId = source.ClientThreadId;
+    if (typeof clientThreadId === 'string' && clientThreadId.length > 0) {
+      conversationId = clientThreadId;
     }
     
-    // Fallback to ClientThreadId
+    // Fallback to Extensions.SkypeGroupId (the channel ID)
     if (!conversationId) {
-      const clientThreadId = source.ClientThreadId;
-      if (typeof clientThreadId === 'string' && clientThreadId.length > 0) {
-        conversationId = clientThreadId;
+      const extensions = source.Extensions as Record<string, unknown> | undefined;
+      if (extensions) {
+        const extId = extensions.SkypeSpaces_ConversationPost_Extension_SkypeGroupId;
+        if (typeof extId === 'string' && extId.length > 0) {
+          conversationId = extId;
+        }
       }
     }
     
@@ -185,7 +194,12 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
     }
   }
 
-  const timestamp = source?.ReceivedTime as string || source?.CreatedDateTime as string;
+  // Note: The API returns DateTimeReceived, DateTimeSent, DateTimeCreated (not ReceivedTime/CreatedDateTime)
+  const timestamp = source?.DateTimeReceived as string || 
+                    source?.DateTimeSent as string || 
+                    source?.DateTimeCreated as string ||
+                    source?.ReceivedTime as string ||  // Legacy fallback
+                    source?.CreatedDateTime as string; // Legacy fallback
   
   // Build message link if we have the required data
   let messageLink: string | undefined;

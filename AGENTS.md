@@ -354,6 +354,22 @@ If searches fail with authentication errors:
 - Ensure Playwright browsers are installed: `npx playwright install chromium`
 - Check for existing browser processes that may be blocking
 
+### Search Doesn't Find All Thread Replies
+The Substrate search API is a **full-text search** — it only returns messages matching the search terms. If someone replied to your message but their reply doesn't contain your search keywords, it won't appear in results.
+
+**Example:** Searching for "Easter blockout" won't find a reply that says "Given World of Frozen opens the week before, I'd put a fair amount of money on 'yes'" — even though it's a direct reply.
+
+**Workaround:** After finding a message of interest, use `teams_get_thread` with the `conversationId` to retrieve the full thread context including all replies.
+
+### Message Deep Links
+For channel threaded messages, deep links use:
+- The thread ID (`ClientThreadId`) — the specific thread within a channel
+- The message's own timestamp (`DateTimeReceived`) — the exact message, not the parent
+
+The link format is: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`
+
+Note: The `conversationId` returned in search results for threaded replies will be the thread ID (e.g., `19:0df465dd...@thread.tacv2`) not the channel ID (e.g., `19:-eGaQP4gB...@thread.tacv2`).
+
 ## File Locations
 
 - **Session state**: `./session-state.json` (gitignored)
