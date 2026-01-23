@@ -1,0 +1,2 @@
+# Ignore examples folder (may contain real chat exports with sensitive data)
+examples/
