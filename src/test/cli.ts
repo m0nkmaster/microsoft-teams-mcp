@@ -14,9 +14,9 @@ import { createBrowserContext, closeBrowser, type BrowserManager } from '../brow
 import { ensureAuthenticated, forceNewLogin } from '../browser/auth.js';
 import { searchTeamsWithPagination } from '../teams/search.js';
 import { hasSessionState, getSessionAge, clearSessionState } from '../browser/session.js';
-import { directSearch, hasValidToken, getTokenStatus, sendNoteToSelf, sendMessage, extractMessageAuth } from '../teams/direct-api.js';
+import { directSearch, hasValidToken, getTokenStatus, sendNoteToSelf, sendMessage, extractMessageAuth, getMe } from '../teams/direct-api.js';
 
-type Command = 'status' | 'search' | 'login' | 'send' | 'help';
+type Command = 'status' | 'search' | 'login' | 'send' | 'me' | 'help';
 
 interface CliArgs {
   command: Command;
@@ -71,6 +71,7 @@ Commands:
   search <query>      Search Teams for messages
   send <message>      Send a message to yourself (notes)
   send --to <id>      Send a message to a specific conversation
+  me                  Get current user profile (email, name, Teams ID)
   login               Log in to Teams (opens browser)
   login --force       Force new login (clears existing session)
   help                Show this help message
@@ -331,6 +332,34 @@ async function commandSend(
   }
 }
 
+async function commandMe(flags: Set<string>): Promise<void> {
+  const asJson = flags.has('json');
+
+  const profile = getMe();
+
+  if (!profile) {
+    if (asJson) {
+      console.log(JSON.stringify({ success: false, error: 'No valid session' }, null, 2));
+    } else {
+      console.error('❌ No valid session. Please run: npm run cli -- login');
+    }
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ success: true, profile }, null, 2));
+  } else {
+    console.log('\n👤 Current User\n');
+    console.log(`   Name: ${profile.displayName}`);
+    console.log(`   Email: ${profile.email}`);
+    console.log(`   ID: ${profile.id}`);
+    console.log(`   MRI: ${profile.mri}`);
+    if (profile.tenantId) {
+      console.log(`   Tenant: ${profile.tenantId}`);
+    }
+  }
+}
+
 async function commandLogin(flags: Set<string>): Promise<void> {
   const force = flags.has('force');
   
@@ -386,6 +415,10 @@ async function main(): Promise<void> {
 
       case 'send':
         await commandSend(args.join(' '), flags, options);
+        break;
+
+      case 'me':
+        await commandMe(flags);
         break;
         
       case 'login':

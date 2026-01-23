@@ -32,6 +32,7 @@ import {
   sendMessage,
   sendNoteToSelf,
   extractMessageAuth,
+  getMe,
 } from './teams/direct-api.js';
 
 // Tool definitions
@@ -99,6 +100,14 @@ const TOOLS: Tool[] = [
         },
       },
       required: ['content'],
+    },
+  },
+  {
+    name: 'teams_get_me',
+    description: 'Get the current user\'s profile information including email, display name, and Teams ID. Useful for finding @mentions or identifying the current user.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
 ];
@@ -405,6 +414,37 @@ export async function createServer(): Promise<Server> {
                   messageId: result.messageId,
                   timestamp: result.timestamp,
                   conversationId: input.conversationId,
+                }, null, 2),
+              },
+            ],
+          };
+        }
+
+        case 'teams_get_me': {
+          const profile = getMe();
+          
+          if (!profile) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    success: false,
+                    error: 'No valid session. Please use teams_login first.',
+                  }, null, 2),
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  profile,
                 }, null, 2),
               },
             ],

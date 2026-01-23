@@ -17,7 +17,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../server.js';
 
 interface TestOptions {
-  command: 'list' | 'status' | 'search' | 'send';
+  command: 'list' | 'status' | 'search' | 'send' | 'me';
   query?: string;
   message?: string;
   conversationId?: string;
@@ -65,6 +65,8 @@ function parseArgs(): TestOptions {
     } else if (arg === '--to' && args[i + 1]) {
       options.conversationId = args[i + 1];
       i++;
+    } else if (arg === 'me') {
+      options.command = 'me';
     } else if (arg === 'status') {
       options.command = 'status';
     } else if (arg === 'list') {
@@ -323,6 +325,46 @@ async function testSend(client: Client, options: TestOptions): Promise<void> {
   }
 }
 
+async function testMe(client: Client, options: TestOptions): Promise<void> {
+  if (!options.json) {
+    logSection(`Get Current User`);
+  }
+  
+  if (!options.json) {
+    log(`Calling teams_get_me via MCP protocol...`);
+  }
+  
+  const result = await client.callTool({ name: 'teams_get_me', arguments: {} });
+  
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  
+  // Parse the result
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const textContent = content.find(c => c.type === 'text');
+  
+  if (textContent?.text) {
+    const response = JSON.parse(textContent.text);
+    
+    if (!response.success) {
+      log(`❌ Failed: ${response.error}`);
+      return;
+    }
+    
+    const p = response.profile;
+    log(`\n👤 Current User\n`);
+    log(`   Name: ${p.displayName}`);
+    log(`   Email: ${p.email}`);
+    log(`   ID: ${p.id}`);
+    log(`   MRI: ${p.mri}`);
+    if (p.tenantId) {
+      log(`   Tenant: ${p.tenantId}`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
   
@@ -353,6 +395,9 @@ async function main(): Promise<void> {
         break;
       case 'send':
         await testSend(client, options);
+        break;
+      case 'me':
+        await testMe(client, options);
         break;
     }
     

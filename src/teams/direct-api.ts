@@ -38,6 +38,94 @@ interface DirectSearchResult {
   pagination: SearchPaginationResult;
 }
 
+export interface UserProfile {
+  id: string;           // Azure AD object ID (oid)
+  mri: string;          // Teams MRI (8:orgid:guid)
+  email: string;        // User principal name / email
+  displayName: string;  // Full display name
+  givenName?: string;   // First name
+  surname?: string;     // Last name
+  tenantId?: string;    // Azure tenant ID
+}
+
+/**
+ * Gets the current user's profile from cached JWT tokens.
+ * 
+ * Extracts user info from MSAL tokens stored in session state.
+ * No API call needed - just parses existing tokens.
+ */
+export function getMe(): UserProfile | null {
+  if (!fs.existsSync(SESSION_STATE_PATH)) {
+    return null;
+  }
+
+  try {
+    const state = JSON.parse(fs.readFileSync(SESSION_STATE_PATH, 'utf8'));
+    const teamsOrigin = state.origins?.find((o: { origin: string }) => 
+      o.origin === 'https://teams.microsoft.com'
+    );
+
+    if (!teamsOrigin) return null;
+
+    // Look through localStorage for any JWT with user info
+    for (const item of teamsOrigin.localStorage) {
+      try {
+        const val = JSON.parse(item.value);
+        
+        if (!val.secret || typeof val.secret !== 'string') continue;
+        if (!val.secret.startsWith('ey')) continue;
+        
+        const parts = val.secret.split('.');
+        if (parts.length !== 3) continue;
+        
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+        
+        // Look for tokens with user info
+        if (payload.oid && payload.name) {
+          const profile: UserProfile = {
+            id: payload.oid,
+            mri: `8:orgid:${payload.oid}`,
+            email: payload.upn || payload.preferred_username || payload.email || '',
+            displayName: payload.name,
+            tenantId: payload.tid,
+          };
+          
+          // Try to extract given name and surname
+          if (payload.given_name) {
+            profile.givenName = payload.given_name;
+          }
+          if (payload.family_name) {
+            profile.surname = payload.family_name;
+          }
+          
+          // If no given/family name, try to parse from displayName
+          if (!profile.givenName && profile.displayName.includes(',')) {
+            // Format: "Surname, GivenName"
+            const parts = profile.displayName.split(',').map(s => s.trim());
+            if (parts.length === 2) {
+              profile.surname = parts[0];
+              profile.givenName = parts[1];
+            }
+          } else if (!profile.givenName && profile.displayName.includes(' ')) {
+            // Format: "GivenName Surname"
+            const parts = profile.displayName.split(' ');
+            profile.givenName = parts[0];
+            profile.surname = parts.slice(1).join(' ');
+          }
+          
+          return profile;
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * Extracts the Substrate search token from session state.
  */
