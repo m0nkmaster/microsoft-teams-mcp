@@ -247,6 +247,8 @@ From research, Teams uses these primary APIs:
 | `teams.microsoft.com/api/csa/{region}/api/v1/containers/{id}/posts` | Channel messages |
 | `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/messages` | Send/receive messages |
 | `teams.microsoft.com/api/chatsvc/{region}/v1/threads/{id}/annotations` | Reactions, read status |
+| `teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders` | Favorites/pinned chats |
+| `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/rcmetadata/{mid}` | Save/unsave messages |
 
 ### People & Profile
 | Endpoint | Purpose |
@@ -271,15 +273,19 @@ Based on API research, these tools could be implemented:
 
 | Tool | API | Difficulty | Status |
 |------|-----|------------|--------|
-| `teams_get_me` | Delve person API | Easy | Pending |
+| `teams_get_me` | JWT token extraction | Easy | ✅ Implemented |
+| `teams_send_message` | chatsvc messages API | Medium | ✅ Implemented |
+| `teams_get_favorites` | conversationFolders API | Easy | Ready |
+| `teams_add_favorite` | conversationFolders API | Easy | Ready |
+| `teams_save_message` | rcmetadata API | Easy | Ready |
 | `teams_search_people` | Substrate suggestions | Easy | Pending |
 | `teams_get_person` | Delve person API | Easy | Pending |
 | `teams_get_channel_posts` | CSA containers API | Medium | Pending |
 | `teams_get_files` | AllFiles API | Medium | Pending |
-| `teams_send_message` | chatsvc messages API | Medium | ✅ Implemented |
 
 ### Not Yet Feasible
-- **Chat list / Favorites** - Data loaded at startup, not in separate API
+- **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata
+- **Chat list** - Data loaded at startup, not in separate API
 - **Activity feed** - Exists at `48:notifications` but format unclear
 - **Presence/Status** - Real-time via WebSocket, not HTTP
 - **Calendar** - Outlook APIs exist but need separate research

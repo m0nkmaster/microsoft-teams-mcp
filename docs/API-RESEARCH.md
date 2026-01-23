@@ -268,6 +268,118 @@ This document captures findings from researching the Microsoft Teams web applica
 
 ---
 
+### 2.5 Conversation Folders (Favorites/Pinned)
+
+**Endpoint:** `POST https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders`
+
+**Query Parameters:** `supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`
+
+**Use Case:** Get pinned/favourite conversations, or add/remove items from folders.
+
+**Request (Get all folders):**
+```json
+{}
+```
+
+**Request (Add to Favorites):**
+```json
+{
+  "folderHierarchyVersion": 1769191147787,
+  "actions": [
+    {
+      "action": "AddItem",
+      "folderId": "{tenantId}~{userId}~Favorites",
+      "itemId": "19:conversationId@thread.v2"
+    }
+  ]
+}
+```
+
+**Request (Remove from Favorites):**
+```json
+{
+  "actions": [
+    {
+      "action": "RemoveItem",
+      "folderId": "{tenantId}~{userId}~Favorites",
+      "itemId": "19:conversationId@thread.v2"
+    }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "folderHierarchyVersion": 1769200822270,
+  "conversationFolders": [
+    {
+      "id": "{tenantId}~{userId}~Favorites",
+      "sortType": "UserDefinedCustomOrder",
+      "name": "Favorites",
+      "folderType": "Favorites",
+      "conversationFolderItems": [
+        {
+          "conversationId": "19:abc@thread.tacv2",
+          "createdTime": 1750768187119,
+          "lastUpdatedTime": 1750768187119
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- The `folderHierarchyVersion` should be included from a previous response for updates
+- Folder ID format: `{tenantId}~{userId}~{folderType}`
+- Known folder types: `Favorites`
+
+---
+
+### 2.6 Saved Messages (Bookmarks)
+
+**Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/rcmetadata/{messageId}`
+
+**Use Case:** Save (bookmark) or unsave a message.
+
+**Request (Save message):**
+```json
+{
+  "s": 1,
+  "mid": 1769200192761
+}
+```
+
+**Request (Unsave message):**
+```json
+{
+  "s": 0,
+  "mid": 1769200192761
+}
+```
+
+**Response:**
+```json
+{
+  "conversationId": "19:f205342987334b6d9722c1d52b526400@thread.v2",
+  "rootMessageId": 1769200192761,
+  "rcMetadata": {
+    "lu": 1769200800298,
+    "s": 1
+  }
+}
+```
+
+**Notes:**
+- `s`: Saved flag (1 = saved, 0 = not saved)
+- `mid`: Message ID
+- `lu`: Last updated timestamp
+- To retrieve saved status for messages, use the posts API with `includeRcMetadata=true`
+- There is no single "get all saved messages" endpoint; saved messages are tracked per-conversation
+
+---
+
 ## 3. People APIs
 
 ### 3.1 Person Profile (Delve/Loki)
@@ -613,12 +725,18 @@ Based on discovered APIs, here are potential tools to implement:
 | `teams_search` | Substrate v2 query | ✅ Done |
 | `teams_login` | Browser automation | ✅ Done |
 | `teams_status` | Token check | ✅ Done |
+| `teams_send_message` | chatsvc messages API | ✅ Done (uses skypetoken cookies) |
+| `teams_get_me` | JWT token extraction | ✅ Done |
 
 ### 🔜 Ready to Implement
 
 | Tool | API | Notes |
 |------|-----|-------|
-| `teams_get_me` | Delve person API | Get current user profile |
+| `teams_get_favorites` | conversationFolders API | Get pinned/favourite conversations |
+| `teams_add_favorite` | conversationFolders API | Pin a conversation |
+| `teams_remove_favorite` | conversationFolders API | Unpin a conversation |
+| `teams_save_message` | rcmetadata API | Bookmark a message |
+| `teams_unsave_message` | rcmetadata API | Remove bookmark from message |
 | `teams_search_people` | Substrate suggestions | Find people by name/email |
 | `teams_get_person` | Delve person API | Get specific person's details |
 | `teams_get_channel_posts` | CSA containers API | Get messages from a channel |
@@ -629,15 +747,14 @@ Based on discovered APIs, here are potential tools to implement:
 | Tool | Notes |
 |------|-------|
 | `teams_list_chats` | No dedicated API found - may need initial load capture |
-| `teams_list_favorites` | Not captured - likely in initial Teams boot |
+| `teams_get_saved_messages` | No single endpoint - saved flag is per-message in rcMetadata |
 | `teams_activity` | 48:notifications exists but format unclear |
-| `teams_calendar` | Outlook calendar APIs available but not Teams-specific |
+| `teams_calendar` | Outlook calendar APIs available - need to extract meetings |
 
 ### 🔮 Future Possibilities
 
 | Tool | API | Notes |
 |------|-----|-------|
-| `teams_send_message` | chatsvc messages API | ✅ Implemented (uses skypetoken cookies) |
 | `teams_get_presence` | Not captured | Would need WebSocket/SignalR |
 | `teams_unread` | Client-side filter | Use consumptionhorizon comparison |
 
