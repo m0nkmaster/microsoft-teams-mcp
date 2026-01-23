@@ -13,6 +13,8 @@ export interface TeamsSearchResult {
   teamName?: string;
   conversationId?: string;
   messageId?: string;
+  /** Direct link to open this message in Teams */
+  messageLink?: string;
 }
 
 export interface TeamsMessage {

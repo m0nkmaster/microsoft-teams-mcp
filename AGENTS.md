@@ -72,8 +72,17 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 | `teams_search` | Search messages with query operators, supports pagination |
 | `teams_send_message` | Send a message to a Teams conversation |
 | `teams_get_me` | Get current user profile (email, name, ID) |
+| `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
+| `teams_search_people` | Search for people by name or email |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
+| `teams_search_people` | Search for people by name or email |
+| `teams_get_favorites` | Get pinned/favourite conversations |
+| `teams_add_favorite` | Pin a conversation to favourites |
+| `teams_remove_favorite` | Unpin a conversation from favourites |
+| `teams_save_message` | Bookmark a message |
+| `teams_unsave_message` | Remove bookmark from a message |
+| `teams_get_thread` | Get messages from a conversation/thread |
 
 ### Design Philosophy
 
@@ -92,23 +101,57 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 
 | Operator | Example | Description |
 |----------|---------|-------------|
-| `from:` | `from:sarah@company.com` | Messages from a person |
+| `from:` | `from:sarah@company.com` | Messages from a person (use actual email) |
 | `sent:` | `sent:today`, `sent:lastweek` | Messages by date |
 | `in:` | `in:project-alpha` | Messages in a channel |
 | `"Name"` | `"Rob Smith"` | Find @mentions (display name in quotes) |
-| `NOT` | `NOT from:me` | Exclude results |
+| `NOT` | `NOT from:user@email.com` | Exclude results |
 | `hasattachment:` | `hasattachment:true` | Messages with files |
 
-**Finding @mentions:** Use `teams_get_me` to get the user's display name, then search with:
-```
-"Display Name" NOT from:user@email.com
-```
+**⚠️ Common Mistakes - What Does NOT Work:**
+
+| Invalid | Why | Use Instead |
+|---------|-----|-------------|
+| `@me` | Not a valid Teams operator | Use `teams_get_me` to get email/name, then search with those |
+| `from:me` | `me` is not recognised | `from:actual.email@company.com` |
+| `to:me` | Not supported | Search for `"Display Name"` to find @mentions |
+| `mentions:me` | Not supported | Search for `"Display Name"` to find @mentions |
+
+**Common Patterns:**
+
+1. **Messages FROM me:**
+   ```
+   # First call teams_get_me to get email, then:
+   from:rob.smith@company.com
+   ```
+
+2. **Messages mentioning me (@mentions):**
+   ```
+   # First call teams_get_me to get displayName and email, then:
+   "Rob Smith" NOT from:rob.smith@company.com
+   ```
+   The `NOT from:` excludes your own messages where you might have typed your name.
+
+3. **Messages from a specific person:**
+   ```
+   # If you know their email:
+   from:sarah.jones@company.com
+   
+   # If you only know their name, first call teams_search_people to find their email
+   ```
+
+4. **Unread/unanswered questions to me:**
+   ```
+   # Search for mentions with question marks:
+   "Rob Smith" ? NOT from:rob.smith@company.com
+   ```
 
 **Response** includes:
-- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`
+- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`, `messageLink`
 - `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, `nextFrom`
 
 The `conversationId` enables replying to search results via `teams_send_message`.
+The `messageLink` is a direct URL to open the message in Teams (format: `https://teams.microsoft.com/l/message/{conversationId}/{timestamp}`).
 
 ### teams_send_message Parameters
 
@@ -122,6 +165,79 @@ The `conversationId` enables replying to search results via `teams_send_message`
 ### teams_get_me Parameters
 
 No parameters. Returns current user's profile including `id`, `mri`, `email`, `displayName`, and `tenantId`.
+
+### teams_get_frequent_contacts Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | number | 50 | Maximum number of contacts to return (1-500) |
+
+**Response** includes:
+- `contacts[]` with `id`, `mri`, `displayName`, `email`, `givenName`, `surname`, `jobTitle`, `department`, `companyName`
+- `returned` count
+
+**Use case:** When a user refers to someone by first name (e.g., "What's Rob been up to?"), call this tool first to get a ranked list of frequent contacts. Match the name against this list to resolve ambiguity before searching messages.
+
+### teams_search_people Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| query | string | required | Search term (name, email, or partial match) |
+| limit | number | 10 | Maximum number of results (1-50) |
+
+**Response** includes the same fields as `teams_get_frequent_contacts`. Use this when searching for a specific person by name or email, rather than getting the user's common contacts.
+
+### teams_search_people Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| query | string | required | Search term - name, email, or partial match |
+| limit | number | 10 | Maximum results to return |
+
+**Response** includes:
+- `results[]` with `id`, `mri`, `displayName`, `email`, `jobTitle`, `department`, `companyName`
+
+### teams_get_favorites Parameters
+
+No parameters. Returns list of pinned conversation IDs.
+
+### teams_add_favorite / teams_remove_favorite Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation ID to pin/unpin |
+
+### teams_save_message / teams_unsave_message Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | Conversation containing the message |
+| messageId | string | required | The message ID to save/unsave |
+
+**Note:** These tools use the same session cookie authentication as messaging.
+
+### teams_get_thread Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation ID to get messages from |
+| limit | number | 50 | Maximum number of messages to return (1-200) |
+
+**Response** includes:
+- `conversationId` - The conversation ID
+- `messageCount` - Number of messages returned
+- `messages[]` with:
+  - `id` - Message ID (numeric string)
+  - `content` - Message content (HTML stripped)
+  - `contentType` - Message type (e.g., "RichText/Html")
+  - `sender` - Object with `mri` and `displayName`
+  - `timestamp` - ISO timestamp
+  - `isFromMe` - Whether message is from the current user
+  - `messageLink` - Direct link to open this message in Teams
+
+**Use case:** Check for replies to a specific message, read thread context before replying, or review recent messages in a conversation. Use the `conversationId` from search results.
+
+**Note:** Messages are sorted oldest-first. This uses the same session cookie authentication as messaging.
 
 ## Development Commands
 
@@ -161,6 +277,20 @@ npm run test:mcp -- send "Hello from MCP!"
 
 # Send to specific conversation
 npm run test:mcp -- send "Message" --to "conversation-id"
+
+# Search for people
+npm run test:mcp -- people "john smith"
+
+# Get favourites
+npm run test:mcp -- favorites
+
+# Save/unsave a message
+npm run test:mcp -- save --to "conversation-id" --message "message-id"
+npm run test:mcp -- unsave --to "conversation-id" --message "message-id"
+
+# Get thread/conversation messages
+npm run test:mcp -- thread --to "conversation-id"
+npm run test:mcp -- thread --to "conversation-id" --limit 20
 ```
 
 ### Direct CLI Tools
@@ -304,10 +434,14 @@ Based on API research, these tools could be implemented:
 |------|-----|------------|--------|
 | `teams_get_me` | JWT token extraction | Easy | ✅ Implemented |
 | `teams_send_message` | chatsvc messages API | Medium | ✅ Implemented |
-| `teams_get_favorites` | conversationFolders API | Easy | Ready |
-| `teams_add_favorite` | conversationFolders API | Easy | Ready |
-| `teams_save_message` | rcmetadata API | Easy | Ready |
-| `teams_search_people` | Substrate suggestions | Easy | Pending |
+| `teams_search_people` | Substrate suggestions | Easy | ✅ Implemented |
+| `teams_get_frequent_contacts` | Substrate peoplecache | Easy | ✅ Implemented |
+| `teams_get_favorites` | conversationFolders API | Easy | ✅ Implemented |
+| `teams_add_favorite` | conversationFolders API | Easy | ✅ Implemented |
+| `teams_remove_favorite` | conversationFolders API | Easy | ✅ Implemented |
+| `teams_save_message` | rcmetadata API | Easy | ✅ Implemented |
+| `teams_unsave_message` | rcmetadata API | Easy | ✅ Implemented |
+| `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
 | `teams_get_person` | Delve person API | Easy | Pending |
 | `teams_get_channel_posts` | CSA containers API | Medium | Pending |
 | `teams_get_files` | AllFiles API | Medium | Pending |

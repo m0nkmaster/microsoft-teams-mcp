@@ -123,6 +123,26 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
+#### 2.4 Check for replies to my message
+> "Have there been any replies to my PR review request message?"
+
+**Flow:**
+1. Search for the original message to get its `conversationId`
+2. Call `teams_get_thread` to get all messages in that conversation
+3. Display replies after the original message timestamp
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented (returns conversationId) |
+| `teams_get_thread` | ✅ Implemented |
+
+**Status:** ✅ Works now - search returns `conversationId`, then `teams_get_thread` retrieves all messages in that thread.
+
+**Note:** Reactions (👍) are still not surfaced by this API. Only actual message replies are returned.
+
+---
+
 ### 3. Favourites & Navigation
 
 #### 3.1 List favourite channels
@@ -135,9 +155,11 @@ This document defines user stories and personas to guide development of the Team
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_get_favorites` | ❌ Needed |
+| `teams_get_favorites` | ✅ Implemented |
+| `teams_add_favorite` | ✅ Implemented |
+| `teams_remove_favorite` | ✅ Implemented |
 
-**Gap:** Favourites loaded at Teams startup, not via separate API. May need to capture from initial page load or localStorage.
+**Status:** ✅ Works now - can list, add, and remove favourites via the conversationFolders API.
 
 ---
 
@@ -170,11 +192,11 @@ This document defines user stories and personas to guide development of the Team
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_search_people` | ❌ Needed |
+| `teams_search_people` | ✅ Implemented |
 | `teams_get_or_create_chat` | ❌ Needed |
 | `teams_send_message` | ✅ Implemented |
 
-**Gap:** Need people search and chat creation.
+**Status:** People search now works. Still need chat creation to message someone you haven't chatted with before.
 
 ---
 
@@ -297,7 +319,7 @@ Based on user value and API readiness:
 ### Phase 2 - Core Functionality
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 4.1 Find person | `teams_search_people` | Low |
+| 4.1 Find person | `teams_search_people` | ✅ Done |
 | 2.3 Channel catchup | Channel posts (or `in:channel` operator) | Medium |
 | 6.1 Find files | Files API | Medium |
 
@@ -306,7 +328,8 @@ Based on user value and API readiness:
 |-------|-------------|--------|
 | 2.1 Unanswered questions | Thread analysis | High |
 | 2.2 Unread messages | Consumption horizon | High |
-| 3.1 Favourites | Startup capture | High |
+| 2.4 Check for replies | `teams_get_thread` | ✅ Done |
+| 3.1 Favourites | `teams_get_favorites` | ✅ Done |
 
 ### Phase 4 - Stretch Goals
 | Story | Tools Needed | Effort |
@@ -320,8 +343,12 @@ Based on user value and API readiness:
 
 1. ~~**Implement `teams_get_me`**~~ ✅ Done
 2. ~~**Add conversationId extraction**~~ ✅ Done - search results include `conversationId`
-3. **Implement `teams_search_people`** - Enables "message X person" flows
-4. **Implement `teams_get_channel_posts`** - Enables channel catchup (alternative: use `in:channel` search operator)
+3. ~~**Implement `teams_search_people`**~~ ✅ Done - enables "message X person" flows
+4. ~~**Implement favourites tools**~~ ✅ Done - `teams_get_favorites`, `teams_add_favorite`, `teams_remove_favorite`
+5. ~~**Implement save/unsave message**~~ ✅ Done - `teams_save_message`, `teams_unsave_message`
+6. **Implement `teams_get_or_create_chat`** - Create new 1:1 chats with people
+7. **Implement `teams_get_channel_posts`** - Enables channel catchup (alternative: use `in:channel` search operator)
+8. ~~**Implement `teams_get_thread`**~~ ✅ Done - Get replies to a specific message
 
 ---
 

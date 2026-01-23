@@ -17,13 +17,15 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../server.js';
 
 interface TestOptions {
-  command: 'list' | 'status' | 'search' | 'send' | 'me';
+  command: 'list' | 'status' | 'search' | 'send' | 'me' | 'people' | 'favorites' | 'save' | 'unsave' | 'thread';
   query?: string;
   message?: string;
   conversationId?: string;
+  messageId?: string;
   json: boolean;
   from?: number;
   size?: number;
+  limit?: number;
 }
 
 function parseArgs(): TestOptions {
@@ -65,12 +67,35 @@ function parseArgs(): TestOptions {
     } else if (arg === '--to' && args[i + 1]) {
       options.conversationId = args[i + 1];
       i++;
+    } else if (arg === '--message' && args[i + 1]) {
+      options.messageId = args[i + 1];
+      i++;
     } else if (arg === 'me') {
       options.command = 'me';
     } else if (arg === 'status') {
       options.command = 'status';
     } else if (arg === 'list') {
       options.command = 'list';
+    } else if (arg === 'people') {
+      options.command = 'people';
+      // Next non-flag argument is the query
+      for (let j = i + 1; j < args.length; j++) {
+        if (!args[j].startsWith('--')) {
+          options.query = args[j];
+          break;
+        }
+      }
+    } else if (arg === 'favorites') {
+      options.command = 'favorites';
+    } else if (arg === 'save') {
+      options.command = 'save';
+    } else if (arg === 'unsave') {
+      options.command = 'unsave';
+    } else if (arg === 'thread') {
+      options.command = 'thread';
+    } else if (arg === '--limit' && args[i + 1]) {
+      options.limit = parseInt(args[i + 1], 10);
+      i++;
     }
   }
 
@@ -365,6 +390,174 @@ async function testMe(client: Client, options: TestOptions): Promise<void> {
   }
 }
 
+async function testPeople(client: Client, options: TestOptions): Promise<void> {
+  if (!options.query) {
+    console.error('❌ Error: Search query required');
+    console.error('   Usage: npm run test:mcp -- people "name or email"');
+    process.exit(1);
+  }
+  
+  if (!options.json) {
+    logSection(`Search People: "${options.query}"`);
+    log(`Calling teams_search_people via MCP protocol...`);
+  }
+  
+  const result = await client.callTool({ 
+    name: 'teams_search_people', 
+    arguments: { query: options.query } 
+  });
+  
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const textContent = content.find(c => c.type === 'text');
+  
+  if (textContent?.text) {
+    const response = JSON.parse(textContent.text);
+    
+    if (!response.success) {
+      log(`❌ Failed: ${response.error}`);
+      return;
+    }
+    
+    log(`\n✅ Found ${response.returned} people:\n`);
+    
+    for (const p of response.results) {
+      log(`👤 ${p.displayName}`);
+      if (p.email) log(`   Email: ${p.email}`);
+      if (p.jobTitle) log(`   Title: ${p.jobTitle}`);
+      if (p.department) log(`   Dept: ${p.department}`);
+      log(`   MRI: ${p.mri}`);
+      log('');
+    }
+  }
+}
+
+async function testFavorites(client: Client, options: TestOptions): Promise<void> {
+  if (!options.json) {
+    logSection(`Get Favourites`);
+    log(`Calling teams_get_favorites via MCP protocol...`);
+  }
+  
+  const result = await client.callTool({ name: 'teams_get_favorites', arguments: {} });
+  
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const textContent = content.find(c => c.type === 'text');
+  
+  if (textContent?.text) {
+    const response = JSON.parse(textContent.text);
+    
+    if (!response.success) {
+      log(`❌ Failed: ${response.error}`);
+      return;
+    }
+    
+    log(`\n⭐ Found ${response.count} favourites:\n`);
+    
+    for (const f of response.favorites) {
+      log(`   ${f.conversationId}`);
+    }
+  }
+}
+
+async function testThread(client: Client, options: TestOptions): Promise<void> {
+  if (!options.conversationId) {
+    console.error(`❌ Error: Conversation ID required`);
+    console.error(`   Usage: npm run test:mcp -- thread --to "conversationId" [--limit 50]`);
+    process.exit(1);
+  }
+  
+  if (!options.json) {
+    logSection(`Get Thread Messages`);
+    log(`Calling teams_get_thread via MCP protocol...`);
+  }
+  
+  const args: Record<string, unknown> = { conversationId: options.conversationId };
+  if (options.limit) args.limit = options.limit;
+  
+  const result = await client.callTool({ name: 'teams_get_thread', arguments: args });
+  
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const textContent = content.find(c => c.type === 'text');
+  
+  if (textContent?.text) {
+    const response = JSON.parse(textContent.text);
+    
+    if (!response.success) {
+      log(`❌ Failed: ${response.error}`);
+      return;
+    }
+    
+    log(`\n✅ Got ${response.messageCount} messages from thread:\n`);
+    
+    for (const msg of response.messages || []) {
+      const preview = msg.content.substring(0, 100).replace(/\n/g, ' ');
+      const sender = msg.sender?.displayName || msg.sender?.mri || 'Unknown';
+      const time = new Date(msg.timestamp).toLocaleString();
+      const fromMe = msg.isFromMe ? ' (you)' : '';
+      
+      log(`📝 ${sender}${fromMe} - ${time}`);
+      log(`   ${preview}${msg.content.length > 100 ? '...' : ''}`);
+      log('');
+    }
+  }
+}
+
+async function testSaveMessage(client: Client, options: TestOptions, save: boolean): Promise<void> {
+  if (!options.conversationId || !options.messageId) {
+    console.error(`❌ Error: Conversation ID and message ID required`);
+    console.error(`   Usage: npm run test:mcp -- ${save ? 'save' : 'unsave'} --to "conversationId" --message "messageId"`);
+    process.exit(1);
+  }
+  
+  if (!options.json) {
+    logSection(save ? `Save Message` : `Unsave Message`);
+    log(`Calling teams_${save ? 'save' : 'unsave'}_message via MCP protocol...`);
+  }
+  
+  const result = await client.callTool({ 
+    name: save ? 'teams_save_message' : 'teams_unsave_message', 
+    arguments: { 
+      conversationId: options.conversationId,
+      messageId: options.messageId,
+    } 
+  });
+  
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  
+  const content = result.content as Array<{ type: string; text?: string }>;
+  const textContent = content.find(c => c.type === 'text');
+  
+  if (textContent?.text) {
+    const response = JSON.parse(textContent.text);
+    
+    if (!response.success) {
+      log(`❌ Failed: ${response.error}`);
+      return;
+    }
+    
+    log(`\n✅ Message ${save ? 'saved' : 'unsaved'} successfully!`);
+    log(`   Conversation: ${response.conversationId}`);
+    log(`   Message: ${response.messageId}`);
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs();
   
@@ -398,6 +591,21 @@ async function main(): Promise<void> {
         break;
       case 'me':
         await testMe(client, options);
+        break;
+      case 'people':
+        await testPeople(client, options);
+        break;
+      case 'favorites':
+        await testFavorites(client, options);
+        break;
+      case 'save':
+        await testSaveMessage(client, options, true);
+        break;
+      case 'unsave':
+        await testSaveMessage(client, options, false);
+        break;
+      case 'thread':
+        await testThread(client, options);
         break;
     }
     
