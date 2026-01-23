@@ -43,6 +43,38 @@ import {
   getThreadMessages,
 } from './teams/direct-api.js';
 
+/** Returns a standard MCP error response for authentication failures. */
+function authRequiredError() {
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          success: false,
+          error: 'No valid authentication. Please use teams_login first.',
+        }, null, 2),
+      },
+    ],
+    isError: true,
+  };
+}
+
+/** Returns a standard MCP error response for API failures. */
+function apiError(error: string | undefined) {
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: JSON.stringify({
+          success: false,
+          error,
+        }, null, 2),
+      },
+    ],
+    isError: true,
+  };
+}
+
 // Tool definitions
 const TOOLS: Tool[] = [
   {
@@ -523,19 +555,7 @@ export async function createServer(): Promise<Server> {
           
           // Check if we have valid message auth
           if (!extractMessageAuth()) {
-            // Need to login first
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: 'No valid authentication. Please use teams_login first.',
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return authRequiredError();
           }
 
           const result = input.conversationId === '48:notes'
@@ -543,18 +563,7 @@ export async function createServer(): Promise<Server> {
             : await sendMessage(input.conversationId, input.content);
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {
@@ -608,18 +617,7 @@ export async function createServer(): Promise<Server> {
           
           // Check if we have a valid token
           if (!hasValidToken()) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: 'No valid authentication. Please use teams_login first.',
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return authRequiredError();
           }
 
           const { results, returned } = await searchPeople(input.query, input.limit);
@@ -643,18 +641,7 @@ export async function createServer(): Promise<Server> {
           const result = await getFavorites();
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {
@@ -676,18 +663,7 @@ export async function createServer(): Promise<Server> {
           const result = await addFavorite(input.conversationId);
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {
@@ -708,18 +684,7 @@ export async function createServer(): Promise<Server> {
           const result = await removeFavorite(input.conversationId);
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {
@@ -740,18 +705,7 @@ export async function createServer(): Promise<Server> {
           const result = await saveMessage(input.conversationId, input.messageId);
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {
@@ -774,18 +728,7 @@ export async function createServer(): Promise<Server> {
           const result = await unsaveMessage(input.conversationId, input.messageId);
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {
@@ -808,18 +751,7 @@ export async function createServer(): Promise<Server> {
           
           // Check if we have a valid token
           if (!hasValidToken()) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: 'No valid authentication. Please use teams_login first.',
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return authRequiredError();
           }
 
           const { contacts, returned } = await getFrequentContacts(input.limit);
@@ -844,18 +776,7 @@ export async function createServer(): Promise<Server> {
           const result = await getThreadMessages(input.conversationId, { limit: input.limit });
 
           if (!result.success) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: result.error,
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return apiError(result.error);
           }
 
           return {

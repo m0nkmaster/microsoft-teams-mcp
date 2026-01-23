@@ -82,7 +82,6 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 | `teams_search_people` | Search for people by name or email |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
-| `teams_search_people` | Search for people by name or email |
 | `teams_get_favorites` | Get pinned/favourite conversations |
 | `teams_add_favorite` | Pin a conversation to favourites |
 | `teams_remove_favorite` | Unpin a conversation from favourites |
@@ -191,17 +190,10 @@ No parameters. Returns current user's profile including `id`, `mri`, `email`, `d
 | query | string | required | Search term (name, email, or partial match) |
 | limit | number | 10 | Maximum number of results (1-50) |
 
-**Response** includes the same fields as `teams_get_frequent_contacts`. Use this when searching for a specific person by name or email, rather than getting the user's common contacts.
-
-### teams_search_people Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| query | string | required | Search term - name, email, or partial match |
-| limit | number | 10 | Maximum results to return |
-
 **Response** includes:
 - `results[]` with `id`, `mri`, `displayName`, `email`, `jobTitle`, `department`, `companyName`
+
+Use this when searching for a specific person by name or email, rather than getting the user's common contacts.
 
 ### teams_get_favorites Parameters
 

@@ -900,21 +900,19 @@ export async function getFavorites(region: string = 'amer'): Promise<FavoritesRe
 }
 
 /**
- * Adds a conversation to the user's favourites.
- * 
- * @param conversationId - The conversation ID to add
- * @param region - Region for the API (default: "amer")
+ * Internal helper to modify the favourites folder (add or remove items).
  */
-export async function addFavorite(
+async function modifyFavorite(
   conversationId: string,
-  region: string = 'amer'
+  action: 'AddItem' | 'RemoveItem',
+  region: string
 ): Promise<FavoriteModifyResult> {
   const auth = extractMessageAuth();
   if (!auth) {
     return { success: false, error: 'No valid authentication. Browser login required.' };
   }
 
-  // First, get the current folder state to get the folderId and version
+  // Get the current folder state to get the folderId and version
   const currentState = await getFavorites(region);
   if (!currentState.success) {
     return { success: false, error: currentState.error };
@@ -941,7 +939,7 @@ export async function addFavorite(
         folderHierarchyVersion: currentState.folderHierarchyVersion,
         actions: [
           {
-            action: 'AddItem',
+            action,
             folderId: currentState.folderId,
             itemId: conversationId,
           },
@@ -967,6 +965,19 @@ export async function addFavorite(
 }
 
 /**
+ * Adds a conversation to the user's favourites.
+ * 
+ * @param conversationId - The conversation ID to add
+ * @param region - Region for the API (default: "amer")
+ */
+export async function addFavorite(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<FavoriteModifyResult> {
+  return modifyFavorite(conversationId, 'AddItem', region);
+}
+
+/**
  * Removes a conversation from the user's favourites.
  * 
  * @param conversationId - The conversation ID to remove
@@ -976,61 +987,7 @@ export async function removeFavorite(
   conversationId: string,
   region: string = 'amer'
 ): Promise<FavoriteModifyResult> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return { success: false, error: 'No valid authentication. Browser login required.' };
-  }
-
-  // First, get the current folder state to get the folderId and version
-  const currentState = await getFavorites(region);
-  if (!currentState.success) {
-    return { success: false, error: currentState.error };
-  }
-
-  if (!currentState.folderId) {
-    return { success: false, error: 'Could not find Favorites folder' };
-  }
-
-  const url = `https://teams.microsoft.com/api/csa/${region}/api/v1/teams/users/me/conversationFolders?supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`;
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authentication': `skypetoken=${auth.skypeToken}`,
-        'Authorization': `Bearer ${auth.authToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Origin': 'https://teams.microsoft.com',
-        'Referer': 'https://teams.microsoft.com/',
-      },
-      body: JSON.stringify({
-        folderHierarchyVersion: currentState.folderHierarchyVersion,
-        actions: [
-          {
-            action: 'RemoveItem',
-            folderId: currentState.folderId,
-            itemId: conversationId,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      return { 
-        success: false, 
-        error: `API error: ${response.status} - ${errorText}` 
-      };
-    }
-
-    return { success: true };
-  } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : 'Unknown error',
-    };
-  }
+  return modifyFavorite(conversationId, 'RemoveItem', region);
 }
 
 /**
