@@ -87,7 +87,7 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 | `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
 | `teams_search_people` | Search for people by name or email |
 | `teams_login` | Trigger manual login (visible browser) |
-| `teams_status` | Check authentication and session state |
+| `teams_status` | Check auth status (search, messaging, favorites tokens) |
 | `teams_get_favorites` | Get pinned/favourite conversations |
 | `teams_add_favorite` | Pin a conversation to favourites |
 | `teams_remove_favorite` | Unpin a conversation from favourites |

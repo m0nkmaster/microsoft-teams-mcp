@@ -189,12 +189,18 @@ async function testStatus(client: Client, options: TestOptions): Promise<void> {
   if (textContent?.text) {
     const status = JSON.parse(textContent.text);
     
-    log('\nDirect API:');
+    log('\nDirect API (search):');
     if (status.directApi.available) {
       log(`  ✅ Available (${status.directApi.minutesRemaining} min remaining)`);
     } else {
       log('  ❌ No valid token');
     }
+    
+    log('\nMessaging:');
+    log(`  ${status.messaging?.available ? '✅ Available' : '❌ No valid session cookies'}`);
+    
+    log('\nFavorites:');
+    log(`  ${status.favorites?.available ? '✅ Available' : '❌ Missing CSA token or session cookies'}`);
     
     log('\nSession:');
     log(`  Exists: ${status.session.exists ? '✅ Yes' : '❌ No'}`);

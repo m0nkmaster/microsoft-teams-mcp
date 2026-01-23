@@ -32,6 +32,7 @@ import {
   sendMessage,
   sendNoteToSelf,
   extractMessageAuth,
+  extractCsaToken,
   getMe,
   searchPeople,
   getFrequentContacts,
@@ -516,6 +517,7 @@ export async function createServer(): Promise<Server> {
           const sessionExpired = isSessionLikelyExpired();
           const tokenStatus = getTokenStatus();
           const messageAuth = extractMessageAuth();
+          const csaToken = extractCsaToken();
           
           let authStatus = null;
           if (browserManager && isInitialised) {
@@ -534,6 +536,9 @@ export async function createServer(): Promise<Server> {
                   },
                   messaging: {
                     available: messageAuth !== null,
+                  },
+                  favorites: {
+                    available: messageAuth !== null && csaToken !== null,
                   },
                   session: {
                     exists: sessionExists,
