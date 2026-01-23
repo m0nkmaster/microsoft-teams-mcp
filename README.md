@@ -83,10 +83,25 @@ Or for development:
 
 | Tool | Description |
 |------|-------------|
-| `teams_search` | Search messages with query, pagination (from, size, maxResults) |
+| `teams_search` | Search messages with operators (`from:`, `sent:`, `in:`, etc.) |
+| `teams_get_me` | Get current user profile (email, name, ID) |
 | `teams_send_message` | Send a message to a Teams conversation (default: self-chat) |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
+
+### Search Operators
+
+```
+from:sarah@company.com     # Messages from person
+sent:today                 # Messages from today
+sent:lastweek              # Messages from last week
+in:project-alpha           # Messages in channel
+"Rob Smith"                # Find @mentions (name in quotes)
+hasattachment:true         # Messages with files
+NOT from:me                # Exclude your messages
+```
+
+Combine: `from:sarah sent:lastweek hasattachment:true`
 
 ## Session Management
 

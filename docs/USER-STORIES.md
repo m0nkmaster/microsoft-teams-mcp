@@ -42,11 +42,11 @@ This document defines user stories and personas to guide development of the Team
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_search` | ✅ Implemented |
+| `teams_search` | ✅ Implemented (returns conversationId) |
 | `teams_send_message` | ✅ Implemented |
 | `teams_get_thread_context` | ❌ Needed - get surrounding messages |
 
-**Gap:** Need to get conversationId from search result to reply in correct thread.
+**Status:** Basic flow works - search returns `conversationId` which can be used with `teams_send_message`. Thread context (surrounding messages) still needed for full context.
 
 ---
 
@@ -80,10 +80,10 @@ This document defines user stories and personas to guide development of the Team
 | Tool | Status |
 |------|--------|
 | `teams_search` | ✅ Implemented |
-| `teams_get_me` | ❌ Needed - get my user ID/email |
+| `teams_get_me` | ✅ Implemented |
 | `teams_get_thread` | ❌ Needed - check if I replied |
 
-**Gap:** Need user identity and thread reply detection.
+**Gap:** Thread reply detection still needed to filter unanswered questions.
 
 ---
 
@@ -204,9 +204,9 @@ This document defines user stories and personas to guide development of the Team
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_get_me` | ❌ Needed (Delve API available) |
+| `teams_get_me` | ✅ Implemented |
 
-**Status:** API discovered, implementation pending.
+**Status:** ✅ Works now - returns `id`, `mri`, `email`, `displayName`, `tenantId`.
 
 ---
 
@@ -232,16 +232,16 @@ This document defines user stories and personas to guide development of the Team
 > "Show messages where I was @mentioned this week"
 
 **Flow:**
-1. Search for @mentions of current user
-2. Filter by date
+1. Get user's display name via `teams_get_me`
+2. Search for `"Display Name" NOT from:email sent:lastweek`
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
 | `teams_search` | ✅ Implemented |
-| `teams_get_me` | ❌ Needed |
+| `teams_get_me` | ✅ Implemented |
 
-**Gap:** Need user identity to search for @mentions.
+**Status:** ✅ Works now using search operators with user's display name.
 
 ---
 
@@ -289,16 +289,16 @@ Based on user value and API readiness:
 ### Phase 1 - Quick Wins (APIs ready)
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 1.2 Search with filters | None (works now) | ✅ Done |
-| 4.3 Get my profile | `teams_get_me` | Low |
-| 4.1 Find person | `teams_search_people` | Low |
-| 5.2 Find @mentions | `teams_get_me` | Low |
+| 1.2 Search with filters | None | ✅ Done |
+| 4.3 Get my profile | `teams_get_me` | ✅ Done |
+| 5.2 Find @mentions | `teams_get_me` + search operators | ✅ Done |
+| 1.1 Find & reply | `conversationId` in search results | ✅ Done |
 
 ### Phase 2 - Core Functionality
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 1.1 Find & reply | Thread context | Medium |
-| 2.3 Channel catchup | Channel posts | Medium |
+| 4.1 Find person | `teams_search_people` | Low |
+| 2.3 Channel catchup | Channel posts (or `in:channel` operator) | Medium |
 | 6.1 Find files | Files API | Medium |
 
 ### Phase 3 - Advanced Features
@@ -318,10 +318,10 @@ Based on user value and API readiness:
 
 ## Next Steps
 
-1. **Implement `teams_get_me`** - Unlocks @mention searches and reply context
-2. **Implement `teams_search_people`** - Enables "message X person" flows
-3. **Implement `teams_get_channel_posts`** - Enables channel catchup
-4. **Add conversationId extraction** - Enable replying to search results
+1. ~~**Implement `teams_get_me`**~~ ✅ Done
+2. ~~**Add conversationId extraction**~~ ✅ Done - search results include `conversationId`
+3. **Implement `teams_search_people`** - Enables "message X person" flows
+4. **Implement `teams_get_channel_posts`** - Enables channel catchup (alternative: use `in:channel` search operator)
 
 ---
 
