@@ -235,6 +235,41 @@ from:john sent:lastweek # John's messages last week
 
 **Use Case:** Get conversation metadata for a specific chat or channel.
 
+**Response Structure:**
+```json
+{
+  "id": "19:abc@thread.tacv2",
+  "threadProperties": {
+    "threadType": "topic",
+    "productThreadType": "TeamsStandardChannel",
+    "groupId": "guid",
+    "topic": "Channel topic",
+    "topicThreadTopic": "Channel Name",
+    "spaceThreadTopic": "Team Name",
+    "spaceId": "19:teamroot@thread.tacv2"
+  },
+  "members": [...],
+  "lastMessage": {...}
+}
+```
+
+**Conversation Type Identification:**
+
+| Type | `threadType` | `productThreadType` | Name Source |
+|------|--------------|---------------------|-------------|
+| Standard Channel | `topic` | `TeamsStandardChannel` | `topicThreadTopic` |
+| Team (General/Root) | `space` | `TeamsTeam` | `spaceThreadTopic` |
+| Private Channel | `space` | `TeamsPrivateChannel` | `topicThreadTopic` |
+| Meeting Chat | `meeting` | `Meeting` | `topic` |
+| Group Chat | `chat` | `Chat` | `topic` or members |
+| 1:1 Chat | `chat` | `OneOnOne` | Other participant |
+
+**Key Fields:**
+- `groupId`: Present for all Team-related conversations (channels, team root)
+- `topicThreadTopic`: The channel name within a team
+- `spaceThreadTopic`: The parent team's name
+- `topic`: User-set topic for chats, or meeting title
+
 ---
 
 ### 2.3 Thread Annotations (Reactions, Read Status)

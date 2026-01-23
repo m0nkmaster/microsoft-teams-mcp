@@ -469,7 +469,10 @@ async function testFavorites(client: Client, options: TestOptions): Promise<void
     log(`\n⭐ Found ${response.count} favourites:\n`);
     
     for (const f of response.favorites) {
-      log(`   ${f.conversationId}`);
+      const typeLabel = f.conversationType ? ` [${f.conversationType}]` : '';
+      const nameLabel = f.displayName || '(unnamed)';
+      log(`   ${nameLabel}${typeLabel}`);
+      log(`     ID: ${f.conversationId}`);
     }
   }
 }

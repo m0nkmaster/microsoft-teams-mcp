@@ -71,6 +71,25 @@ Different Teams APIs use different authentication mechanisms:
 
 **Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
 
+### Conversation Types
+
+The chatsvc conversation API returns `threadProperties` with type information:
+
+| Type | `threadType` | `productThreadType` | Notes |
+|------|--------------|---------------------|-------|
+| Standard Channel | `topic` | `TeamsStandardChannel` | Has `groupId`, name in `topicThreadTopic` |
+| Team (General) | `space` | `TeamsTeam` | Team root, name in `spaceThreadTopic` |
+| Private Channel | `space` | `TeamsPrivateChannel` | Has `groupId`, name in `topicThreadTopic` |
+| Meeting Chat | `meeting` | `Meeting` | Name in `topic` |
+| Group Chat | `chat` | `Chat` | Name in `topic` or from members |
+| 1:1 Chat | `chat` | `OneOnOne` | Name from other participant |
+
+**Name sources:**
+- `topicThreadTopic`: Channel name (for channels within a team)
+- `spaceThreadTopic`: Team name (for team root conversations)
+- `topic`: Meeting title or user-set chat topic
+- For chats without topics: extract from `members` array or recent messages
+
 ### Session Persistence
 Playwright's `storageState()` is used to save and restore browser sessions. This means:
 - Session cookies help with faster re-authentication
@@ -203,7 +222,18 @@ Use this when searching for a specific person by name or email, rather than gett
 
 ### teams_get_favorites Parameters
 
-No parameters. Returns list of pinned conversation IDs.
+No parameters.
+
+**Response** includes:
+- `favorites[]` with `conversationId`, `displayName`, `conversationType`
+  - `displayName`: Human-readable name (channel name, chat topic, meeting title, or participant names)
+  - `conversationType`: One of `Channel`, `Chat`, or `Meeting`
+
+Name sources by type:
+- **Channels**: Channel name from Teams API (e.g., "WeaponX Support")
+- **Meetings**: Meeting title/subject
+- **Chats with topic**: The user-set chat topic
+- **Chats without topic**: Participant names extracted from recent messages (e.g., "Smith, John, Jones, Sarah + 2 more")
 
 ### teams_add_favorite / teams_remove_favorite Parameters
 

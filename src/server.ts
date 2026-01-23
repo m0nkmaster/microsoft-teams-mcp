@@ -171,7 +171,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'teams_get_favorites',
-    description: 'Get the user\'s favourite/pinned conversations in Teams. Returns a list of conversation IDs that have been pinned.',
+    description: 'Get the user\'s favourite/pinned conversations in Teams. Returns conversation IDs with display names (channel name, chat topic, or participant names) and type (Channel, Chat, Meeting).',
     inputSchema: {
       type: 'object',
       properties: {},

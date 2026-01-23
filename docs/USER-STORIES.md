@@ -44,9 +44,9 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_search` | ✅ Implemented (returns conversationId) |
 | `teams_send_message` | ✅ Implemented |
-| `teams_get_thread_context` | ❌ Needed - get surrounding messages |
+| `teams_get_thread` | ✅ Implemented - get surrounding messages |
 
-**Status:** Basic flow works - search returns `conversationId` which can be used with `teams_send_message`. Thread context (surrounding messages) still needed for full context.
+**Status:** ✅ Fully working - search returns `conversationId`, use `teams_get_thread` to see surrounding context, then `teams_send_message` to reply.
 
 ---
 
@@ -81,9 +81,9 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_search` | ✅ Implemented |
 | `teams_get_me` | ✅ Implemented |
-| `teams_get_thread` | ❌ Needed - check if I replied |
+| `teams_get_thread` | ✅ Implemented - check if I replied |
 
-**Gap:** Thread reply detection still needed to filter unanswered questions.
+**Status:** ✅ Now possible - search for mentions with "?", then use `teams_get_thread` on each result to check if you've replied. AI can filter to show only unanswered.
 
 ---
 
@@ -193,10 +193,10 @@ This document defines user stories and personas to guide development of the Team
 | Tool | Status |
 |------|--------|
 | `teams_search_people` | ✅ Implemented |
-| `teams_get_or_create_chat` | ❌ Needed |
+| `teams_get_or_create_chat` | ❌ Needed - start new 1:1 chats |
 | `teams_send_message` | ✅ Implemented |
 
-**Status:** People search now works. Still need chat creation to message someone you haven't chatted with before.
+**Status:** ⚠️ Partial - can find people and message existing conversations. Cannot start a new 1:1 chat with someone you haven't messaged before.
 
 ---
 
@@ -210,10 +210,10 @@ This document defines user stories and personas to guide development of the Team
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_search_people` | ❌ Needed |
+| `teams_search_people` | ✅ Implemented |
 | `teams_get_presence` | ❌ Needed (WebSocket-based) |
 
-**Gap:** Presence is real-time via WebSocket, not HTTP API.
+**Gap:** People search works, but presence/availability is real-time via WebSocket, not HTTP API.
 
 ---
 
@@ -319,15 +319,15 @@ Based on user value and API readiness:
 ### Phase 2 - Core Functionality
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 4.1 Find person | `teams_search_people` | ✅ Done |
-| 2.3 Channel catchup | Channel posts (or `in:channel` operator) | Medium |
+| 4.1 Find person | `teams_search_people` | ✅ Done (partial - can't create new chats) |
+| 2.3 Channel catchup | `teams_get_channel_posts` (or `in:channel` search) | Medium |
 | 6.1 Find files | Files API | Medium |
 
 ### Phase 3 - Advanced Features
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 2.1 Unanswered questions | Thread analysis | High |
-| 2.2 Unread messages | Consumption horizon | High |
+| 2.1 Unanswered questions | `teams_get_thread` | ✅ Done (AI filters results) |
+| 2.2 Unread messages | Consumption horizon | High (client-side state) |
 | 2.4 Check for replies | `teams_get_thread` | ✅ Done |
 | 3.1 Favourites | `teams_get_favorites` | ✅ Done |
 
@@ -341,14 +341,18 @@ Based on user value and API readiness:
 
 ## Next Steps
 
-1. ~~**Implement `teams_get_me`**~~ ✅ Done
-2. ~~**Add conversationId extraction**~~ ✅ Done - search results include `conversationId`
-3. ~~**Implement `teams_search_people`**~~ ✅ Done - enables "message X person" flows
-4. ~~**Implement favourites tools**~~ ✅ Done - `teams_get_favorites`, `teams_add_favorite`, `teams_remove_favorite`
-5. ~~**Implement save/unsave message**~~ ✅ Done - `teams_save_message`, `teams_unsave_message`
-6. **Implement `teams_get_or_create_chat`** - Create new 1:1 chats with people
-7. **Implement `teams_get_channel_posts`** - Enables channel catchup (alternative: use `in:channel` search operator)
-8. ~~**Implement `teams_get_thread`**~~ ✅ Done - Get replies to a specific message
+### Completed
+- ~~**Implement `teams_get_me`**~~ ✅ Done
+- ~~**Add conversationId extraction**~~ ✅ Done - search results include `conversationId`
+- ~~**Implement `teams_search_people`**~~ ✅ Done - enables "message X person" flows
+- ~~**Implement `teams_get_frequent_contacts`**~~ ✅ Done - resolves ambiguous names
+- ~~**Implement favourites tools**~~ ✅ Done - `teams_get_favorites`, `teams_add_favorite`, `teams_remove_favorite`
+- ~~**Implement save/unsave message**~~ ✅ Done - `teams_save_message`, `teams_unsave_message`
+- ~~**Implement `teams_get_thread`**~~ ✅ Done - Get replies to a specific message
+
+### Remaining
+1. **Implement `teams_get_or_create_chat`** - Create new 1:1 chats with people (enables messaging new contacts)
+2. **Implement `teams_get_channel_posts`** - Enables channel catchup (alternative: use `in:channel` search operator)
 
 ---
 
@@ -356,15 +360,18 @@ Based on user value and API readiness:
 
 ### Search Operators (Already Working)
 ```
-from:john.smith@company.com    # Messages from person
-to:me                          # Messages sent to you
+from:john.smith@company.com    # Messages from person (use actual email)
 in:general                     # Messages in channel
 sent:today                     # Messages from today
 sent:lastweek                  # Messages from last week
 hasattachment:true             # Messages with files
+"Display Name"                 # Find @mentions (use actual display name)
+NOT from:email                 # Exclude results
 ```
 
-Combine operators: `from:sarah sent:lastweek hasattachment:true`
+**⚠️ Does NOT work:** `@me`, `from:me`, `to:me`, `mentions:me` - use `teams_get_me` first to get actual email/displayName.
+
+Combine operators: `from:sarah@co.com sent:lastweek hasattachment:true`
 
 ### Conversation IDs
 - `48:notes` - Self-chat (notes to yourself)

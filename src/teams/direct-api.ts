@@ -592,6 +592,8 @@ export interface FrequentContactsResult {
 /** A favourite/pinned conversation item. */
 export interface FavoriteItem {
   conversationId: string;
+  displayName?: string;       // Human-readable name (channel/chat name, or participant names)
+  conversationType?: string;  // e.g., "Chat", "Channel", "Meeting"
   createdTime?: number;
   lastUpdatedTime?: number;
 }
@@ -865,6 +867,187 @@ export async function getFrequentContacts(
   };
 }
 
+/** Conversation properties returned from the chatsvc API. */
+interface ConversationProperties {
+  displayName?: string;
+  conversationType?: string;
+}
+
+/**
+ * Extracts unique participant names from recent messages in a conversation.
+ * Used as a fallback when conversation properties don't include member names.
+ */
+async function extractParticipantNamesFromMessages(
+  conversationId: string,
+  auth: MessageAuthInfo,
+  region: string = 'amer'
+): Promise<string | undefined> {
+  const url = `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages?view=msnp24Equivalent&pageSize=10`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+    });
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const data = await response.json() as Record<string, unknown>;
+    const messages = data.messages as Array<Record<string, unknown>> | undefined;
+    
+    if (!messages || messages.length === 0) {
+      return undefined;
+    }
+
+    // Extract unique sender names (excluding the current user)
+    const senderNames = new Set<string>();
+    for (const msg of messages) {
+      const fromMri = msg.from as string || '';
+      const displayName = msg.imdisplayname as string;
+      
+      // Skip messages from self and system messages
+      if (fromMri === auth.userMri || !displayName) {
+        continue;
+      }
+      
+      senderNames.add(displayName);
+    }
+
+    if (senderNames.size === 0) {
+      return undefined;
+    }
+
+    const names = Array.from(senderNames);
+    return names.length <= 3
+      ? names.join(', ')
+      : `${names.slice(0, 3).join(', ')} + ${names.length - 3} more`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Gets properties for a single conversation (name, type, etc.).
+ * 
+ * Uses the chatsvc conversation endpoint to fetch metadata.
+ * 
+ * @param conversationId - The conversation ID
+ * @param auth - Pre-extracted auth info (to avoid repeated extraction)
+ * @param region - Region for the API (default: "amer")
+ */
+async function getConversationProperties(
+  conversationId: string,
+  auth: MessageAuthInfo,
+  region: string = 'amer'
+): Promise<ConversationProperties | null> {
+  const url = `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}?view=msnp24Equivalent`;
+
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+        'Accept': 'application/json',
+        'Origin': 'https://teams.microsoft.com',
+        'Referer': 'https://teams.microsoft.com/',
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json() as Record<string, unknown>;
+    
+    // Extract the thread properties which contain the conversation details
+    const threadProps = data.threadProperties as Record<string, unknown> | undefined;
+    const productType = threadProps?.productThreadType as string | undefined;
+    
+    // Try to get display name from various sources
+    let displayName: string | undefined;
+    
+    // For Teams channels: topicThreadTopic is the channel name, topic is fallback
+    if (threadProps?.topicThreadTopic) {
+      displayName = threadProps.topicThreadTopic as string;
+    }
+    
+    // For standard channels: topic is the channel name
+    if (!displayName && threadProps?.topic) {
+      displayName = threadProps.topic as string;
+    }
+    
+    // For Teams (the team itself, not a channel): spaceThreadTopic is the team name
+    if (!displayName && threadProps?.spaceThreadTopic) {
+      displayName = threadProps.spaceThreadTopic as string;
+    }
+    
+    // For group chats: threadtopic may be set
+    if (!displayName && threadProps?.threadtopic) {
+      displayName = threadProps.threadtopic as string;
+    }
+    
+    // For 1:1 chats and group chats without a topic: build from members
+    if (!displayName) {
+      const members = data.members as Array<Record<string, unknown>> | undefined;
+      if (members && members.length > 0) {
+        // Filter out the current user and build a name from the other participants
+        // Check multiple possible field names for the display name
+        const otherMembers = members
+          .filter(m => m.mri !== auth.userMri && m.id !== auth.userMri)
+          .map(m => (m.friendlyName || m.displayName || m.name) as string | undefined)
+          .filter((name): name is string => !!name);
+        
+        if (otherMembers.length > 0) {
+          displayName = otherMembers.length <= 3
+            ? otherMembers.join(', ')
+            : `${otherMembers.slice(0, 3).join(', ')} + ${otherMembers.length - 3} more`;
+        }
+      }
+    }
+    
+    // Determine conversation type from productThreadType or ID patterns
+    let conversationType: string | undefined;
+    
+    // Use productThreadType if available (most accurate)
+    if (productType) {
+      if (productType === 'Meeting') {
+        conversationType = 'Meeting';
+      } else if (productType.includes('Channel') || productType === 'TeamsTeam') {
+        conversationType = 'Channel';
+      } else if (productType === 'Chat' || productType === 'OneOnOne') {
+        conversationType = 'Chat';
+      }
+    }
+    
+    // Fallback to ID pattern detection
+    if (!conversationType) {
+      if (conversationId.includes('meeting_')) {
+        conversationType = 'Meeting';
+      } else if (threadProps?.groupId) {
+        // Has a groupId means it's part of a Team
+        conversationType = 'Channel';
+      } else if (conversationId.includes('@thread.tacv2') || conversationId.includes('@thread.v2')) {
+        conversationType = 'Chat';
+      } else if (conversationId.startsWith('8:')) {
+        conversationType = 'Chat';
+      }
+    }
+    
+    return { displayName, conversationType };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Gets the user's favourite/pinned conversations.
  * 
@@ -931,6 +1114,29 @@ export async function getFavorites(region: string = 'amer'): Promise<FavoritesRe
         lastUpdatedTime: i.lastUpdatedTime as number | undefined,
       };
     });
+
+    // Enrich favorites with display names by fetching conversation properties in parallel
+    // We need the message auth for the chatsvc API (different from CSA auth)
+    if (auth) {
+      const enrichmentPromises = favorites.map(async (fav) => {
+        const props = await getConversationProperties(fav.conversationId, auth, region);
+        if (props) {
+          fav.displayName = props.displayName;
+          fav.conversationType = props.conversationType;
+        }
+        
+        // Fallback: if no display name found, try extracting from recent messages
+        if (!fav.displayName) {
+          const nameFromMessages = await extractParticipantNamesFromMessages(fav.conversationId, auth, region);
+          if (nameFromMessages) {
+            fav.displayName = nameFromMessages;
+          }
+        }
+      });
+      
+      // Wait for all enrichment calls to complete (with a reasonable timeout)
+      await Promise.allSettled(enrichmentPromises);
+    }
 
     return {
       success: true,
