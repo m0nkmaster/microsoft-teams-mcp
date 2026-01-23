@@ -485,6 +485,40 @@ export function extractMessageAuth(): MessageAuthInfo | null {
 }
 
 /**
+ * Extracts the CSA (Chat Service Aggregator) token for the conversationFolders API.
+ * This token is different from the chatsvc token and is required for favorites operations.
+ */
+export function extractCsaToken(): string | null {
+  if (!fs.existsSync(SESSION_STATE_PATH)) {
+    return null;
+  }
+
+  try {
+    const state = JSON.parse(fs.readFileSync(SESSION_STATE_PATH, 'utf8'));
+
+    // Look for the MSAL token with chatsvcagg.teams.microsoft.com audience
+    for (const origin of state.origins || []) {
+      for (const item of (origin.localStorage || []) as { name: string; value: string }[]) {
+        if (item.name.includes('chatsvcagg.teams.microsoft.com') && !item.name.startsWith('tmp.')) {
+          try {
+            const data = JSON.parse(item.value) as { secret?: string };
+            if (data.secret) {
+              return data.secret;
+            }
+          } catch {
+            // Ignore parse errors
+          }
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+/**
  * Gets user's display name from session state.
  */
 export function getUserDisplayName(): string | null {
@@ -834,30 +868,32 @@ export async function getFrequentContacts(
 /**
  * Gets the user's favourite/pinned conversations.
  * 
- * Uses the conversationFolders API with chatsvc authentication.
+ * Uses the conversationFolders API with CSA token authentication.
+ * Requires both the skypetoken (from cookies) and the CSA token (from MSAL).
  * 
  * @param region - Region for the API (default: "amer")
  */
 export async function getFavorites(region: string = 'amer'): Promise<FavoritesResult> {
   const auth = extractMessageAuth();
-  if (!auth) {
+  const csaToken = extractCsaToken();
+  
+  if (!auth?.skypeToken || !csaToken) {
     return { success: false, favorites: [], error: 'No valid authentication. Browser login required.' };
   }
 
   const url = `https://teams.microsoft.com/api/csa/${region}/api/v1/teams/users/me/conversationFolders?supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`;
 
   try {
+    // Use GET request to retrieve folders (POST is only for modifications)
     const response = await fetch(url, {
-      method: 'POST',
+      method: 'GET',
       headers: {
         'Authentication': `skypetoken=${auth.skypeToken}`,
-        'Authorization': `Bearer ${auth.authToken}`,
-        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${csaToken}`,
         'Accept': 'application/json',
         'Origin': 'https://teams.microsoft.com',
         'Referer': 'https://teams.microsoft.com/',
       },
-      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
@@ -920,7 +956,9 @@ async function modifyFavorite(
   region: string
 ): Promise<FavoriteModifyResult> {
   const auth = extractMessageAuth();
-  if (!auth) {
+  const csaToken = extractCsaToken();
+  
+  if (!auth?.skypeToken || !csaToken) {
     return { success: false, error: 'No valid authentication. Browser login required.' };
   }
 
@@ -941,7 +979,7 @@ async function modifyFavorite(
       method: 'POST',
       headers: {
         'Authentication': `skypetoken=${auth.skypeToken}`,
-        'Authorization': `Bearer ${auth.authToken}`,
+        'Authorization': `Bearer ${csaToken}`,
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'Origin': 'https://teams.microsoft.com',

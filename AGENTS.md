@@ -58,12 +58,18 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 - Tokens typically expire after ~1 hour
 - Expired tokens trigger automatic browser fallback
 
-### Messaging Authentication
-Messaging uses a different auth mechanism than search:
-- **Search**: Uses JWT Bearer tokens from MSAL localStorage entries
-- **Messaging**: Uses session cookies (`skypetoken_asm`, `authtoken`) from Playwright's `storageState()`
+### Authentication Patterns
+Different Teams APIs use different authentication mechanisms:
 
-The `extractMessageAuth()` function in `direct-api.ts` extracts these cookies for sending messages without needing an active browser.
+| API | Auth Method | Helper Function |
+|-----|-------------|-----------------|
+| **Search** (Substrate v2/query) | JWT Bearer token from MSAL | `getValidToken()` |
+| **People/Suggestions** (Substrate v1/suggestions) | Same JWT + `cvid`/`logicalId` fields | `getValidToken()` |
+| **Messaging** (chatsvc) | `skypetoken_asm` cookie | `extractMessageAuth()` |
+| **Favorites** (csa/conversationFolders) | CSA token from MSAL + `skypetoken_asm` | `extractCsaToken()` + `extractMessageAuth()` |
+| **Threads** (chatsvc) | `skypetoken_asm` cookie | `extractMessageAuth()` |
+
+**Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
 
 ### Session Persistence
 Playwright's `storageState()` is used to save and restore browser sessions. This means:
