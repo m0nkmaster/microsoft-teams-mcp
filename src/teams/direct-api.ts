@@ -708,11 +708,13 @@ function parseV2Result(item: Record<string, unknown>): TeamsSearchResult | null 
   // The API returns it as Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String
   let conversationId: string | undefined;
   if (source) {
-    // Try direct extension field name
-    conversationId = source['Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String'] as string
-      || source['SkypeGroupId'] as string
-      || source['ConversationId'] as string
-      || source['ThreadId'] as string;
+    // Find the first valid string value from potential field names
+    conversationId = [
+      source['Extension_SkypeSpaces_ConversationPost_Extension_SkypeGroupId_String'],
+      source['SkypeGroupId'],
+      source['ConversationId'],
+      source['ThreadId'],
+    ].find((id): id is string => typeof id === 'string' && id.length > 0);
   }
 
   return {
