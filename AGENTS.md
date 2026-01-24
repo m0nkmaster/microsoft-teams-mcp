@@ -545,6 +545,8 @@ npm run test:mcp -- find_channel --query "weaponx"   # auto-prefixes teams_
 npm run test:mcp -- search "your query"              # teams_search
 npm run test:mcp -- search "your query" --from 25 --size 10
 npm run test:mcp -- status                           # teams_status
+npm run test:mcp -- me                               # teams_get_me
+npm run test:mcp -- login                            # teams_login
 npm run test:mcp -- send "Hello from MCP!"           # teams_send_message
 npm run test:mcp -- send "Message" --to "conv-id"
 npm run test:mcp -- reply "Thanks!" --to "channel-id" --message "msg-id"  # teams_reply_to_thread (simpler)
