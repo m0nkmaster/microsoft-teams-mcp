@@ -170,6 +170,8 @@ Session state and token cache files are protected by:
 | `teams_get_thread` | Get messages from a conversation/thread |
 | `teams_find_channel` | Find channels by name (your teams + org-wide), shows membership |
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
+| `teams_edit_message` | Edit one of your own messages |
+| `teams_delete_message` | Delete one of your own messages (soft delete) |
 
 ### Design Philosophy
 
@@ -450,6 +452,49 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 
 **Technical note:** The conversation ID format for 1:1 chats is `19:{id1}_{id2}@unq.gbl.spaces` where the two user object IDs are sorted lexicographically. This is a predictable format - Teams creates the conversation implicitly when the first message is sent.
 
+### teams_edit_message Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation containing the message |
+| messageId | string | required | The message ID to edit (numeric string) |
+| content | string | required | The new content for the message |
+
+**Response** includes:
+- `message` - Success confirmation
+- `conversationId` - The conversation ID
+- `messageId` - The edited message ID
+
+**Constraints:** You can only edit your own messages. The API returns 403 Forbidden if you try to edit someone else's message.
+
+**Example:**
+```
+1. teams_get_thread --to "19:abc@thread.tacv2" → find your message with id "1769276832046"
+2. teams_edit_message conversationId="19:abc@thread.tacv2" messageId="1769276832046" content="Updated text"
+```
+
+### teams_delete_message Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation containing the message |
+| messageId | string | required | The message ID to delete (numeric string) |
+
+**Response** includes:
+- `message` - Success confirmation
+- `conversationId` - The conversation ID
+- `messageId` - The deleted message ID
+
+**Constraints:**
+- You can only delete your own messages
+- Channel owners/moderators can delete other users' messages in their channels
+- This is a soft delete - the message is flagged, not permanently removed
+
+**Example:**
+```
+teams_delete_message conversationId="19:abc@thread.tacv2" messageId="1769276832046"
+```
+
 ## Development Commands
 
 ```bash
@@ -722,6 +767,8 @@ Based on API research, these tools could be implemented:
 | `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
 | `teams_find_channel` | Teams List + Substrate suggestions | Easy | ✅ Implemented (hybrid search) |
 | `teams_reply_to_thread` | chatsvc messages API | Easy | ✅ Implemented - simple thread replies |
+| `teams_edit_message` | chatsvc messages API | Easy | ✅ Implemented - edit own messages |
+| `teams_delete_message` | chatsvc messages API | Easy | ✅ Implemented - soft delete own messages |
 | `teams_get_person` | Delve person API | Easy | Pending |
 | `teams_get_channel_posts` | CSA containers API | Medium | Not needed - use `teams_get_thread` with channel ID |
 | `teams_get_files` | AllFiles API | Medium | Pending |

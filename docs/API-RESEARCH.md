@@ -720,6 +720,49 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
+### 4.4 Edit Message ✅ IMPLEMENTED
+
+**Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/messages/{messageId}`
+
+**Use Case:** Edit an existing message. You can only edit your own messages.
+
+**Request:**
+```json
+{
+  "id": "{messageId}",
+  "type": "Message",
+  "conversationid": "{conversationId}",
+  "content": "<p>Updated message content</p>",
+  "messagetype": "RichText/Html",
+  "contenttype": "text",
+  "imdisplayname": "Display Name"
+}
+```
+
+**Response:** `200 OK` (empty or minimal body)
+
+**Notes:**
+- Edited messages have a `skypeeditedid` field when fetched
+- The API returns 403 Forbidden if you try to edit someone else's message
+
+---
+
+### 4.5 Delete Message ✅ IMPLEMENTED
+
+**Endpoint:** `DELETE https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/messages/{messageId}?behavior=softDelete`
+
+**Use Case:** Delete a message (soft delete). You can only delete your own messages, unless you are a channel owner/moderator.
+
+**Response:** `200 OK` with `null` body
+
+**Notes:**
+- This is a soft delete - the message is flagged, not removed from the database
+- Search API filters deleted messages with `AND NOT (isClientSoftDeleted:TRUE)`
+- Channel owners/moderators can delete other users' messages
+- The API returns 403 Forbidden for unauthorised delete attempts
+
+---
+
 ## 5. Calendar & Scheduling APIs
 
 ### 5.1 Schedule / Next Availability

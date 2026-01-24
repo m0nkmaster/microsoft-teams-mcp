@@ -70,7 +70,6 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cursor-agent -p "You are a helpful code reviewer. Review this pull request and provide constructive feedback.
 
@@ -81,34 +80,124 @@ jobs:
           Your task:
           1. Read the diff from pr-diff.txt
           2. Identify any bugs, security issues, performance problems, or code quality improvements
-          3. Post your review as a GitHub PR comment using the gh CLI
+          3. Write your review as JSON to review-output.json
           
-          For each suggestion, use GitHub's suggestion syntax so it can be accepted with one click:
-          \`\`\`suggestion
-          corrected code here
-          \`\`\`
+          OUTPUT FORMAT (review-output.json):
+          {
+            \"summary\": \"Brief overall assessment of the PR\",
+            \"verdict\": \"approve\" | \"request_changes\" | \"comment\",
+            \"comments\": [
+              {
+                \"path\": \"src/example.ts\",
+                \"line\": 42,
+                \"body\": \"Issue description here. For code suggestions use:\\n\\\`\\\`\\\`suggestion\\ncorrected code\\n\\\`\\\`\\\`\"
+              }
+            ]
+          }
           
-          Use the gh CLI to post your review:
-          - For a summary comment: gh pr comment $PR_NUMBER --body 'your review'
-          - For inline suggestions: gh pr review $PR_NUMBER --comment --body 'your review'
+          RULES:
+          - 'path' must match exactly a file path from the diff (e.g., 'src/api/chatsvc-api.ts')
+          - 'line' must be a line number that exists in the NEW version of the file (right side of diff, lines with + or unchanged)
+          - Use 'verdict': 'approve' if code is good, 'request_changes' for blocking issues, 'comment' for suggestions
+          - comments array can be empty if no inline feedback needed
+          - Be constructive and specific. Focus on meaningful improvements, not style nitpicks.
           
-          Be constructive and specific. Focus on meaningful improvements, not style nitpicks.
-          If the code looks good, say so briefly.
-          
-          Sign your comments with: <!-- pr-reviewer-bot -->"
+          IMPORTANT: Write valid JSON to review-output.json using the file write tool."
 
-      - name: Respond to comment
-        if: github.event_name != 'pull_request'
+      - name: Post review with inline comments
+        if: github.event_name == 'pull_request'
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Skip if this is a bot comment
-          if echo "$COMMENT_BODY" | grep -q "<!-- pr-reviewer-bot -->"; then
-            echo "Skipping bot comment"
+          if [ ! -s review-output.json ]; then
+            echo "No review output generated"
+            exit 1
+          fi
+          
+          # Validate JSON
+          if ! jq empty review-output.json 2>/dev/null; then
+            echo "Invalid JSON in review-output.json, falling back to plain comment"
+            gh pr comment $PR_NUMBER --body "$(cat review-output.json)
+
+          <!-- pr-reviewer-bot -->"
             exit 0
           fi
           
+          # Extract fields
+          SUMMARY=$(jq -r '.summary // "No summary provided"' review-output.json)
+          VERDICT=$(jq -r '.verdict // "comment"' review-output.json | tr '[:lower:]' '[:upper:]')
+          
+          # GitHub Actions cannot APPROVE or REQUEST_CHANGES on PRs by default
+          # So we always use COMMENT event but show the verdict in the body
+          EVENT="COMMENT"
+          
+          # Add verdict emoji to the summary
+          case "$VERDICT" in
+            APPROVE) VERDICT_PREFIX="✅ **Verdict: Approve**" ;;
+            REQUEST_CHANGES) VERDICT_PREFIX="🔴 **Verdict: Changes Requested**" ;;
+            *) VERDICT_PREFIX="💬 **Verdict: Comment**" ;;
+          esac
+          
+          # Build the review payload
+          REVIEW_BODY="${VERDICT_PREFIX}
+
+          ${SUMMARY}
+
+          <!-- pr-reviewer-bot -->"
+          
+          # Check if there are inline comments
+          COMMENT_COUNT=$(jq '.comments | length' review-output.json)
+          
+          if [ "$COMMENT_COUNT" -gt 0 ]; then
+            # Build review with inline comments
+            jq -n \
+              --arg body "$REVIEW_BODY" \
+              --arg event "$EVENT" \
+              --slurpfile review review-output.json \
+              '{
+                body: $body,
+                event: $event,
+                comments: [$review[0].comments[] | {path: .path, line: .line, body: .body}]
+              }' > review-payload.json
+            
+            echo "Posting review with $COMMENT_COUNT inline comment(s)..."
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+              --input review-payload.json
+          else
+            # No inline comments, just post the review summary
+            echo "Posting review summary (no inline comments)..."
+            jq -n \
+              --arg body "$REVIEW_BODY" \
+              --arg event "$EVENT" \
+              '{body: $body, event: $event}' > review-payload.json
+            
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+              --input review-payload.json
+          fi
+          
+          echo "Review posted successfully"
+
+      - name: Check if bot comment
+        if: github.event_name != 'pull_request'
+        id: check-bot
+        run: |
+          if echo "$COMMENT_BODY" | grep -q "<!-- pr-reviewer-bot -->"; then
+            echo "is_bot=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_bot=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Respond to comment
+        if: github.event_name != 'pull_request' && steps.check-bot.outputs.is_bot != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
           cursor-agent -p "You are an AI code reviewer assistant responding to a comment on a pull request.
 
           PR Title: $PR_TITLE
@@ -123,8 +212,25 @@ jobs:
           - Acknowledge if the commenter makes a good point
           - Provide additional context or alternatives
 
-          If the comment doesn't require a response (e.g., just 'thanks' or 'done'), don't post anything.
-
-          Use: gh pr comment $PR_NUMBER --body 'your response'
+          If the comment doesn't require a response (e.g., just 'thanks' or 'done'), write 'NO_RESPONSE_NEEDED' to response-output.md and nothing else.
           
-          Sign your comments with: <!-- pr-reviewer-bot -->"
+          Otherwise, write your complete response to response-output.md using the file write tool."
+
+      - name: Post response comment
+        if: github.event_name != 'pull_request' && steps.check-bot.outputs.is_bot != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s response-output.md ]; then
+            # Check if agent decided no response is needed
+            if grep -q "NO_RESPONSE_NEEDED" response-output.md; then
+              echo "No response needed for this comment"
+              exit 0
+            fi
+            # Append signature
+            echo "" >> response-output.md
+            echo "<!-- pr-reviewer-bot -->" >> response-output.md
+            gh pr comment $PR_NUMBER --body-file response-output.md
+          else
+            echo "No response output generated"
+          fi
