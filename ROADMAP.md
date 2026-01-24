@@ -19,6 +19,5 @@ Search/discover teams by name (similar to find channel but returns team-level in
 - Find meeting recordings
 
 
-## Graph API
+## Edit and Delete messages
 
-We are using graph API for user profile, can we actually access more of it with the creds we have? 
