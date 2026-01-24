@@ -17,6 +17,7 @@ import {
   MAX_THREAD_LIMIT,
   DEFAULT_CHANNEL_LIMIT,
   MAX_CHANNEL_LIMIT,
+  MSAL_TOKEN_DELAY_MS,
 } from '../constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
