@@ -146,15 +146,18 @@ export interface ReplyToThreadResult extends SendMessageResult {
 /**
  * Replies to a thread in a Teams channel.
  * 
- * This is a convenience function that automatically finds the thread root
- * and posts the reply correctly. Use this instead of manually figuring out
- * the thread root message ID.
+ * Uses the provided messageId directly as the thread root. In Teams channels:
+ * - If messageId is a top-level post, the reply goes under that post
+ * - If messageId is already a reply within a thread, the reply goes to the same thread
  * 
- * @param conversationId - The channel conversation ID (from search results or teams_get_thread)
- * @param messageId - Any message ID in the thread you want to reply to
+ * For channel messages from search results, the messageId is typically the thread root
+ * (the original message that started the thread).
+ * 
+ * @param conversationId - The channel conversation ID (from search results)
+ * @param messageId - The message ID to reply to (typically the thread root from search)
  * @param content - The reply content
  * @param region - API region (default: 'amer')
- * @returns The result including the new message ID and thread root used
+ * @returns The result including the new message ID
  */
 export async function replyToThread(
   conversationId: string,
@@ -162,35 +165,11 @@ export async function replyToThread(
   content: string,
   region: string = 'amer'
 ): Promise<Result<ReplyToThreadResult>> {
-  // First, fetch the thread to find the root message
-  const threadResult = await getThreadMessages(conversationId, { limit: 50 }, region);
+  // Use the provided messageId directly as the thread root
+  // Search results return the thread root ID for channel messages
+  const threadRootMessageId = messageId;
   
-  if (!threadResult.ok) {
-    return threadResult;
-  }
-  
-  const messages = threadResult.value.messages;
-  
-  if (messages.length === 0) {
-    return err(createError(
-      ErrorCode.NOT_FOUND,
-      `No messages found in thread ${conversationId}. Cannot determine thread root.`
-    ));
-  }
-  
-  // The first message (oldest) is the thread root
-  // Messages are sorted oldest-first by getThreadMessages
-  const threadRoot = messages[0];
-  const threadRootMessageId = threadRoot.id;
-  
-  // Verify the provided messageId exists in this thread
-  const messageExists = messages.some(m => m.id === messageId || m.clientMessageId === messageId);
-  if (!messageExists) {
-    // The message might be outside the fetched range, but we'll proceed anyway
-    // since the user explicitly asked to reply to this thread
-  }
-  
-  // Send the reply using the thread root's message ID
+  // Send the reply using the provided message ID as the thread root
   const sendResult = await sendMessage(conversationId, content, {
     region,
     replyToMessageId: threadRootMessageId,

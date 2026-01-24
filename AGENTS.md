@@ -156,7 +156,7 @@ Session state and token cache files are protected by:
 |------|---------|
 | `teams_search` | Search messages with query operators, supports pagination |
 | `teams_send_message` | Send a message to a Teams conversation |
-| `teams_reply_to_thread` | Reply to a channel thread (simpler than teams_send_message for replies) |
+| `teams_reply_to_thread` | Reply to a channel message as a threaded reply |
 | `teams_get_me` | Get current user profile (email, name, ID) |
 | `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
 | `teams_search_people` | Search for people by name or email |
@@ -282,26 +282,27 @@ teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | content | string | required | The reply content to send. |
-| conversationId | string | required | The channel conversation ID. |
-| messageId | string | required | Any message ID in the thread you want to reply to. |
+| conversationId | string | required | The channel conversation ID (from search results). |
+| messageId | string | required | The message ID to reply to (from search results). |
 
-**Why use this instead of `teams_send_message`?**
+**How it works:**
 
-This tool is simpler for channel thread replies because:
-1. You don't need to know the thread root message ID - just provide any message from the thread
-2. The tool automatically fetches the thread and finds the root
-3. It handles all the URL construction internally
+The tool uses the provided `messageId` directly as the thread root. In Teams channels:
+- If the message is a top-level post, the reply appears as a threaded reply under that post
+- If the message is already a reply within a thread, the reply goes to the same thread
+
+**Important:** The `messageId` from search results is the timestamp-based ID (e.g., `1737445069907`) that Teams uses for threading. This is extracted automatically from search results.
 
 **Example workflow:**
 
 ```
-1. teams_search "budget report" → find a message with conversationId and messageId
-2. teams_reply_to_thread content="Thanks!" conversationId="19:channel@thread.tacv2" messageId="1769274474340"
+1. teams_search "budget report" → returns { conversationId: "19:abc@thread.tacv2", messageId: "1737445069907" }
+2. teams_reply_to_thread content="Thanks!" conversationId="19:abc@thread.tacv2" messageId="1737445069907"
 ```
 
 **Response** includes:
 - `messageId` - Your new reply's message ID
-- `threadRootMessageId` - The thread root that was used
+- `threadRootMessageId` - The message ID used for the reply
 - `conversationId` - The channel ID
 
 ### teams_get_me Parameters
