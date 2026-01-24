@@ -11,25 +11,51 @@ This is an MCP (Model Context Protocol) server that enables AI assistants to sea
 ```
 src/
 ├── index.ts              # Entry point, runs the MCP server
-├── server.ts             # MCP server with tool definitions
-├── browser/
-│   ├── context.ts        # Playwright browser/context management
-│   ├── session.ts        # Session persistence (cookies, storage, token expiry)
-│   └── auth.ts           # Authentication detection and handling
-├── teams/
-│   ├── direct-api.ts     # Direct HTTP calls to Substrate API (preferred)
-│   ├── search.ts         # Browser-based search (fallback)
+├── server.ts             # MCP server with tool definitions (TeamsServer class)
+├── auth/                 # Authentication and credential management
+│   ├── index.ts          # Module exports
+│   ├── crypto.ts         # AES-256-GCM encryption for credentials at rest
+│   ├── session-store.ts  # Secure session state storage with encryption
+│   └── token-extractor.ts # Extract tokens from Playwright session state
+├── api/                  # API client modules (one per API surface)
+│   ├── index.ts          # Module exports
+│   ├── substrate-api.ts  # Search and people APIs (Substrate v2)
+│   ├── chatsvc-api.ts    # Messaging, threads, save/unsave (chatsvc)
+│   └── csa-api.ts        # Favorites API (CSA)
+├── browser/              # Playwright browser automation
+│   ├── context.ts        # Browser/context management with encrypted session
+│   └── auth.ts           # Authentication detection and manual login handling
+├── teams/                # Teams-specific DOM automation (fallback only)
+│   ├── search.ts         # Browser-based search (fallback when no token)
 │   ├── messages.ts       # Message extraction from DOM
 │   └── api-interceptor.ts # Network request interception
 ├── utils/
 │   ├── parsers.ts        # Pure parsing functions (testable)
-│   └── parsers.test.ts   # Unit tests for parsers
+│   ├── parsers.test.ts   # Unit tests for parsers
+│   ├── http.ts           # HTTP client with retry, timeout, error handling
+│   └── api-config.ts     # API endpoints and header configuration
+├── types/
+│   ├── teams.ts          # Teams data interfaces
+│   ├── errors.ts         # Error taxonomy with machine-readable codes
+│   └── result.ts         # Result<T, E> type for explicit error handling
 ├── __fixtures__/
 │   └── api-responses.ts  # Mock API responses for testing
-├── types/
-│   └── teams.ts          # TypeScript interfaces
 └── test/                 # Integration test tools (CLI, MCP harness)
 ```
+
+### Key Architectural Changes (v0.2.0)
+
+1. **Credential Encryption**: Session state and token cache are now encrypted at rest using AES-256-GCM with a machine-specific key derived from hostname and username. Files have restrictive permissions (0o600).
+
+2. **Server Class Pattern**: `TeamsServer` class encapsulates all state (browser manager, initialisation flag) to allow multiple server instances and simpler testing.
+
+3. **Error Taxonomy**: All errors now have machine-readable codes (`ErrorCode` enum), `retryable` flags, and `suggestions` arrays to help LLMs understand and recover from failures.
+
+4. **Result Types**: API functions return `Result<T, McpError>` instead of `{ success: boolean, error?: string }` for type-safe error handling.
+
+5. **HTTP Utilities**: Centralised HTTP client with automatic retry (exponential backoff), request timeouts, and rate limit tracking.
+
+6. **MCP Resources**: Added passive resources (`teams://me/profile`, `teams://me/favorites`, `teams://status`) for context discovery without tool calls.
 
 ## Key Design Decisions
 
@@ -61,13 +87,13 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 ### Authentication Patterns
 Different Teams APIs use different authentication mechanisms:
 
-| API | Auth Method | Helper Function |
-|-----|-------------|-----------------|
-| **Search** (Substrate v2/query) | JWT Bearer token from MSAL | `getValidToken()` |
-| **People/Suggestions** (Substrate v1/suggestions) | Same JWT + `cvid`/`logicalId` fields | `getValidToken()` |
-| **Messaging** (chatsvc) | `skypetoken_asm` cookie | `extractMessageAuth()` |
-| **Favorites** (csa/conversationFolders) | CSA token from MSAL + `skypetoken_asm` | `extractCsaToken()` + `extractMessageAuth()` |
-| **Threads** (chatsvc) | `skypetoken_asm` cookie | `extractMessageAuth()` |
+| API | Auth Method | Module | Helper Function |
+|-----|-------------|--------|-----------------|
+| **Search** (Substrate v2/query) | JWT Bearer token from MSAL | `auth/token-extractor` | `getValidSubstrateToken()` |
+| **People/Suggestions** (Substrate v1/suggestions) | Same JWT + `cvid`/`logicalId` fields | `auth/token-extractor` | `getValidSubstrateToken()` |
+| **Messaging** (chatsvc) | `skypetoken_asm` cookie | `auth/token-extractor` | `extractMessageAuth()` |
+| **Favorites** (csa/conversationFolders) | CSA token from MSAL + `skypetoken_asm` | `auth/token-extractor` | `extractCsaToken()` + `extractMessageAuth()` |
+| **Threads** (chatsvc) | `skypetoken_asm` cookie | `auth/token-extractor` | `extractMessageAuth()` |
 
 **Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
 
@@ -95,6 +121,12 @@ Playwright's `storageState()` is used to save and restore browser sessions. This
 - Session cookies help with faster re-authentication
 - MSAL tokens refresh automatically when you perform actions in the browser
 - After a browser-based search, tokens are captured and cached for direct API use
+
+### Credential Security
+Session state and token cache files are protected by:
+1. **Encryption at rest**: AES-256-GCM encryption using a key derived from machine-specific values (hostname + username)
+2. **File permissions**: Restrictive 0o600 permissions (owner read/write only)
+3. **Automatic migration**: Existing plaintext files are automatically encrypted on first read
 
 ## MCP Tools
 
@@ -412,7 +444,15 @@ Note: The `conversationId` returned in search results for threaded replies will 
 ### Adding New Tools
 1. Add tool definition to `TOOLS` array in `src/server.ts`
 2. Add input schema with Zod in `src/server.ts`
-3. Handle the tool in the switch statement in the request handler
+3. Create/update the relevant API module in `src/api/`
+4. Handle the tool in the switch statement in the `TeamsServer.createServer()` method
+5. Use `Result<T, McpError>` return types for consistent error handling
+
+### Adding New API Endpoints
+1. Add endpoint URL to `src/utils/api-config.ts`
+2. Create a function in the appropriate `src/api/*.ts` module
+3. Use `httpRequest()` from `src/utils/http.ts` for automatic retry and timeout handling
+4. Return `Result<T, McpError>` for type-safe error handling
 
 ### Updating Selectors
 Teams may update their UI. Key selector files:
@@ -497,7 +537,7 @@ From research, Teams uses these primary APIs:
 | `substrate.office.com/search/api/v1/suggestions` | People/message typeahead |
 | `substrate.office.com/search/api/v1/suggestions?scenario=peoplecache` | Frequent contacts list |
 
-### Channels & Messages
+### Messages
 | Endpoint | Purpose |
 |----------|---------|
 | `teams.microsoft.com/api/csa/{region}/api/v1/containers/{id}/posts` | Channel messages |
@@ -539,6 +579,7 @@ Based on API research, these tools could be implemented:
 | `teams_save_message` | rcmetadata API | Easy | ✅ Implemented |
 | `teams_unsave_message` | rcmetadata API | Easy | ✅ Implemented |
 | `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
+| `teams_find_channel` | CSA v3 teams/users/me API | Easy | Pending |
 | `teams_get_person` | Delve person API | Easy | Pending |
 | `teams_get_channel_posts` | CSA containers API | Medium | Pending |
 | `teams_get_files` | AllFiles API | Medium | Pending |

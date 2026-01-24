@@ -12,7 +12,7 @@
 import { createBrowserContext, closeBrowser } from '../browser/context.js';
 import { getAuthStatus, ensureAuthenticated } from '../browser/auth.js';
 import { searchTeams } from '../teams/search.js';
-import { hasSessionState, getSessionAge } from '../browser/session.js';
+import { hasSessionState, getSessionAge } from '../auth/session-store.js';
 
 interface TestOptions {
   headless: boolean;

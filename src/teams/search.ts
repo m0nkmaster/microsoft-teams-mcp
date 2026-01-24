@@ -6,6 +6,7 @@
 import type { Page, Locator } from 'playwright';
 import type { TeamsSearchResult, TeamsSearchResultsWithPagination, SearchPaginationResult } from '../types/teams.js';
 import { setupApiInterceptor, type SearchResultsWithPagination } from './api-interceptor.js';
+import { stripHtml } from '../utils/parsers.js';
 
 // Search box selectors for Teams v2 web app
 const SEARCH_SELECTORS = [
@@ -238,21 +239,7 @@ async function typeSearchQuery(
   if (debug) console.log('  [dom] Query submitted');
 }
 
-/**
- * Strips HTML tags from content.
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// stripHtml imported from ../utils/parsers.js
 
 /**
  * Extracts search results from the DOM using bookmarklet-inspired selectors.
