@@ -105,11 +105,14 @@ This document captures findings from researching the Microsoft Teams web applica
 | Operator | Example | Description |
 |----------|---------|-------------|
 | `from:` | `from:john.smith@company.com` | Messages from a person |
-| `to:` | `to:me` | Messages sent to you |
 | `in:` | `in:general` | Messages in a channel |
 | `sent:` | `sent:today`, `sent:lastweek` | By date |
 | `subject:` | `subject:budget` | In message subject |
 | `hasattachment:true` | - | Has files attached |
+| `"Name"` | `"Smith, John"` | Find @mentions (name in quotes) |
+| `NOT` | `NOT from:user@co.com` | Exclude results |
+
+**Note:** `@me`, `from:me`, `to:me`, and `mentions:me` do NOT work. Use `teams_get_me` to get your actual email/display name, then use those values.
 
 **Finding Mentions:**
 To find messages where you were @mentioned, search for your display name in quotes:
@@ -953,31 +956,30 @@ Also appears in:
 
 ## Potential MCP Tools
 
-Based on discovered APIs, here are potential tools to implement:
+Based on discovered APIs, here are the current tool implementation status:
 
 ### ✅ Implemented
 
-| Tool | API | Status |
-|------|-----|--------|
-| `teams_search` | Substrate v2 query | ✅ Done |
-| `teams_login` | Browser automation | ✅ Done |
-| `teams_status` | Token check | ✅ Done |
-| `teams_send_message` | chatsvc messages API | ✅ Done (uses skypetoken cookies) |
-| `teams_get_me` | JWT token extraction | ✅ Done |
-
-### ✅ Recently Implemented
-
 | Tool | API | Notes |
 |------|-----|-------|
-| `teams_get_favorites` | conversationFolders API | Get pinned/favourite conversations |
+| `teams_search` | Substrate v2 query | Full-text search with pagination |
+| `teams_login` | Browser automation | Manual login flow |
+| `teams_status` | Token check | Auth status for all APIs |
+| `teams_send_message` | chatsvc messages API | Send to any conversation |
+| `teams_reply_to_thread` | chatsvc messages API | Reply to channel threads |
+| `teams_edit_message` | chatsvc messages API | Edit own messages |
+| `teams_delete_message` | chatsvc messages API | Soft delete own messages |
+| `teams_get_me` | JWT token extraction | Current user profile |
+| `teams_get_favorites` | conversationFolders API | Pinned/favourite conversations |
 | `teams_add_favorite` | conversationFolders API | Pin a conversation |
 | `teams_remove_favorite` | conversationFolders API | Unpin a conversation |
 | `teams_save_message` | rcmetadata API | Bookmark a message |
-| `teams_unsave_message` | rcmetadata API | Remove bookmark from message |
+| `teams_unsave_message` | rcmetadata API | Remove bookmark |
 | `teams_search_people` | Substrate suggestions | Find people by name/email |
-| `teams_get_frequent_contacts` | Substrate peoplecache | Get frequently contacted people |
-| `teams_get_thread` | chatsvc messages API | Get messages from any conversation (chats, channels, meetings) |
-| `teams_find_channel` | Substrate channel suggestions | Find channels across the organisation |
+| `teams_get_frequent_contacts` | Substrate peoplecache | Frequently contacted people |
+| `teams_get_thread` | chatsvc messages API | Messages from any conversation |
+| `teams_find_channel` | Teams List + Substrate | Hybrid channel search |
+| `teams_get_chat` | Computed from user IDs | 1:1 conversation ID (no API call) |
 
 ### 🔜 Ready to Implement
 
@@ -986,13 +988,7 @@ Based on discovered APIs, here are potential tools to implement:
 | `teams_get_person` | Delve person API | Get specific person's details |
 | `teams_get_files` | AllFiles API | List files shared in a conversation |
 
-### ✅ Implemented via Discovery
-
-| Tool | Notes |
-|------|-------|
-| `teams_get_chat` | Get conversation ID for 1:1 chats. No API call needed - the ID is predictable from user object IDs. |
-
-### ⚠️ Needs More Research (Existing)
+### ⚠️ Needs More Research
 
 | Tool | Notes |
 |------|-------|
