@@ -20,25 +20,6 @@ This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, 
 - A Microsoft account with Teams access
 - Google Chrome, Microsoft Edge, or Chromium browser installed
 
-### Setup
-
-```bash
-git clone https://github.com/your-org/team-mcp.git
-cd team-mcp
-PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
-npm run build
-```
-
-The server uses your system's installed Chrome (macOS/Linux) or Edge (Windows) for authentication. This avoids downloading Playwright's bundled Chromium (~180MB).
-
-**If you don't have Chrome/Edge installed**, you can download Playwright's browser instead:
-
-```bash
-npm install
-npx playwright install chromium
-npm run build
-```
-
 ### Configure Your MCP Client
 
 Add to your MCP client configuration (e.g., Claude Desktop, Cursor):
@@ -47,21 +28,30 @@ Add to your MCP client configuration (e.g., Claude Desktop, Cursor):
 {
   "mcpServers": {
     "teams": {
-      "command": "node",
-      "args": ["/path/to/team-mcp/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "msteams-mcp"]
     }
   }
 }
 ```
 
-For development (uses tsx for hot reload):
+That's it. The server uses your system's Chrome (macOS/Linux) or Edge (Windows) for authentication.
+
+### Manual Installation (optional)
+
+If you prefer to install globally:
+
+```bash
+npm install -g msteams-mcp
+```
+
+Then configure:
 
 ```json
 {
   "mcpServers": {
     "teams": {
-      "command": "npx",
-      "args": ["tsx", "/path/to/team-mcp/src/index.ts"]
+      "command": "msteams-mcp"
     }
   }
 }
@@ -140,9 +130,9 @@ The server also exposes passive resources for context discovery:
 | `teams://me/favorites` | Pinned conversations |
 | `teams://status` | Authentication status |
 
-## CLI Tools
+## CLI Tools (Development)
 
-A command-line interface is included for testing and debugging:
+For local development, CLI tools are available for testing and debugging:
 
 ```bash
 # Check authentication status
@@ -198,12 +188,36 @@ If your session expires, call `teams_login` or delete these files.
 
 ## Development
 
+For local development:
+
+```bash
+git clone https://github.com/m0nkmaster/microsoft-teams-mcp.git
+cd microsoft-teams-mcp
+npm install
+npm run build
+```
+
+Development commands:
+
 ```bash
 npm run dev          # Run MCP server in dev mode
 npm run build        # Compile TypeScript
 npm run research     # Explore Teams APIs (logs network calls)
 npm test             # Run unit tests
 npm run typecheck    # TypeScript type checking
+```
+
+For development with hot reload, configure your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "teams": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/microsoft-teams-mcp/src/index.ts"]
+    }
+  }
+}
 ```
 
 See [AGENTS.md](AGENTS.md) for detailed architecture and contribution guidelines.
