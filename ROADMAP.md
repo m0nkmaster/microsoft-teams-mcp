@@ -2,7 +2,7 @@
 
 ## ✅ find channel
 
-Implemented `teams_find_channel` tool. Uses the CSA v3 `/api/csa/{region}/api/v3/teams/users/me` endpoint to fetch all teams and channels, then filters by name.
+Implemented `teams_find_channel` tool. Uses the Substrate suggestions API with `domain=TeamsChannel` to search ALL channels across the organisation (not just channels in the user's teams). Returns channel name, team name, and conversation ID for use with `teams_get_thread`.
 
 ## Token refresh mechanism
 

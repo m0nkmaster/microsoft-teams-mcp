@@ -1,5 +1,5 @@
 /**
- * CSA (Chat Service Aggregator) API client for favorites operations.
+ * CSA (Chat Service Aggregator) API client for favorites and teams operations.
  * 
  * Handles all calls to teams.microsoft.com/api/csa endpoints.
  */
@@ -16,6 +16,10 @@ import {
   getConversationProperties,
   extractParticipantNames,
 } from './chatsvc-api.js';
+import {
+  parseTeamsList,
+  type TeamWithChannels,
+} from '../utils/parsers.js';
 
 /** A favourite/pinned conversation item. */
 export interface FavoriteItem {
@@ -194,4 +198,48 @@ async function modifyFavorite(
   }
 
   return ok(undefined);
+}
+
+/** Response from getting the user's teams and channels. */
+export interface TeamsListResult {
+  teams: TeamWithChannels[];
+}
+
+/**
+ * Gets all teams and channels the user is a member of.
+ * 
+ * This returns the complete list of teams with their channels - not a search,
+ * but a full enumeration of the user's memberships.
+ */
+export async function getMyTeamsAndChannels(
+  region: string = 'amer'
+): Promise<Result<TeamsListResult>> {
+  const auth = extractMessageAuth();
+  const csaToken = extractCsaToken();
+
+  if (!auth?.skypeToken || !csaToken) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const url = CSA_API.teamsList(validRegion);
+
+  const response = await httpRequest<Record<string, unknown>>(
+    url,
+    {
+      method: 'GET',
+      headers: getCsaHeaders(auth.skypeToken, csaToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const teams = parseTeamsList(response.value.data);
+
+  return ok({ teams });
 }

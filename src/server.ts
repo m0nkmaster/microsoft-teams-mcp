@@ -34,8 +34,8 @@ import {
 } from './auth/token-extractor.js';
 
 // API modules
-import { searchMessages, searchPeople, getFrequentContacts } from './api/substrate-api.js';
-import { sendMessage, sendNoteToSelf, getThreadMessages, saveMessage, unsaveMessage } from './api/chatsvc-api.js';
+import { searchMessages, searchPeople, getFrequentContacts, searchChannels } from './api/substrate-api.js';
+import { sendMessage, sendNoteToSelf, getThreadMessages, saveMessage, unsaveMessage, getOneOnOneChatId } from './api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from './api/csa-api.js';
 
 // Types
@@ -237,6 +237,38 @@ const TOOLS: Tool[] = [
       required: ['conversationId'],
     },
   },
+  {
+    name: 'teams_find_channel',
+    description: 'Find Teams channels by name. Searches both (1) channels in teams you\'re a member of (reliable) and (2) channels across the organisation (discovery). Results indicate whether you\'re already a member via the isMember field. Channel IDs can be used with teams_get_thread to read messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Channel name to search for (partial match)',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results (default: 10, max: 50)',
+        },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'teams_get_chat',
+    description: 'Get the conversation ID for a 1:1 chat with a person. Use this to start a new chat or find an existing one. The conversation ID can then be used with teams_send_message to send messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        userId: {
+          type: 'string',
+          description: 'The user\'s identifier. Can be: MRI (8:orgid:guid), object ID with tenant (guid@tenantId), or raw object ID (guid). Get this from teams_search_people results.',
+        },
+      },
+      required: ['userId'],
+    },
+  },
 ];
 
 // Input schemas for validation
@@ -277,6 +309,15 @@ const FrequentContactsInputSchema = z.object({
 const GetThreadInputSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
   limit: z.number().min(1).max(200).optional().default(50),
+});
+
+const FindChannelInputSchema = z.object({
+  query: z.string().min(1, 'Query cannot be empty'),
+  limit: z.number().min(1).max(50).optional().default(10),
+});
+
+const GetChatInputSchema = z.object({
+  userId: z.string().min(1, 'User ID cannot be empty'),
 });
 
 /**
@@ -783,6 +824,39 @@ export class TeamsServer {
               conversationId: result.value.conversationId,
               messageCount: result.value.messages.length,
               messages: result.value.messages,
+            });
+          }
+
+          case 'teams_find_channel': {
+            const input = FindChannelInputSchema.parse(args);
+
+            const result = await searchChannels(input.query, input.limit);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              query: input.query,
+              count: result.value.returned,
+              channels: result.value.results,
+            });
+          }
+
+          case 'teams_get_chat': {
+            const input = GetChatInputSchema.parse(args);
+
+            const result = getOneOnOneChatId(input.userId);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              conversationId: result.value.conversationId,
+              otherUserId: result.value.otherUserId,
+              currentUserId: result.value.currentUserId,
+              note: 'Use this conversationId with teams_send_message to send a message. The conversation is created automatically when the first message is sent.',
             });
           }
 

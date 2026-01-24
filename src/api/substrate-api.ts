@@ -15,8 +15,12 @@ import {
 import {
   parseSearchResults,
   parsePeopleResults,
+  parseChannelResults,
+  filterChannelsByName,
   type PersonSearchResult,
+  type ChannelSearchResult,
 } from '../utils/parsers.js';
+import { getMyTeamsAndChannels } from './csa-api.js';
 import type { TeamsSearchResult, SearchPaginationResult } from '../types/teams.js';
 
 /** Search result with pagination. */
@@ -258,4 +262,153 @@ export async function getFrequentContacts(
     results: contacts,
     returned: contacts.length,
   });
+}
+
+/** Channel search result. */
+export interface ChannelSearchResultSet {
+  results: ChannelSearchResult[];
+  returned: number;
+}
+
+/**
+ * Searches for Teams channels by name using both:
+ * 1. User's own teams/channels (Teams List API) - reliable, shows membership
+ * 2. Organisation-wide discovery (Substrate suggestions) - broader but less reliable
+ * 
+ * Results are merged and deduplicated, with membership status indicated.
+ * 
+ * @param query - Channel name to search for
+ * @param limit - Maximum number of results (default: 10, max: 50)
+ */
+export async function searchChannels(
+  query: string,
+  limit: number = 10
+): Promise<Result<ChannelSearchResultSet>> {
+  const token = getValidSubstrateToken();
+  if (!token) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid token available. Browser login required.'
+    ));
+  }
+
+  // Run both searches in parallel
+  const [orgSearchResult, myTeamsResult] = await Promise.all([
+    searchChannelsOrgWide(query, limit, token),
+    getMyTeamsAndChannels(),
+  ]);
+
+  // Build a map of channel IDs the user is a member of
+  const memberChannelIds = new Set<string>();
+  const myChannelsMatching: ChannelSearchResult[] = [];
+
+  if (myTeamsResult.ok) {
+    // Filter the user's channels by the query and collect matching ones
+    const matching = filterChannelsByName(myTeamsResult.value.teams, query);
+    for (const channel of matching) {
+      memberChannelIds.add(channel.channelId);
+      myChannelsMatching.push(channel);
+    }
+    
+    // Also add all channel IDs to the set for membership lookup
+    for (const team of myTeamsResult.value.teams) {
+      for (const channel of team.channels) {
+        memberChannelIds.add(channel.channelId);
+      }
+    }
+  }
+
+  // Process org-wide results, marking membership status
+  const orgChannels: ChannelSearchResult[] = [];
+  if (orgSearchResult.ok) {
+    for (const channel of orgSearchResult.value) {
+      // Mark whether user is a member
+      channel.isMember = memberChannelIds.has(channel.channelId);
+      orgChannels.push(channel);
+    }
+  }
+
+  // Merge results: start with user's matching channels (definitely accessible),
+  // then add org-wide results that aren't duplicates
+  const seenIds = new Set<string>();
+  const merged: ChannelSearchResult[] = [];
+
+  // First add channels from user's teams (reliable, known accessible)
+  for (const channel of myChannelsMatching) {
+    if (!seenIds.has(channel.channelId)) {
+      seenIds.add(channel.channelId);
+      merged.push(channel);
+    }
+  }
+
+  // Then add org-wide results that aren't duplicates
+  for (const channel of orgChannels) {
+    if (!seenIds.has(channel.channelId)) {
+      seenIds.add(channel.channelId);
+      merged.push(channel);
+    }
+  }
+
+  // Apply limit
+  const limited = merged.slice(0, limit);
+
+  return ok({
+    results: limited,
+    returned: limited.length,
+  });
+}
+
+/**
+ * Internal: Searches for channels org-wide using the Substrate suggestions API.
+ * 
+ * This is a typeahead/autocomplete API, so matching behaviour may be inconsistent
+ * for multi-word queries. Used as a supplement to the user's own teams list.
+ */
+async function searchChannelsOrgWide(
+  query: string,
+  limit: number,
+  token: string
+): Promise<Result<ChannelSearchResult[]>> {
+  const cvid = crypto.randomUUID();
+  const logicalId = crypto.randomUUID();
+
+  const body = {
+    EntityRequests: [{
+      Query: {
+        QueryString: query,
+        DisplayQueryString: query,
+      },
+      EntityType: 'TeamsChannel',
+      Size: Math.min(limit, 50),
+    }],
+    cvid,
+    logicalId,
+  };
+
+  const response = await httpRequest<Record<string, unknown>>(
+    SUBSTRATE_API.channelSearch,
+    {
+      method: 'POST',
+      headers: getBearerHeaders(token),
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!response.ok) {
+    if (response.error.code === ErrorCode.AUTH_EXPIRED) {
+      clearTokenCache();
+    }
+    return response;
+  }
+
+  const data = response.value.data as Record<string, unknown> | undefined;
+  const results = parseChannelResults(data?.Groups as unknown[] | undefined);
+
+  // Mark all org-wide results as isMember: false initially
+  // (caller will update based on actual membership)
+  for (const result of results) {
+    result.isMember = false;
+  }
+
+  return ok(results);
 }

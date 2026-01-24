@@ -47,6 +47,9 @@ export const SUBSTRATE_API = {
   
   /** People search. */
   peopleSearch: 'https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar',
+  
+  /** Channel search (org-wide, not just user's teams). */
+  channelSearch: 'https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar&setflight=TurnOffMPLSuppressionTeams,EnableTeamsChannelDomainPowerbar&domain=TeamsChannel',
 } as const;
 
 /** Chat service API endpoints. */
@@ -69,6 +72,10 @@ export const CSA_API = {
   /** Conversation folders (favourites) URL. */
   conversationFolders: (region: Region) =>
     `https://teams.microsoft.com/api/csa/${region}/api/v1/teams/users/me/conversationFolders?supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`,
+  
+  /** Teams list (all teams/channels user is a member of). */
+  teamsList: (region: Region) =>
+    `https://teams.microsoft.com/api/csa/${region}/api/v3/teams/users/me?isPrefetch=false&enableMembershipSummary=true`,
 } as const;
 
 /** Common request headers for Teams API calls. */
