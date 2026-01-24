@@ -8,10 +8,7 @@ import { httpRequest } from '../utils/http.js';
 import { CSA_API, getCsaHeaders, validateRegion } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
-import {
-  extractMessageAuth,
-  extractCsaToken,
-} from '../auth/token-extractor.js';
+import { requireCsaAuth } from '../utils/auth-guards.js';
 import {
   getConversationProperties,
   extractParticipantNames,
@@ -43,15 +40,11 @@ export interface FavoritesResult {
 export async function getFavorites(
   region: string = 'amer'
 ): Promise<Result<FavoritesResult>> {
-  const auth = extractMessageAuth();
-  const csaToken = extractCsaToken();
-
-  if (!auth?.skypeToken || !csaToken) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireCsaAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const { auth, csaToken } = authResult.value;
 
   const validRegion = validateRegion(region);
   const url = CSA_API.conversationFolders(validRegion);
@@ -148,15 +141,11 @@ async function modifyFavorite(
   action: 'AddItem' | 'RemoveItem',
   region: string
 ): Promise<Result<void>> {
-  const auth = extractMessageAuth();
-  const csaToken = extractCsaToken();
-
-  if (!auth?.skypeToken || !csaToken) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireCsaAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const { auth, csaToken } = authResult.value;
 
   const validRegion = validateRegion(region);
 
@@ -214,15 +203,11 @@ export interface TeamsListResult {
 export async function getMyTeamsAndChannels(
   region: string = 'amer'
 ): Promise<Result<TeamsListResult>> {
-  const auth = extractMessageAuth();
-  const csaToken = extractCsaToken();
-
-  if (!auth?.skypeToken || !csaToken) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireCsaAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const { auth, csaToken } = authResult.value;
 
   const validRegion = validateRegion(region);
   const url = CSA_API.teamsList(validRegion);
