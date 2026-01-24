@@ -42,11 +42,12 @@ This document defines user stories and personas to guide development of the Team
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_search` | ✅ Implemented (returns conversationId) |
-| `teams_send_message` | ✅ Implemented |
+| `teams_search` | ✅ Implemented (returns conversationId, messageId) |
+| `teams_reply_to_thread` | ✅ Implemented - simple thread replies |
+| `teams_send_message` | ✅ Implemented - with replyToMessageId for manual control |
 | `teams_get_thread` | ✅ Implemented - get surrounding messages |
 
-**Status:** ✅ Fully working - search returns `conversationId`, use `teams_get_thread` to see surrounding context, then `teams_send_message` to reply.
+**Status:** ✅ Fully working - search returns `conversationId` and `messageId`, use `teams_reply_to_thread` to reply to channel threads (it finds the thread root automatically), or `teams_get_thread` for context first.
 
 ---
 
@@ -358,6 +359,7 @@ Based on user value and API readiness:
 - ~~**Implement `teams_get_thread`**~~ ✅ Done - Get replies to a specific message
 - ~~**Implement `teams_find_channel`**~~ ✅ Done - Find channels across the organisation
 - ~~**Implement `teams_get_chat`**~~ ✅ Done - Get conversation ID for 1:1 chats (enables messaging new contacts)
+- ~~**Implement thread replies**~~ ✅ Done - `teams_reply_to_thread` for simple replies, `teams_send_message` with `replyToMessageId` for manual control
 
 ### Remaining
 1. **Implement `teams_get_files`** - List files shared in a conversation (API discovered, implementation pending)

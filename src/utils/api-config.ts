@@ -54,9 +54,20 @@ export const SUBSTRATE_API = {
 
 /** Chat service API endpoints. */
 export const CHATSVC_API = {
-  /** Get messages URL for a conversation. */
-  messages: (region: Region, conversationId: string) =>
-    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages`,
+  /**
+   * Get messages URL for a conversation.
+   * 
+   * For thread replies in channels, provide replyToMessageId to append
+   * `;messageid={id}` to the conversation path. This tells Teams the message
+   * is a reply to an existing thread rather than a new top-level post.
+   */
+  messages: (region: Region, conversationId: string, replyToMessageId?: string) => {
+    // When replying to a thread, the URL includes ;messageid={threadRootId}
+    const conversationPath = replyToMessageId
+      ? `${conversationId};messageid=${replyToMessageId}`
+      : conversationId;
+    return `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationPath)}/messages`;
+  },
   
   /** Get conversation metadata URL. */
   conversation: (region: Region, conversationId: string) =>

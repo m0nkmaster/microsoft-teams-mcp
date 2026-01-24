@@ -24,6 +24,7 @@ const SHORTCUTS: Record<string, { tool: string; primaryArg?: string }> = {
   search: { tool: 'teams_search', primaryArg: 'query' },
   status: { tool: 'teams_status' },
   send: { tool: 'teams_send_message', primaryArg: 'content' },
+  reply: { tool: 'teams_reply_to_thread', primaryArg: 'content' },
   me: { tool: 'teams_get_me' },
   people: { tool: 'teams_search_people', primaryArg: 'query' },
   favorites: { tool: 'teams_get_favorites' },
@@ -40,6 +41,8 @@ const SHORTCUTS: Record<string, { tool: string; primaryArg?: string }> = {
 const FLAG_MAPPINGS: Record<string, string> = {
   '--to': 'conversationId',
   '--message': 'messageId',
+  '--reply': 'replyToMessageId',
+  '--replyTo': 'replyToMessageId',
   '--from': 'from',
   '--size': 'size',
   '--limit': 'limit',
