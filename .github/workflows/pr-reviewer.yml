@@ -127,15 +127,21 @@ jobs:
           SUMMARY=$(jq -r '.summary // "No summary provided"' review-output.json)
           VERDICT=$(jq -r '.verdict // "comment"' review-output.json | tr '[:lower:]' '[:upper:]')
           
-          # Map verdict to GitHub event
+          # GitHub Actions cannot APPROVE or REQUEST_CHANGES on PRs by default
+          # So we always use COMMENT event but show the verdict in the body
+          EVENT="COMMENT"
+          
+          # Add verdict emoji to the summary
           case "$VERDICT" in
-            APPROVE) EVENT="APPROVE" ;;
-            REQUEST_CHANGES) EVENT="REQUEST_CHANGES" ;;
-            *) EVENT="COMMENT" ;;
+            APPROVE) VERDICT_PREFIX="✅ **Verdict: Approve**" ;;
+            REQUEST_CHANGES) VERDICT_PREFIX="🔴 **Verdict: Changes Requested**" ;;
+            *) VERDICT_PREFIX="💬 **Verdict: Comment**" ;;
           esac
           
           # Build the review payload
-          REVIEW_BODY="${SUMMARY}
+          REVIEW_BODY="${VERDICT_PREFIX}
+
+          ${SUMMARY}
 
           <!-- pr-reviewer-bot -->"
           
