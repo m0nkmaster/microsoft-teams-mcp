@@ -5,7 +5,7 @@
  */
 
 import { httpRequest } from '../utils/http.js';
-import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, getTeamsHeaders, validateRegion, type Region } from '../utils/api-config.js';
+import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion, type Region } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import {
