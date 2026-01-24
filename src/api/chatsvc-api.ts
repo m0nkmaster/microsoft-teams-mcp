@@ -1,0 +1,447 @@
+/**
+ * Chat Service API client for messaging operations.
+ * 
+ * Handles all calls to teams.microsoft.com/api/chatsvc endpoints.
+ */
+
+import { httpRequest } from '../utils/http.js';
+import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion, type Region } from '../utils/api-config.js';
+import { ErrorCode, createError } from '../types/errors.js';
+import { type Result, ok, err } from '../types/result.js';
+import {
+  extractMessageAuth,
+  getUserDisplayName,
+} from '../auth/token-extractor.js';
+import { stripHtml, buildMessageLink } from '../utils/parsers.js';
+
+/** Result of sending a message. */
+export interface SendMessageResult {
+  messageId: string;
+  timestamp?: number;
+}
+
+/** A message from a thread/conversation. */
+export interface ThreadMessage {
+  id: string;
+  content: string;
+  contentType: string;
+  sender: {
+    mri: string;
+    displayName?: string;
+  };
+  timestamp: string;
+  conversationId: string;
+  clientMessageId?: string;
+  isFromMe?: boolean;
+  messageLink?: string;
+}
+
+/** Result of getting thread messages. */
+export interface GetThreadResult {
+  conversationId: string;
+  messages: ThreadMessage[];
+}
+
+/** Result of saving/unsaving a message. */
+export interface SaveMessageResult {
+  conversationId: string;
+  messageId: string;
+  saved: boolean;
+}
+
+/**
+ * Sends a message to a Teams conversation.
+ */
+export async function sendMessage(
+  conversationId: string,
+  content: string,
+  region: string = 'amer'
+): Promise<Result<SendMessageResult>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const displayName = getUserDisplayName() || 'User';
+
+  // Generate unique message ID
+  const clientMessageId = Date.now().toString();
+
+  // Wrap content in paragraph if not already HTML
+  const htmlContent = content.startsWith('<') ? content : `<p>${escapeHtml(content)}</p>`;
+
+  const body = {
+    content: htmlContent,
+    messagetype: 'RichText/Html',
+    contenttype: 'text',
+    imdisplayname: displayName,
+    clientmessageid: clientMessageId,
+  };
+
+  const url = CHATSVC_API.messages(validRegion, conversationId);
+
+  const response = await httpRequest<{ OriginalArrivalTime?: number }>(
+    url,
+    {
+      method: 'POST',
+      headers: getMessagingHeaders(auth.skypeToken, auth.authToken),
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    messageId: clientMessageId,
+    timestamp: response.value.data.OriginalArrivalTime,
+  });
+}
+
+/**
+ * Sends a message to your own notes/self-chat.
+ */
+export async function sendNoteToSelf(content: string): Promise<Result<SendMessageResult>> {
+  return sendMessage('48:notes', content);
+}
+
+/**
+ * Gets messages from a Teams conversation/thread.
+ */
+export async function getThreadMessages(
+  conversationId: string,
+  options: { limit?: number; startTime?: number } = {},
+  region: string = 'amer'
+): Promise<Result<GetThreadResult>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const limit = options.limit ?? 50;
+
+  let url = CHATSVC_API.messages(validRegion, conversationId);
+  url += `?view=msnp24Equivalent&pageSize=${limit}`;
+
+  if (options.startTime) {
+    url += `&startTime=${options.startTime}`;
+  }
+
+  const response = await httpRequest<{ messages?: unknown[] }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const rawMessages = response.value.data.messages;
+  if (!Array.isArray(rawMessages)) {
+    return ok({
+      conversationId,
+      messages: [],
+    });
+  }
+
+  const messages: ThreadMessage[] = [];
+
+  for (const raw of rawMessages) {
+    const msg = raw as Record<string, unknown>;
+
+    // Skip non-message types
+    const messageType = msg.messagetype as string;
+    if (!messageType || messageType.startsWith('Control/') || messageType === 'ThreadActivity/AddMember') {
+      continue;
+    }
+
+    const id = msg.id as string || msg.originalarrivaltime as string;
+    if (!id) continue;
+
+    const content = msg.content as string || '';
+    const contentType = msg.messagetype as string || 'Text';
+
+    const fromMri = msg.from as string || '';
+    const displayName = msg.imdisplayname as string || msg.displayName as string;
+
+    const timestamp = msg.originalarrivaltime as string ||
+      msg.composetime as string ||
+      new Date(parseInt(id, 10)).toISOString();
+
+    // Build message link
+    const messageLink = /^\d+$/.test(id)
+      ? buildMessageLink(conversationId, id)
+      : undefined;
+
+    messages.push({
+      id,
+      content: stripHtml(content),
+      contentType,
+      sender: {
+        mri: fromMri,
+        displayName,
+      },
+      timestamp,
+      conversationId,
+      clientMessageId: msg.clientmessageid as string,
+      isFromMe: fromMri === auth.userMri,
+      messageLink,
+    });
+  }
+
+  // Sort by timestamp (oldest first)
+  messages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  return ok({
+    conversationId,
+    messages,
+  });
+}
+
+/**
+ * Saves (bookmarks) a message.
+ */
+export async function saveMessage(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<Result<SaveMessageResult>> {
+  return setMessageSavedState(conversationId, messageId, true, region);
+}
+
+/**
+ * Unsaves (removes bookmark from) a message.
+ */
+export async function unsaveMessage(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<Result<SaveMessageResult>> {
+  return setMessageSavedState(conversationId, messageId, false, region);
+}
+
+/**
+ * Internal function to set the saved state of a message.
+ */
+async function setMessageSavedState(
+  conversationId: string,
+  messageId: string,
+  saved: boolean,
+  region: string
+): Promise<Result<SaveMessageResult>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.messageMetadata(validRegion, conversationId, messageId);
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'PUT',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+      body: JSON.stringify({
+        s: saved ? 1 : 0,
+        mid: parseInt(messageId, 10),
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    conversationId,
+    messageId,
+    saved,
+  });
+}
+
+/**
+ * Gets properties for a single conversation.
+ */
+export async function getConversationProperties(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<Result<{ displayName?: string; conversationType?: string }>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.conversation(validRegion, conversationId) + '?view=msnp24Equivalent';
+
+  const response = await httpRequest<Record<string, unknown>>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const data = response.value.data;
+  const threadProps = data.threadProperties as Record<string, unknown> | undefined;
+  const productType = threadProps?.productThreadType as string | undefined;
+
+  // Try to get display name from various sources
+  let displayName: string | undefined;
+
+  if (threadProps?.topicThreadTopic) {
+    displayName = threadProps.topicThreadTopic as string;
+  }
+
+  if (!displayName && threadProps?.topic) {
+    displayName = threadProps.topic as string;
+  }
+
+  if (!displayName && threadProps?.spaceThreadTopic) {
+    displayName = threadProps.spaceThreadTopic as string;
+  }
+
+  if (!displayName && threadProps?.threadtopic) {
+    displayName = threadProps.threadtopic as string;
+  }
+
+  // For chats without a topic: build from members
+  if (!displayName) {
+    const members = data.members as Array<Record<string, unknown>> | undefined;
+    if (members && members.length > 0) {
+      const otherMembers = members
+        .filter(m => m.mri !== auth.userMri && m.id !== auth.userMri)
+        .map(m => (m.friendlyName || m.displayName || m.name) as string | undefined)
+        .filter((name): name is string => !!name);
+
+      if (otherMembers.length > 0) {
+        displayName = otherMembers.length <= 3
+          ? otherMembers.join(', ')
+          : `${otherMembers.slice(0, 3).join(', ')} + ${otherMembers.length - 3} more`;
+      }
+    }
+  }
+
+  // Determine conversation type
+  let conversationType: string | undefined;
+
+  if (productType) {
+    if (productType === 'Meeting') {
+      conversationType = 'Meeting';
+    } else if (productType.includes('Channel') || productType === 'TeamsTeam') {
+      conversationType = 'Channel';
+    } else if (productType === 'Chat' || productType === 'OneOnOne') {
+      conversationType = 'Chat';
+    }
+  }
+
+  // Fallback to ID pattern detection
+  if (!conversationType) {
+    if (conversationId.includes('meeting_')) {
+      conversationType = 'Meeting';
+    } else if (threadProps?.groupId) {
+      conversationType = 'Channel';
+    } else if (conversationId.includes('@thread.tacv2') || conversationId.includes('@thread.v2')) {
+      conversationType = 'Chat';
+    } else if (conversationId.startsWith('8:')) {
+      conversationType = 'Chat';
+    }
+  }
+
+  return ok({ displayName, conversationType });
+}
+
+/**
+ * Extracts unique participant names from recent messages.
+ */
+export async function extractParticipantNames(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<Result<string | undefined>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  let url = CHATSVC_API.messages(validRegion, conversationId);
+  url += '?view=msnp24Equivalent&pageSize=10';
+
+  const response = await httpRequest<{ messages?: unknown[] }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return ok(undefined);
+  }
+
+  const messages = response.value.data.messages;
+  if (!messages || messages.length === 0) {
+    return ok(undefined);
+  }
+
+  const senderNames = new Set<string>();
+  for (const msg of messages) {
+    const m = msg as Record<string, unknown>;
+    const fromMri = m.from as string || '';
+    const displayName = m.imdisplayname as string;
+
+    if (fromMri === auth.userMri || !displayName) {
+      continue;
+    }
+
+    senderNames.add(displayName);
+  }
+
+  if (senderNames.size === 0) {
+    return ok(undefined);
+  }
+
+  const names = Array.from(senderNames);
+  const result = names.length <= 3
+    ? names.join(', ')
+    : `${names.slice(0, 3).join(', ')} + ${names.length - 3} more`;
+
+  return ok(result);
+}
+
+/**
+ * Escapes HTML special characters.
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}

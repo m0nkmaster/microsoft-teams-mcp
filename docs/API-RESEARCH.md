@@ -198,7 +198,74 @@ from:john sent:lastweek # John's messages last week
 
 ## 2. Channel & Chat APIs
 
-### 2.1 Channel Posts
+### 2.1 Teams List (User's Joined Teams) ✅ NEW
+
+**Endpoint:** `GET https://teams.microsoft.com/api/csa/{region}/api/v3/teams/users/me`
+
+**Query Parameters:**
+- `isPrefetch=false`
+- `enableMembershipSummary=true`
+- `supportsAdditionalSystemGeneratedFolders=true`
+- `supportsSliceItems=true`
+- `enableEngageCommunities=false`
+
+**Use Case:** Get all teams and channels the user is a member of. This is the main endpoint for discovering teams/channels.
+
+**Authentication:** Requires both:
+- `Authentication: skypetoken={skypeToken}` header
+- `Authorization: Bearer {csaToken}` header (from MSAL with chatsvcagg.teams.microsoft.com audience)
+
+**Response:**
+```json
+{
+  "conversationFolders": {
+    "folderHierarchyVersion": 1769200822270,
+    "conversationFolders": [
+      {
+        "id": "folder-guid",
+        "sortType": "UserDefinedCustomOrder",
+        "name": "Folder Name",
+        "folderType": "UserCreated",
+        "conversationFolderItems": [
+          {
+            "conversationId": "19:channelId@thread.tacv2",
+            "createdTime": 1753172521981,
+            "lastUpdatedTime": 1753172521981
+          }
+        ]
+      }
+    ]
+  },
+  "teams": [
+    {
+      "threadId": "19:teamId@thread.tacv2",
+      "displayName": "Team Name",
+      "description": "Team description",
+      "pictureETag": "etag-value",
+      "isFavorite": false,
+      "channels": [
+        {
+          "id": "19:channelId@thread.tacv2",
+          "displayName": "General",
+          "description": "Channel description",
+          "isFavorite": true,
+          "membershipType": "standard"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- The `teams` array contains all teams with their channels nested inside
+- Each team has a `threadId` (the team's root conversation ID) and a `channels` array
+- Channel `id` can be used with other APIs to get posts, send messages, etc.
+- The `conversationFolders` section contains user-created folders and pinned items
+
+---
+
+### 2.2 Channel Posts
 
 **Endpoint:** `GET https://teams.microsoft.com/api/csa/{region}/api/v1/containers/{containerId}/posts`
 
@@ -229,7 +296,7 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
-### 2.2 Conversation Details
+### 2.3 Conversation Details
 
 **Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}?view=msnp24Equivalent`
 
@@ -272,7 +339,7 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
-### 2.3 Thread Annotations (Reactions, Read Status)
+### 2.4 Thread Annotations (Reactions, Read Status)
 
 **Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/threads/{threadId}/annotations?messageIds={id1},{id2}`
 
@@ -298,7 +365,7 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
-### 2.4 Consumption Horizons (Read Receipts)
+### 2.5 Consumption Horizons (Read Receipts)
 
 **Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/threads/{threadId}/consumptionhorizons`
 
@@ -315,7 +382,7 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
-### 2.5 Conversation Folders (Favorites/Pinned)
+### 2.6 Conversation Folders (Favorites/Pinned)
 
 **Endpoint:** `POST https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders`
 
@@ -384,7 +451,7 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
-### 2.6 Saved Messages (Bookmarks)
+### 2.7 Saved Messages (Bookmarks)
 
 **Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/rcmetadata/{messageId}`
 

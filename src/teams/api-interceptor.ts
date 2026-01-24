@@ -3,8 +3,9 @@
  * Captures search requests and responses for direct API usage.
  */
 
-import type { Page, Request, Response } from 'playwright';
+import type { Page, Response } from 'playwright';
 import type { TeamsSearchResult } from '../types/teams.js';
+import { stripHtml } from '../utils/parsers.js';
 
 // Patterns that indicate search-related API calls
 const SEARCH_API_PATTERNS = [
@@ -59,21 +60,7 @@ function isSearchApiUrl(url: string): boolean {
   return SEARCH_API_PATTERNS.some(pattern => pattern.test(url));
 }
 
-/**
- * Strips HTML tags from content.
- */
-function stripHtml(html: string): string {
-  return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// stripHtml imported from ../utils/parsers.js
 
 /**
  * Parses Substrate search API response.

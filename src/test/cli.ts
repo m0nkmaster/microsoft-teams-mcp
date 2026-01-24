@@ -2,7 +2,7 @@
 /**
  * CLI tool to interact with Teams MCP functionality directly.
  * Useful for testing individual operations.
- * 
+ *
  * Usage:
  *   npm run cli -- status
  *   npm run cli -- search "your query"
@@ -13,8 +13,20 @@
 import { createBrowserContext, closeBrowser, type BrowserManager } from '../browser/context.js';
 import { ensureAuthenticated, forceNewLogin } from '../browser/auth.js';
 import { searchTeamsWithPagination } from '../teams/search.js';
-import { hasSessionState, getSessionAge, clearSessionState } from '../browser/session.js';
-import { directSearch, hasValidToken, getTokenStatus, sendNoteToSelf, sendMessage, extractMessageAuth, getMe } from '../teams/direct-api.js';
+import {
+  hasSessionState,
+  getSessionAge,
+  clearSessionState,
+} from '../auth/session-store.js';
+import {
+  hasValidSubstrateToken,
+  getSubstrateTokenStatus,
+  extractMessageAuth,
+  getUserProfile,
+  clearTokenCache,
+} from '../auth/token-extractor.js';
+import { searchMessages } from '../api/substrate-api.js';
+import { sendMessage, sendNoteToSelf } from '../api/chatsvc-api.js';
 
 type Command = 'status' | 'search' | 'login' | 'send' | 'me' | 'help';
 
@@ -31,18 +43,16 @@ function parseArgs(): CliArgs {
   const flags = new Set<string>();
   const options = new Map<string, string>();
   const remainingArgs: string[] = [];
-  
+
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--') && arg.includes('=')) {
       const [key, value] = arg.slice(2).split('=', 2);
       options.set(key, value);
     } else if (arg.startsWith('--')) {
-      // Check if next arg is a value
       const key = arg.slice(2);
       const next = args[i + 1];
       if (next && !next.startsWith('-')) {
-        // Check if it looks like a number (for from/size)
         if (/^\d+$/.test(next)) {
           options.set(key, next);
           i++;
@@ -58,7 +68,7 @@ function parseArgs(): CliArgs {
       remainingArgs.push(arg);
     }
   }
-  
+
   return { command, args: remainingArgs, flags, options };
 }
 
@@ -90,17 +100,13 @@ Pagination Options (for search):
 Send Options:
   --to <conversationId>   Send to a specific conversation (default: 48:notes = self)
 
-Search Modes:
-  1. Direct API (preferred) - Uses extracted auth token, no browser needed
-  2. Browser - Opens browser window for login, saves session for future use
-
 Examples:
   npm run cli -- status
-  npm run cli -- search "meeting notes"           # uses direct API if available
+  npm run cli -- search "meeting notes"
   npm run cli -- search "project update" --json
-  npm run cli -- search "query" --from 25         # page 2
-  npm run cli -- search "query" --browser         # force browser mode
-  npm run cli -- send "Test message to myself"    # send to self
+  npm run cli -- search "query" --from 25
+  npm run cli -- search "query" --browser
+  npm run cli -- send "Test message to myself"
   npm run cli -- login --force
 `);
 }
@@ -108,8 +114,8 @@ Examples:
 async function commandStatus(flags: Set<string>): Promise<void> {
   const hasSession = hasSessionState();
   const sessionAge = getSessionAge();
-  const tokenStatus = getTokenStatus();
-  
+  const tokenStatus = getSubstrateTokenStatus();
+
   const status = {
     directApi: {
       available: tokenStatus.hasToken,
@@ -122,20 +128,18 @@ async function commandStatus(flags: Set<string>): Promise<void> {
       likelyExpired: sessionAge !== null ? sessionAge > 12 : null,
     },
   };
-  
+
   if (flags.has('json')) {
     console.log(JSON.stringify(status, null, 2));
   } else {
     console.log('\n📊 Status\n');
-    
-    // Direct API status
+
     if (status.directApi.available) {
       console.log(`Direct API: ✅ Available (${status.directApi.minutesRemaining} min remaining)`);
     } else {
       console.log('Direct API: ❌ No valid token (browser login required)');
     }
-    
-    // Session status
+
     console.log(`Session exists: ${status.session.exists ? '✅ Yes' : '❌ No'}`);
     if (status.session.ageHours !== null) {
       console.log(`Session age: ${status.session.ageHours} hours`);
@@ -147,7 +151,7 @@ async function commandStatus(flags: Set<string>): Promise<void> {
 }
 
 async function commandSearch(
-  query: string, 
+  query: string,
   flags: Set<string>,
   options: Map<string, string>
 ): Promise<void> {
@@ -156,76 +160,77 @@ async function commandSearch(
     console.error('   Usage: npm run cli -- search "your query"');
     process.exit(1);
   }
-  
+
   const headless = flags.has('headless');
   const asJson = flags.has('json');
   const debug = flags.has('debug');
   const forceBrowser = flags.has('browser');
-  
-  // Pagination options
+
   const from = options.has('from') ? parseInt(options.get('from')!, 10) : 0;
   const size = options.has('size') ? parseInt(options.get('size')!, 10) : 25;
   const maxResults = options.has('maxResults') ? parseInt(options.get('maxResults')!, 10) : 25;
-  
+
   if (!asJson) {
     console.log(`\n🔍 Searching for: "${query}"`);
     if (from > 0) {
       console.log(`   Offset: ${from}, Size: ${size}`);
     }
   }
-  
-  // Try direct API first (unless --browser flag is used)
-  if (!forceBrowser && hasValidToken()) {
+
+  // Try direct API first
+  if (!forceBrowser && hasValidSubstrateToken()) {
     if (!asJson) {
       console.log('   Using direct API...\n');
     }
-    
-    try {
-      const { results, pagination } = await directSearch(query, { from, size, maxResults });
-      
+
+    const result = await searchMessages(query, { from, size, maxResults });
+
+    if (result.ok) {
       if (asJson) {
-        console.log(JSON.stringify({ 
+        console.log(JSON.stringify({
           mode: 'direct-api',
-          query, 
-          count: results.length, 
+          query,
+          count: result.value.results.length,
           pagination: {
-            from: pagination.from,
-            size: pagination.size,
-            returned: pagination.returned,
-            total: pagination.total,
-            hasMore: pagination.hasMore,
-            nextFrom: pagination.hasMore ? pagination.from + pagination.returned : undefined,
+            from: result.value.pagination.from,
+            size: result.value.pagination.size,
+            returned: result.value.pagination.returned,
+            total: result.value.pagination.total,
+            hasMore: result.value.pagination.hasMore,
+            nextFrom: result.value.pagination.hasMore
+              ? result.value.pagination.from + result.value.pagination.returned
+              : undefined,
           },
-          results,
+          results: result.value.results,
         }, null, 2));
       } else {
-        printResults(results, pagination);
+        printResults(result.value.results, result.value.pagination);
       }
       return;
-    } catch (error) {
-      if (!asJson) {
-        console.log(`   Direct API failed: ${error instanceof Error ? error.message : error}`);
-        console.log('   Falling back to browser...\n');
-      }
+    }
+
+    if (!asJson) {
+      console.log(`   Direct API failed: ${result.error.message}`);
+      console.log('   Falling back to browser...\n');
     }
   } else if (!asJson && !forceBrowser) {
     console.log('   No valid token, using browser...\n');
   } else if (!asJson) {
     console.log('   Using browser (--browser flag)...\n');
   }
-  
+
   // Fall back to browser-based search
   let manager: BrowserManager | null = null;
-  
+
   try {
     manager = await createBrowserContext({ headless });
-    
+
     await ensureAuthenticated(
       manager.page,
       manager.context,
       asJson ? undefined : (msg) => console.log(`   ${msg}`)
     );
-    
+
     const { results, pagination } = await searchTeamsWithPagination(manager.page, query, {
       maxResults,
       from,
@@ -233,15 +238,14 @@ async function commandSearch(
       waitMs: 10000,
       debug,
     });
-    
-    // Wait for MSAL to store the search token after the search API call
+
     await manager.page.waitForTimeout(3000);
-    
+
     if (asJson) {
-      console.log(JSON.stringify({ 
+      console.log(JSON.stringify({
         mode: 'browser',
-        query, 
-        count: results.length, 
+        query,
+        count: results.length,
         pagination: {
           from: pagination.from,
           size: pagination.size,
@@ -263,7 +267,10 @@ async function commandSearch(
   }
 }
 
-function printResults(results: import('../types/teams.js').TeamsSearchResult[], pagination: import('../types/teams.js').SearchPaginationResult): void {
+function printResults(
+  results: import('../types/teams.js').TeamsSearchResult[],
+  pagination: import('../types/teams.js').SearchPaginationResult
+): void {
   console.log(`\n📋 Found ${results.length} results`);
   if (pagination.total !== undefined) {
     console.log(`   Total available: ${pagination.total}`);
@@ -272,7 +279,7 @@ function printResults(results: import('../types/teams.js').TeamsSearchResult[], 
     console.log(`   More results available (use --from ${pagination.from + pagination.returned})`);
   }
   console.log();
-  
+
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     console.log(`${pagination.from + i + 1}. ${r.content.substring(0, 100).replace(/\n/g, ' ')}${r.content.length > 100 ? '...' : ''}`);
@@ -296,7 +303,6 @@ async function commandSend(
   const asJson = flags.has('json');
   const conversationId = options.get('to') || '48:notes';
 
-  // Check if we have valid authentication
   const auth = extractMessageAuth();
   if (!auth) {
     console.error('❌ No valid authentication. Please run: npm run cli -- login');
@@ -312,21 +318,27 @@ async function commandSend(
     console.log(`   Content: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`);
   }
 
-  const result = conversationId === '48:notes' 
+  const result = conversationId === '48:notes'
     ? await sendNoteToSelf(message)
     : await sendMessage(conversationId, message);
 
   if (asJson) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(
+      result.ok
+        ? { success: true, ...result.value }
+        : { success: false, error: result.error.message },
+      null,
+      2
+    ));
   } else {
-    if (result.success) {
+    if (result.ok) {
       console.log('\n✅ Message sent successfully!');
-      console.log(`   Message ID: ${result.messageId}`);
-      if (result.timestamp) {
-        console.log(`   Timestamp: ${new Date(result.timestamp).toISOString()}`);
+      console.log(`   Message ID: ${result.value.messageId}`);
+      if (result.value.timestamp) {
+        console.log(`   Timestamp: ${new Date(result.value.timestamp).toISOString()}`);
       }
     } else {
-      console.error(`\n❌ Failed to send message: ${result.error}`);
+      console.error(`\n❌ Failed to send message: ${result.error.message}`);
       process.exit(1);
     }
   }
@@ -335,7 +347,7 @@ async function commandSend(
 async function commandMe(flags: Set<string>): Promise<void> {
   const asJson = flags.has('json');
 
-  const profile = getMe();
+  const profile = getUserProfile();
 
   if (!profile) {
     if (asJson) {
@@ -362,20 +374,20 @@ async function commandMe(flags: Set<string>): Promise<void> {
 
 async function commandLogin(flags: Set<string>): Promise<void> {
   const force = flags.has('force');
-  
+
   if (force) {
     console.log('🔄 Forcing new login (clearing existing session)...');
     clearSessionState();
+    clearTokenCache();
   } else {
     console.log('🔐 Starting login flow...');
   }
-  
+
   let manager: BrowserManager | null = null;
-  
+
   try {
-    // Always visible for login
     manager = await createBrowserContext({ headless: false });
-    
+
     if (force) {
       await forceNewLogin(
         manager.page,
@@ -389,10 +401,10 @@ async function commandLogin(flags: Set<string>): Promise<void> {
         (msg) => console.log(`   ${msg}`)
       );
     }
-    
+
     console.log('\n✅ Login successful! Session has been saved.');
     console.log('   You can now run searches in headless mode.');
-    
+
   } finally {
     if (manager) {
       await closeBrowser(manager, true);
@@ -402,13 +414,13 @@ async function commandLogin(flags: Set<string>): Promise<void> {
 
 async function main(): Promise<void> {
   const { command, args, flags, options } = parseArgs();
-  
+
   try {
     switch (command) {
       case 'status':
         await commandStatus(flags);
         break;
-        
+
       case 'search':
         await commandSearch(args.join(' '), flags, options);
         break;
@@ -420,11 +432,11 @@ async function main(): Promise<void> {
       case 'me':
         await commandMe(flags);
         break;
-        
+
       case 'login':
         await commandLogin(flags);
         break;
-        
+
       case 'help':
       default:
         printHelp();

@@ -60,7 +60,7 @@ async function hasAuthenticatedContent(page: Page): Promise<boolean> {
 export async function getAuthStatus(page: Page): Promise<AuthStatus> {
   const currentUrl = page.url();
   const onLoginPage = isLoginUrl(currentUrl);
-  
+
   // If on login page, definitely not authenticated
   if (onLoginPage) {
     return {
@@ -93,17 +93,17 @@ export async function getAuthStatus(page: Page): Promise<AuthStatus> {
  */
 export async function navigateToTeams(page: Page): Promise<AuthStatus> {
   await page.goto(TEAMS_URL, { waitUntil: 'domcontentloaded' });
-  
+
   // Wait a moment for redirects to complete
   await page.waitForTimeout(2000);
-  
+
   return getAuthStatus(page);
 }
 
 /**
  * Waits for the user to complete manual authentication.
  * Returns when authenticated or throws after timeout.
- * 
+ *
  * @param page - The page to monitor
  * @param context - Browser context for saving session
  * @param timeoutMs - Maximum time to wait (default: 5 minutes)
@@ -122,23 +122,22 @@ export async function waitForManualLogin(
 
   while (Date.now() - startTime < timeoutMs) {
     const status = await getAuthStatus(page);
-    
+
     if (status.isAuthenticated) {
       log('Authentication successful!');
-      
+
       // Wait for MSAL to refresh tokens in the background
-      // This happens via JavaScript after the page loads
       log('Waiting for token refresh...');
       await page.waitForTimeout(5000);
-      
+
       // Navigate to trigger any pending token operations
       await page.goto('https://teams.microsoft.com', { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(5000);
-      
+
       // Save the session state with fresh tokens
       await saveSessionState(context);
       log('Session state saved.');
-      
+
       return;
     }
 
@@ -154,7 +153,7 @@ export async function waitForManualLogin(
  * 1. Navigate to Teams
  * 2. Check if already authenticated
  * 3. If not, wait for manual login
- * 
+ *
  * @param page - The page to use
  * @param context - Browser context for session management
  * @param onProgress - Callback for progress updates
@@ -171,20 +170,20 @@ export async function ensureAuthenticated(
 
   if (status.isAuthenticated) {
     log('Already authenticated.');
-    
+
     // Wait a moment for any token refresh to complete
     await page.waitForTimeout(3000);
-    
+
     // Save the session state with potentially refreshed tokens
     await saveSessionState(context);
-    
+
     return;
   }
 
   if (status.isOnLoginPage) {
     log('Login required. Please complete authentication in the browser window.');
     await waitForManualLogin(page, context, undefined, onProgress);
-    
+
     // Navigate back to Teams after login (in case we're on a callback URL)
     await navigateToTeams(page);
   } else {
@@ -205,10 +204,10 @@ export async function forceNewLogin(
   const log = onProgress ?? console.log;
 
   log('Starting fresh login...');
-  
+
   // Clear cookies to force re-authentication
   await context.clearCookies();
-  
+
   // Navigate and wait for login
   await navigateToTeams(page);
   await waitForManualLogin(page, context, undefined, onProgress);

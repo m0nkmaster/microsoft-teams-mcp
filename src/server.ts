@@ -1,6 +1,6 @@
 /**
  * MCP Server implementation for Teams search.
- * Exposes tools for searching Teams messages via browser automation.
+ * Exposes tools and resources for interacting with Microsoft Teams.
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -8,73 +8,38 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
   type Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
-import { 
-  createBrowserContext, 
-  closeBrowser, 
-  type BrowserManager 
-} from './browser/context.js';
-import { 
-  ensureAuthenticated, 
-  getAuthStatus, 
-  forceNewLogin 
-} from './browser/auth.js';
+import { createBrowserContext, closeBrowser, type BrowserManager } from './browser/context.js';
+import { ensureAuthenticated, getAuthStatus, forceNewLogin } from './browser/auth.js';
 import { searchTeamsWithPagination } from './teams/search.js';
-import { hasSessionState, isSessionLikelyExpired, clearSessionState } from './browser/session.js';
-import { 
-  directSearch, 
-  hasValidToken, 
-  getTokenStatus, 
-  clearTokenCache,
-  sendMessage,
-  sendNoteToSelf,
+
+// Auth modules
+import {
+  hasSessionState,
+  isSessionLikelyExpired,
+  clearSessionState,
+} from './auth/session-store.js';
+import {
+  hasValidSubstrateToken,
+  getSubstrateTokenStatus,
   extractMessageAuth,
   extractCsaToken,
-  getMe,
-  searchPeople,
-  getFrequentContacts,
-  getFavorites,
-  addFavorite,
-  removeFavorite,
-  saveMessage,
-  unsaveMessage,
-  getThreadMessages,
-} from './teams/direct-api.js';
+  getUserProfile,
+  clearTokenCache,
+} from './auth/token-extractor.js';
 
-/** Returns a standard MCP error response for authentication failures. */
-function authRequiredError() {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: false,
-          error: 'No valid authentication. Please use teams_login first.',
-        }, null, 2),
-      },
-    ],
-    isError: true,
-  };
-}
+// API modules
+import { searchMessages, searchPeople, getFrequentContacts } from './api/substrate-api.js';
+import { sendMessage, sendNoteToSelf, getThreadMessages, saveMessage, unsaveMessage } from './api/chatsvc-api.js';
+import { getFavorites, addFavorite, removeFavorite } from './api/csa-api.js';
 
-/** Returns a standard MCP error response for API failures. */
-function apiError(error: string | undefined) {
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({
-          success: false,
-          error,
-        }, null, 2),
-      },
-    ],
-    isError: true,
-  };
-}
+// Types
+import { ErrorCode, createError, type McpError } from './types/errors.js';
 
 // Tool definitions
 const TOOLS: Tool[] = [
@@ -314,538 +279,558 @@ const GetThreadInputSchema = z.object({
   limit: z.number().min(1).max(200).optional().default(50),
 });
 
-// Server state
-let browserManager: BrowserManager | null = null;
-let isInitialised = false;
-
 /**
- * Ensures the browser is running and authenticated.
+ * MCP Server for Teams integration.
+ * 
+ * Encapsulates all server state to allow multiple instances.
  */
-async function ensureBrowser(headless: boolean = true): Promise<BrowserManager> {
-  if (browserManager && isInitialised) {
-    return browserManager;
+export class TeamsServer {
+  private browserManager: BrowserManager | null = null;
+  private isInitialised = false;
+
+  /**
+   * Returns a standard MCP error response.
+   */
+  private formatError(error: McpError) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({
+            success: false,
+            error: error.message,
+            errorCode: error.code,
+            retryable: error.retryable,
+            retryAfterMs: error.retryAfterMs,
+            suggestions: error.suggestions,
+          }, null, 2),
+        },
+      ],
+      isError: true,
+    };
   }
 
-  // Close existing browser if any
-  if (browserManager) {
-    try {
-      await closeBrowser(browserManager, true);
-    } catch {
-      // Ignore cleanup errors
+  /**
+   * Returns a standard MCP success response.
+   */
+  private formatSuccess(data: Record<string, unknown>) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: JSON.stringify({ success: true, ...data }, null, 2),
+        },
+      ],
+    };
+  }
+
+  /**
+   * Ensures the browser is running and authenticated.
+   */
+  private async ensureBrowser(headless: boolean = true): Promise<BrowserManager> {
+    if (this.browserManager && this.isInitialised) {
+      return this.browserManager;
+    }
+
+    // Close existing browser if any
+    if (this.browserManager) {
+      try {
+        await closeBrowser(this.browserManager, true);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+
+    this.browserManager = await createBrowserContext({ headless });
+
+    await ensureAuthenticated(
+      this.browserManager.page,
+      this.browserManager.context,
+      (msg) => console.error(`[auth] ${msg}`)
+    );
+
+    this.isInitialised = true;
+    return this.browserManager;
+  }
+
+  /**
+   * Cleans up browser resources.
+   */
+  async cleanup(): Promise<void> {
+    if (this.browserManager) {
+      await closeBrowser(this.browserManager, true);
+      this.browserManager = null;
+      this.isInitialised = false;
     }
   }
 
-  browserManager = await createBrowserContext({ headless });
-  
-  await ensureAuthenticated(
-    browserManager.page,
-    browserManager.context,
-    (msg) => console.error(`[auth] ${msg}`)
-  );
-
-  isInitialised = true;
-  return browserManager;
-}
-
-/**
- * Creates and runs the MCP server.
- */
-export async function createServer(): Promise<Server> {
-  const server = new Server(
-    {
-      name: 'teams-mcp',
-      version: '0.1.0',
-    },
-    {
-      capabilities: {
-        tools: {},
+  /**
+   * Creates and configures the MCP server.
+   */
+  async createServer(): Promise<Server> {
+    const server = new Server(
+      {
+        name: 'teams-mcp',
+        version: '0.2.0',
       },
-    }
-  );
+      {
+        capabilities: {
+          tools: {},
+          resources: {},
+        },
+      }
+    );
 
-  // Handle tool listing
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return { tools: TOOLS };
-  });
+    // Handle resource listing
+    server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      return {
+        resources: [
+          {
+            uri: 'teams://me/profile',
+            name: 'Current User Profile',
+            description: 'The authenticated user\'s Teams profile including email and display name',
+            mimeType: 'application/json',
+          },
+          {
+            uri: 'teams://me/favorites',
+            name: 'Pinned Conversations',
+            description: 'The user\'s favourite/pinned Teams conversations',
+            mimeType: 'application/json',
+          },
+          {
+            uri: 'teams://status',
+            name: 'Authentication Status',
+            description: 'Current authentication status for all Teams APIs',
+            mimeType: 'application/json',
+          },
+        ],
+      };
+    });
 
-  // Handle tool calls
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+    // Handle resource reading
+    server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const { uri } = request.params;
 
-    try {
-      switch (name) {
-        case 'teams_search': {
-          const input = SearchInputSchema.parse(args);
-          
-          // Try direct API first (no browser needed)
-          if (hasValidToken()) {
-            try {
-              const { results, pagination } = await directSearch(
-                input.query,
-                { 
-                  maxResults: input.maxResults,
-                  from: input.from,
-                  size: input.size,
-                }
-              );
-
-              return {
-                content: [
-                  {
-                    type: 'text',
-                    text: JSON.stringify({
-                      success: true,
-                      mode: 'direct-api',
-                      query: input.query,
-                      resultCount: results.length,
-                      pagination: {
-                        from: pagination.from,
-                        size: pagination.size,
-                        returned: pagination.returned,
-                        total: pagination.total,
-                        hasMore: pagination.hasMore,
-                        nextFrom: pagination.hasMore ? pagination.from + pagination.returned : undefined,
-                      },
-                      results,
-                    }, null, 2),
-                  },
-                ],
-              };
-            } catch (error) {
-              // Token might be expired, fall through to browser-based login
-              console.error('[search] Direct API failed:', error instanceof Error ? error.message : error);
-            }
-          }
-          
-          // No valid token - need browser login
-          // Open visible browser for user to log in
-          const manager = await ensureBrowser(false); // visible browser
-          
-          const { results, pagination } = await searchTeamsWithPagination(
-            manager.page,
-            input.query,
-            { 
-              maxResults: input.maxResults,
-              from: input.from,
-              size: input.size,
-            }
-          );
-
-          // Wait for MSAL to store the search token after the API call
-          await manager.page.waitForTimeout(3000);
-
-          // After successful browser search, close the browser
-          // The session state is saved, so next time we can use direct API
-          await closeBrowser(manager, true);
-          browserManager = null;
-          isInitialised = false;
-
+      switch (uri) {
+        case 'teams://me/profile': {
+          const profile = getUserProfile();
           return {
-            content: [
+            contents: [
               {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  mode: 'browser',
-                  note: 'Session saved. Future searches will use direct API.',
-                  query: input.query,
-                  resultCount: results.length,
-                  pagination: {
-                    from: pagination.from,
-                    size: pagination.size,
-                    returned: pagination.returned,
-                    total: pagination.total,
-                    hasMore: pagination.hasMore,
-                    nextFrom: pagination.hasMore ? pagination.from + pagination.returned : undefined,
-                  },
-                  results,
-                }, null, 2),
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(profile ?? { error: 'No valid session' }, null, 2),
               },
             ],
           };
         }
 
-        case 'teams_login': {
-          const input = LoginInputSchema.parse(args);
-          
-          // For login, we need a visible browser
-          if (browserManager) {
-            await closeBrowser(browserManager, !input.forceNew);
-            browserManager = null;
-            isInitialised = false;
-          }
-
-          if (input.forceNew) {
-            clearSessionState();
-            clearTokenCache();
-          }
-
-          // Create visible browser for login
-          browserManager = await createBrowserContext({ headless: false });
-          
-          if (input.forceNew) {
-            await forceNewLogin(
-              browserManager.page,
-              browserManager.context,
-              (msg) => console.error(`[login] ${msg}`)
-            );
-          } else {
-            await ensureAuthenticated(
-              browserManager.page,
-              browserManager.context,
-              (msg) => console.error(`[login] ${msg}`)
-            );
-          }
-
-          isInitialised = true;
-
+        case 'teams://me/favorites': {
+          const result = await getFavorites();
           return {
-            content: [
+            contents: [
               {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: 'Login completed successfully. Session has been saved.',
-                }, null, 2),
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(
+                  result.ok ? result.value.favorites : { error: result.error.message },
+                  null,
+                  2
+                ),
               },
             ],
           };
         }
 
-        case 'teams_status': {
-          const sessionExists = hasSessionState();
-          const sessionExpired = isSessionLikelyExpired();
-          const tokenStatus = getTokenStatus();
+        case 'teams://status': {
+          const tokenStatus = getSubstrateTokenStatus();
           const messageAuth = extractMessageAuth();
           const csaToken = extractCsaToken();
-          
-          let authStatus = null;
-          if (browserManager && isInitialised) {
-            authStatus = await getAuthStatus(browserManager.page);
-          }
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  directApi: {
-                    available: tokenStatus.hasToken,
-                    expiresAt: tokenStatus.expiresAt,
-                    minutesRemaining: tokenStatus.minutesRemaining,
-                  },
-                  messaging: {
-                    available: messageAuth !== null,
-                  },
-                  favorites: {
-                    available: messageAuth !== null && csaToken !== null,
-                  },
-                  session: {
-                    exists: sessionExists,
-                    likelyExpired: sessionExpired,
-                  },
-                  browser: {
-                    running: browserManager !== null,
-                    initialised: isInitialised,
-                  },
-                  authentication: authStatus,
-                }, null, 2),
-              },
-            ],
+          const status = {
+            directApi: {
+              available: tokenStatus.hasToken,
+              expiresAt: tokenStatus.expiresAt,
+              minutesRemaining: tokenStatus.minutesRemaining,
+            },
+            messaging: {
+              available: messageAuth !== null,
+            },
+            favorites: {
+              available: messageAuth !== null && csaToken !== null,
+            },
+            session: {
+              exists: hasSessionState(),
+              likelyExpired: isSessionLikelyExpired(),
+            },
           };
-        }
-
-        case 'teams_send_message': {
-          const input = SendMessageInputSchema.parse(args);
-          
-          // Check if we have valid message auth
-          if (!extractMessageAuth()) {
-            return authRequiredError();
-          }
-
-          const result = input.conversationId === '48:notes'
-            ? await sendNoteToSelf(input.content)
-            : await sendMessage(input.conversationId, input.content);
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
 
           return {
-            content: [
+            contents: [
               {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  messageId: result.messageId,
-                  timestamp: result.timestamp,
-                  conversationId: input.conversationId,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_get_me': {
-          const profile = getMe();
-          
-          if (!profile) {
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: false,
-                    error: 'No valid session. Please use teams_login first.',
-                  }, null, 2),
-                },
-              ],
-              isError: true,
-            };
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  profile,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_search_people': {
-          const input = SearchPeopleInputSchema.parse(args);
-          
-          // Check if we have a valid token
-          if (!hasValidToken()) {
-            return authRequiredError();
-          }
-
-          const { results, returned } = await searchPeople(input.query, input.limit);
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  query: input.query,
-                  returned,
-                  results,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_get_favorites': {
-          const result = await getFavorites();
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  count: result.favorites.length,
-                  favorites: result.favorites,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_add_favorite': {
-          const input = FavoriteInputSchema.parse(args);
-          const result = await addFavorite(input.conversationId);
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: `Added ${input.conversationId} to favourites`,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_remove_favorite': {
-          const input = FavoriteInputSchema.parse(args);
-          const result = await removeFavorite(input.conversationId);
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: `Removed ${input.conversationId} from favourites`,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_save_message': {
-          const input = SaveMessageInputSchema.parse(args);
-          const result = await saveMessage(input.conversationId, input.messageId);
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: 'Message saved',
-                  conversationId: input.conversationId,
-                  messageId: input.messageId,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_unsave_message': {
-          const input = SaveMessageInputSchema.parse(args);
-          const result = await unsaveMessage(input.conversationId, input.messageId);
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: 'Message unsaved',
-                  conversationId: input.conversationId,
-                  messageId: input.messageId,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_get_frequent_contacts': {
-          const input = FrequentContactsInputSchema.parse(args);
-          
-          // Check if we have a valid token
-          if (!hasValidToken()) {
-            return authRequiredError();
-          }
-
-          const { contacts, returned } = await getFrequentContacts(input.limit);
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  returned,
-                  contacts,
-                }, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'teams_get_thread': {
-          const input = GetThreadInputSchema.parse(args);
-          
-          const result = await getThreadMessages(input.conversationId, { limit: input.limit });
-
-          if (!result.success) {
-            return apiError(result.error);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  conversationId: result.conversationId,
-                  messageCount: result.messages?.length ?? 0,
-                  messages: result.messages,
-                }, null, 2),
+                uri,
+                mimeType: 'application/json',
+                text: JSON.stringify(status, null, 2),
               },
             ],
           };
         }
 
         default:
-          throw new Error(`Unknown tool: ${name}`);
+          throw new Error(`Unknown resource: ${uri}`);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              success: false,
-              error: message,
-            }, null, 2),
-          },
-        ],
-        isError: true,
-      };
-    }
-  });
+    });
 
-  // Cleanup on server close
-  server.onclose = async () => {
-    if (browserManager) {
-      await closeBrowser(browserManager, true);
-      browserManager = null;
-      isInitialised = false;
-    }
-  };
+    // Handle tool listing
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      return { tools: TOOLS };
+    });
 
-  return server;
+    // Handle tool calls
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      try {
+        switch (name) {
+          case 'teams_search': {
+            const input = SearchInputSchema.parse(args);
+
+            // Try direct API first
+            if (hasValidSubstrateToken()) {
+              const result = await searchMessages(input.query, {
+                maxResults: input.maxResults,
+                from: input.from,
+                size: input.size,
+              });
+
+              if (result.ok) {
+                return this.formatSuccess({
+                  mode: 'direct-api',
+                  query: input.query,
+                  resultCount: result.value.results.length,
+                  pagination: {
+                    from: result.value.pagination.from,
+                    size: result.value.pagination.size,
+                    returned: result.value.pagination.returned,
+                    total: result.value.pagination.total,
+                    hasMore: result.value.pagination.hasMore,
+                    nextFrom: result.value.pagination.hasMore
+                      ? result.value.pagination.from + result.value.pagination.returned
+                      : undefined,
+                  },
+                  results: result.value.results,
+                });
+              }
+
+              // Log error but fall through to browser
+              console.error('[search] Direct API failed:', result.error.message);
+            }
+
+            // Fall back to browser-based search
+            const manager = await this.ensureBrowser(false);
+
+            const { results, pagination } = await searchTeamsWithPagination(
+              manager.page,
+              input.query,
+              {
+                maxResults: input.maxResults,
+                from: input.from,
+                size: input.size,
+              }
+            );
+
+            // Wait for MSAL to store tokens
+            await manager.page.waitForTimeout(3000);
+
+            // Close browser after search
+            await closeBrowser(manager, true);
+            this.browserManager = null;
+            this.isInitialised = false;
+
+            return this.formatSuccess({
+              mode: 'browser',
+              note: 'Session saved. Future searches will use direct API.',
+              query: input.query,
+              resultCount: results.length,
+              pagination: {
+                from: pagination.from,
+                size: pagination.size,
+                returned: pagination.returned,
+                total: pagination.total,
+                hasMore: pagination.hasMore,
+                nextFrom: pagination.hasMore
+                  ? pagination.from + pagination.returned
+                  : undefined,
+              },
+              results,
+            });
+          }
+
+          case 'teams_login': {
+            const input = LoginInputSchema.parse(args);
+
+            if (this.browserManager) {
+              await closeBrowser(this.browserManager, !input.forceNew);
+              this.browserManager = null;
+              this.isInitialised = false;
+            }
+
+            if (input.forceNew) {
+              clearSessionState();
+              clearTokenCache();
+            }
+
+            this.browserManager = await createBrowserContext({ headless: false });
+
+            if (input.forceNew) {
+              await forceNewLogin(
+                this.browserManager.page,
+                this.browserManager.context,
+                (msg) => console.error(`[login] ${msg}`)
+              );
+            } else {
+              await ensureAuthenticated(
+                this.browserManager.page,
+                this.browserManager.context,
+                (msg) => console.error(`[login] ${msg}`)
+              );
+            }
+
+            this.isInitialised = true;
+
+            return this.formatSuccess({
+              message: 'Login completed successfully. Session has been saved.',
+            });
+          }
+
+          case 'teams_status': {
+            const sessionExists = hasSessionState();
+            const sessionExpired = isSessionLikelyExpired();
+            const tokenStatus = getSubstrateTokenStatus();
+            const messageAuth = extractMessageAuth();
+            const csaToken = extractCsaToken();
+
+            let authStatus = null;
+            if (this.browserManager && this.isInitialised) {
+              authStatus = await getAuthStatus(this.browserManager.page);
+            }
+
+            return this.formatSuccess({
+              directApi: {
+                available: tokenStatus.hasToken,
+                expiresAt: tokenStatus.expiresAt,
+                minutesRemaining: tokenStatus.minutesRemaining,
+              },
+              messaging: {
+                available: messageAuth !== null,
+              },
+              favorites: {
+                available: messageAuth !== null && csaToken !== null,
+              },
+              session: {
+                exists: sessionExists,
+                likelyExpired: sessionExpired,
+              },
+              browser: {
+                running: this.browserManager !== null,
+                initialised: this.isInitialised,
+              },
+              authentication: authStatus,
+            });
+          }
+
+          case 'teams_send_message': {
+            const input = SendMessageInputSchema.parse(args);
+
+            const result = input.conversationId === '48:notes'
+              ? await sendNoteToSelf(input.content)
+              : await sendMessage(input.conversationId, input.content);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              messageId: result.value.messageId,
+              timestamp: result.value.timestamp,
+              conversationId: input.conversationId,
+            });
+          }
+
+          case 'teams_get_me': {
+            const profile = getUserProfile();
+
+            if (!profile) {
+              return this.formatError(createError(
+                ErrorCode.AUTH_REQUIRED,
+                'No valid session. Please use teams_login first.'
+              ));
+            }
+
+            return this.formatSuccess({ profile });
+          }
+
+          case 'teams_search_people': {
+            const input = SearchPeopleInputSchema.parse(args);
+
+            const result = await searchPeople(input.query, input.limit);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              query: input.query,
+              returned: result.value.returned,
+              results: result.value.results,
+            });
+          }
+
+          case 'teams_get_favorites': {
+            const result = await getFavorites();
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              count: result.value.favorites.length,
+              favorites: result.value.favorites,
+            });
+          }
+
+          case 'teams_add_favorite': {
+            const input = FavoriteInputSchema.parse(args);
+            const result = await addFavorite(input.conversationId);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              message: `Added ${input.conversationId} to favourites`,
+            });
+          }
+
+          case 'teams_remove_favorite': {
+            const input = FavoriteInputSchema.parse(args);
+            const result = await removeFavorite(input.conversationId);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              message: `Removed ${input.conversationId} from favourites`,
+            });
+          }
+
+          case 'teams_save_message': {
+            const input = SaveMessageInputSchema.parse(args);
+            const result = await saveMessage(input.conversationId, input.messageId);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              message: 'Message saved',
+              conversationId: input.conversationId,
+              messageId: input.messageId,
+            });
+          }
+
+          case 'teams_unsave_message': {
+            const input = SaveMessageInputSchema.parse(args);
+            const result = await unsaveMessage(input.conversationId, input.messageId);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              message: 'Message unsaved',
+              conversationId: input.conversationId,
+              messageId: input.messageId,
+            });
+          }
+
+          case 'teams_get_frequent_contacts': {
+            const input = FrequentContactsInputSchema.parse(args);
+
+            const result = await getFrequentContacts(input.limit);
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              returned: result.value.returned,
+              contacts: result.value.results,
+            });
+          }
+
+          case 'teams_get_thread': {
+            const input = GetThreadInputSchema.parse(args);
+
+            const result = await getThreadMessages(input.conversationId, { limit: input.limit });
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              conversationId: result.value.conversationId,
+              messageCount: result.value.messages.length,
+              messages: result.value.messages,
+            });
+          }
+
+          default:
+            throw new Error(`Unknown tool: ${name}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+
+        return this.formatError(createError(
+          ErrorCode.UNKNOWN,
+          message,
+          { retryable: false }
+        ));
+      }
+    });
+
+    // Cleanup on server close
+    server.onclose = async () => {
+      await this.cleanup();
+    };
+
+    return server;
+  }
+}
+
+/**
+ * Creates and runs the MCP server.
+ * Exported for backward compatibility.
+ */
+export async function createServer(): Promise<Server> {
+  const teamsServer = new TeamsServer();
+  return teamsServer.createServer();
 }
 
 /**
  * Runs the server with stdio transport.
  */
 export async function runServer(): Promise<void> {
-  const server = await createServer();
+  const teamsServer = new TeamsServer();
+  const server = await teamsServer.createServer();
   const transport = new StdioServerTransport();
-  
+
   await server.connect(transport);
-  
+
   // Handle shutdown signals
   const shutdown = async () => {
-    if (browserManager) {
-      await closeBrowser(browserManager, true);
-    }
+    await teamsServer.cleanup();
     process.exit(0);
   };
 
