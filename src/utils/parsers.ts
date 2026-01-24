@@ -214,13 +214,13 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
                     source?.ReceivedTime as string ||  // Legacy fallback
                     source?.CreatedDateTime as string; // Legacy fallback
   
+  // Extract message timestamp - used for both deep links and thread replies
+  const messageTimestamp = extractMessageTimestamp(source, timestamp);
+  
   // Build message link if we have the required data
   let messageLink: string | undefined;
-  if (conversationId) {
-    const messageTimestamp = extractMessageTimestamp(source, timestamp);
-    if (messageTimestamp) {
-      messageLink = buildMessageLink(conversationId, messageTimestamp);
-    }
+  if (conversationId && messageTimestamp) {
+    messageLink = buildMessageLink(conversationId, messageTimestamp);
   }
 
   return {
@@ -232,7 +232,9 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
     channelName: source?.ChannelName as string || source?.Topic as string,
     teamName: source?.TeamName as string || source?.GroupName as string,
     conversationId,
-    messageId: item.ReferenceId as string,
+    // Use the timestamp as messageId (required for thread replies)
+    // Fallback to ReferenceId if timestamp extraction fails
+    messageId: messageTimestamp || item.ReferenceId as string,
     messageLink,
   };
 }

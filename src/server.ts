@@ -114,7 +114,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'teams_reply_to_thread',
-    description: 'Reply to a thread in a Teams channel. This is simpler than teams_send_message for thread replies - just provide any message ID from the thread and the reply will be posted correctly. The tool automatically finds the thread root.',
+    description: 'Reply to a channel message as a threaded reply. Use the conversationId and messageId from search results - the reply will appear under that message.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -124,11 +124,11 @@ const TOOLS: Tool[] = [
         },
         conversationId: {
           type: 'string',
-          description: 'The channel conversation ID (from search results or teams_get_thread).',
+          description: 'The channel conversation ID (from search results).',
         },
         messageId: {
           type: 'string',
-          description: 'Any message ID in the thread you want to reply to. The tool will find the thread root automatically.',
+          description: 'The message ID to reply to (from search results). This is the timestamp-based ID Teams uses for threading.',
         },
       },
       required: ['content', 'conversationId', 'messageId'],

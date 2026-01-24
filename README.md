@@ -115,7 +115,7 @@ Or for development:
 
 | Tool | Description |
 |------|-------------|
-| `teams_reply_to_thread` | Reply to a channel thread (finds thread root automatically) |
+| `teams_reply_to_thread` | Reply to a channel message as a threaded reply |
 | `teams_save_message` | Bookmark a message |
 | `teams_unsave_message` | Remove bookmark from a message |
 
