@@ -8,8 +8,8 @@ This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, 
 
 **Authentication flow:**
 1. Run `teams_login` to open a browser and log in
-2. OAuth tokens and session cookies are extracted and cached
-3. All subsequent calls use cached tokens directly (no browser)
+2. OAuth tokens are extracted and cached
+3. All operations use cached tokens directly (no browser needed)
 4. When tokens expire (~1 hour), run `teams_login` again
 
 ## Installation
@@ -181,7 +181,7 @@ npm run test:mcp -- favorites
 ## Limitations
 
 - **Login required** - Run `teams_login` to authenticate (opens browser)
-- **Token expiry** - Tokens expire after ~1 hour; run `teams_login` again to re-authenticate
+- **Token expiry** - Tokens expire after ~1 hour; run `teams_login` again when needed
 - **Undocumented APIs** - Uses Microsoft's internal APIs which may change without notice
 - **Search limitations** - Full-text search only; thread replies not matching search terms won't appear (use `teams_get_thread` for full context)
 - **Own messages only** - Edit/delete only works on your own messages
