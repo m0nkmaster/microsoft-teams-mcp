@@ -175,7 +175,12 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_get_recent_chats` | ❌ Needed |
 
-**Gap:** Chat list loaded at startup. Similar challenge to favourites.
+**Gap:** Chat list loaded at startup. No dedicated API endpoint.
+
+**Partial Workarounds:**
+- `teams_get_frequent_contacts` shows who you frequently interact with
+- `teams_get_favorites` shows your pinned conversations
+- Together these cover most "who do I chat with" use cases, but won't show true recency ordering
 
 ---
 
