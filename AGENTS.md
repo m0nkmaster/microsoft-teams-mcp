@@ -2,6 +2,25 @@
 
 This document captures project knowledge to help AI agents work effectively with this codebase.
 
+## Package Information
+
+- **npm package**: `msteams-mcp`
+- **Repository**: https://github.com/m0nkmaster/microsoft-teams-mcp
+- **Install**: `npx -y msteams-mcp` or `npm install -g msteams-mcp`
+
+### Publishing Updates
+
+To publish a new version:
+
+```bash
+npm run build                    # Compile TypeScript
+npm version patch|minor|major    # Bump version
+npm publish --otp=XXXXXX         # Publish (requires 2FA OTP)
+git push && git push --tags      # Push version commit and tag
+```
+
+The `files` field in `package.json` limits the published package to `dist/` and `README.md` only.
+
 ## Project Overview
 
 This is an MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams. Rather than using the complex Microsoft Graph API, it uses Teams' internal APIs (Substrate, chatsvc, CSA) with authentication tokens extracted from a browser session. The browser is only used for initial login - all operations use direct API calls.
@@ -101,7 +120,7 @@ The server uses the system's installed browser rather than downloading Playwrigh
 - **Windows**: Uses Microsoft Edge (always pre-installed on Windows 10+)
 - **macOS/Linux**: Uses Google Chrome
 
-This is configured via Playwright's `channel` option in `src/browser/context.ts`. Users can skip the browser download during install with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install`.
+This is configured via Playwright's `channel` option in `src/browser/context.ts`. When installed via npm, no browser download is needed as long as Chrome or Edge is available on the system.
 
 If the system browser isn't available, a helpful error message suggests installing Chrome or running `npx playwright install chromium` as a fallback.
 
@@ -621,9 +640,15 @@ Note: The `conversationId` returned in search results for threaded replies will 
 
 ## File Locations
 
-- **Session state**: `./session-state.json` (gitignored)
+Session files are created in the working directory where the server runs:
+
+- **Session state**: `./session-state.json` (encrypted, gitignored)
 - **Browser profile**: `./.user-data/` (gitignored)
 - **Debug output**: `./debug-output/` (gitignored, screenshots and HTML dumps)
+
+For npm installs, these files are created in the MCP client's working directory (typically the user's home directory or project root).
+
+Development files:
 - **API research docs**: `./docs/API-RESEARCH.md`
 
 ## Extending the MCP

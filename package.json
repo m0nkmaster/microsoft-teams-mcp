@@ -1,9 +1,27 @@
 {
-  "name": "team-mcp",
+  "name": "msteams-mcp",
   "version": "0.2.0",
-  "description": "MCP server for searching Microsoft Teams via browser automation",
+  "description": "MCP server for Microsoft Teams - search messages, send replies, manage favourites",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "msteams-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m0nkmaster/microsoft-teams-mcp.git"
+  },
+  "homepage": "https://github.com/m0nkmaster/microsoft-teams-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/m0nkmaster/microsoft-teams-mcp/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
@@ -24,6 +42,7 @@
     "playwright",
     "browser-automation"
   ],
+  "author": "Rob MacDonald",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
