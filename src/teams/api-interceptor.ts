@@ -5,7 +5,7 @@
 
 import type { Page, Response } from 'playwright';
 import type { TeamsSearchResult } from '../types/teams.js';
-import { stripHtml } from '../utils/parsers.js';
+import { stripHtml, parseV2Result } from '../utils/parsers.js';
 
 // Patterns that indicate search-related API calls
 const SEARCH_API_PATTERNS = [
@@ -95,6 +95,7 @@ function parseSubstrateResponse(body: unknown): TeamsSearchResult[] {
   }
   
   // Try EntitySets[].ResultSets[].Results[] structure (v2 query endpoint)
+  // Delegate to parsers.ts parseV2Result for consistency
   const entitySets = obj.EntitySets as unknown[] | undefined;
   if (Array.isArray(entitySets)) {
     for (const entitySet of entitySets) {
@@ -108,7 +109,7 @@ function parseSubstrateResponse(body: unknown): TeamsSearchResult[] {
           
           if (Array.isArray(items)) {
             for (const item of items) {
-              const result = parseV2QueryItem(item as Record<string, unknown>);
+              const result = parseV2Result(item as Record<string, unknown>);
               if (result) results.push(result);
             }
           }
@@ -228,67 +229,7 @@ function parseSubstrateItem(item: Record<string, unknown>): TeamsSearchResult | 
   };
 }
 
-/**
- * Parses a v2 query result item.
- * Uses fields from the research: Id, HitHighlightedSummary, Rank, Source, etc.
- */
-function parseV2QueryItem(item: Record<string, unknown>): TeamsSearchResult | null {
-  // HitHighlightedSummary is the primary content field for v2 query
-  const content = 
-    getStringField(item, 'HitHighlightedSummary') ||
-    getStringField(item, 'Summary') ||
-    getStringField(item, 'Body') ||
-    '';
-  
-  // Skip if no meaningful content
-  if (content.length < 5) return null;
-  
-  const id = 
-    getStringField(item, 'Id') ||
-    getStringField(item, 'ReferenceId') ||
-    `v2-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  
-  // Source object may contain additional metadata
-  const source = item.Source as Record<string, unknown> | undefined;
-  
-  const sender = 
-    getStringField(item, 'From') ||
-    getNestedName(item, 'Sender') ||
-    (source ? getStringField(source, 'From') || getNestedName(source, 'Sender') : undefined);
-  
-  const timestamp = 
-    getStringField(item, 'ReceivedTime') ||
-    getStringField(item, 'CreatedDateTime') ||
-    getStringField(item, 'SentDateTime') ||
-    (source ? getStringField(source, 'ReceivedTime') || getStringField(source, 'CreatedDateTime') : undefined);
-  
-  const channelName = 
-    getStringField(item, 'ChannelName') ||
-    getStringField(item, 'Topic') ||
-    (source ? getStringField(source, 'ChannelName') || getStringField(source, 'Topic') : undefined);
-  
-  const teamName = 
-    getStringField(item, 'TeamName') ||
-    getStringField(item, 'GroupName') ||
-    (source ? getStringField(source, 'TeamName') || getStringField(source, 'GroupName') : undefined);
-  
-  const rank = typeof item.Rank === 'number' ? item.Rank : undefined;
-  const provenance = getStringField(item, 'Provenance');
-  const contentSource = getStringField(item, 'ContentSource');
-  
-  return {
-    id,
-    type: 'message',
-    content: stripHtml(content),
-    sender,
-    timestamp,
-    channelName,
-    teamName,
-    // Store additional v2 metadata
-    messageId: getStringField(item, 'ReferenceId'),
-    conversationId: source ? getStringField(source, 'ConversationId') : undefined,
-  };
-}
+// Note: parseV2QueryItem functionality is now delegated to parseV2Result in parsers.ts
 
 /**
  * Parses Teams posts API response.
