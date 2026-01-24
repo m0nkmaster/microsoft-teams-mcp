@@ -1,6 +1,9 @@
 /**
  * Playwright browser context management.
  * Creates and manages browser contexts with session persistence.
+ * 
+ * Uses the system's installed Chrome or Edge browser rather than downloading
+ * Playwright's bundled Chromium. This significantly reduces install size.
  */
 
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
@@ -32,10 +35,25 @@ const DEFAULT_OPTIONS: Required<CreateBrowserOptions> = {
 };
 
 /**
+ * Determines the browser channel to use based on the platform.
+ * - Windows: Use Microsoft Edge (always installed on Windows 10+)
+ * - macOS/Linux: Use Chrome
+ * 
+ * @returns The browser channel name for Playwright
+ */
+function getBrowserChannel(): 'msedge' | 'chrome' {
+  return process.platform === 'win32' ? 'msedge' : 'chrome';
+}
+
+/**
  * Creates a browser context with optional session state restoration.
+ *
+ * Uses the system's installed Chrome or Edge browser to avoid downloading
+ * Playwright's bundled Chromium (~180MB savings).
  *
  * @param options - Browser configuration options
  * @returns Browser manager with browser, context, and page
+ * @throws Error if system browser is not found (with helpful suggestions)
  */
 export async function createBrowserContext(
   options: CreateBrowserOptions = {}
@@ -44,9 +62,25 @@ export async function createBrowserContext(
 
   ensureUserDataDir();
 
-  const browser = await chromium.launch({
-    headless: opts.headless,
-  });
+  const channel = getBrowserChannel();
+  let browser: Browser;
+
+  try {
+    browser = await chromium.launch({
+      headless: opts.headless,
+      channel,
+    });
+  } catch (error) {
+    const browserName = channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
+    const installHint = channel === 'msedge'
+      ? 'Edge should be pre-installed on Windows. Try updating Windows or reinstalling Edge.'
+      : 'Install Chrome from https://www.google.com/chrome/ or run: npx playwright install chromium';
+    
+    throw new Error(
+      `Could not launch ${browserName}. ${installHint}\n\n` +
+      `Original error: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 
   const hasSession = hasSessionState();
   const sessionExpired = isSessionLikelyExpired();

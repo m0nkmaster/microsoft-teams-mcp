@@ -18,12 +18,22 @@ This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, 
 
 - Node.js 18+
 - A Microsoft account with Teams access
+- Google Chrome, Microsoft Edge, or Chromium browser installed
 
 ### Setup
 
 ```bash
 git clone https://github.com/your-org/team-mcp.git
 cd team-mcp
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install
+npm run build
+```
+
+The server uses your system's installed Chrome (macOS/Linux) or Edge (Windows) for authentication. This avoids downloading Playwright's bundled Chromium (~180MB).
+
+**If you don't have Chrome/Edge installed**, you can download Playwright's browser instead:
+
+```bash
 npm install
 npx playwright install chromium
 npm run build

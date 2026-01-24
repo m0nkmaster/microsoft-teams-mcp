@@ -13,7 +13,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:manual": "tsx src/test/manual-test.ts",
     "test:mcp": "tsx src/test/mcp-harness.ts",
     "cli": "tsx src/test/cli.ts",
     "debug:search": "tsx src/test/debug-search.ts",
