@@ -11,6 +11,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { encrypt, decrypt, isEncrypted, type EncryptedData } from './crypto.js';
+import { SESSION_EXPIRY_HOURS } from '../constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -146,7 +147,7 @@ export function getSessionAge(): number | null {
 export function isSessionLikelyExpired(): boolean {
   const age = getSessionAge();
   if (age === null) return true;
-  return age > 12;
+  return age > SESSION_EXPIRY_HOURS;
 }
 
 /**

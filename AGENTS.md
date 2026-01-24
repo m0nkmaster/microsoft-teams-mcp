@@ -11,7 +11,15 @@ This is an MCP (Model Context Protocol) server that enables AI assistants to sea
 ```
 src/
 ├── index.ts              # Entry point, runs the MCP server
-├── server.ts             # MCP server with tool definitions (TeamsServer class)
+├── server.ts             # MCP server (TeamsServer class) - delegates to tool registry
+├── constants.ts          # Shared constants (page sizes, timeouts, thresholds)
+├── tools/                # Tool handlers (modular design)
+│   ├── index.ts          # Tool context and type definitions
+│   ├── registry.ts       # Tool registry - maps names to handlers
+│   ├── search-tools.ts   # Search and channel tools
+│   ├── message-tools.ts  # Messaging, favourites, save/unsave tools
+│   ├── people-tools.ts   # People search and profile tools
+│   └── auth-tools.ts     # Login and status tools
 ├── auth/                 # Authentication and credential management
 │   ├── index.ts          # Module exports
 │   ├── crypto.ts         # AES-256-GCM encryption for credentials at rest
@@ -33,7 +41,8 @@ src/
 │   ├── parsers.ts        # Pure parsing functions (testable)
 │   ├── parsers.test.ts   # Unit tests for parsers
 │   ├── http.ts           # HTTP client with retry, timeout, error handling
-│   └── api-config.ts     # API endpoints and header configuration
+│   ├── api-config.ts     # API endpoints and header configuration
+│   └── auth-guards.ts    # Reusable auth check utilities (Result types)
 ├── types/
 │   ├── teams.ts          # Teams data interfaces
 │   ├── errors.ts         # Error taxonomy with machine-readable codes
@@ -43,7 +52,7 @@ src/
 └── test/                 # Integration test tools (CLI, MCP harness)
 ```
 
-### Key Architectural Changes (v0.2.0)
+### Key Architectural Changes (v0.2.0+)
 
 1. **Credential Encryption**: Session state and token cache are now encrypted at rest using AES-256-GCM with a machine-specific key derived from hostname and username. Files have restrictive permissions (0o600).
 
@@ -56,6 +65,15 @@ src/
 5. **HTTP Utilities**: Centralised HTTP client with automatic retry (exponential backoff), request timeouts, and rate limit tracking.
 
 6. **MCP Resources**: Added passive resources (`teams://me/profile`, `teams://me/favorites`, `teams://status`) for context discovery without tool calls.
+
+7. **Tool Registry Pattern**: Tools are organised into logical groups (`search-tools.ts`, `message-tools.ts`, etc.) with a central registry (`tools/registry.ts`). This replaces the monolithic switch statement in server.ts and enables:
+   - Better separation of concerns
+   - Easier testing of individual tools
+   - Simpler addition of new tools
+
+8. **Auth Guards**: Reusable authentication check utilities in `utils/auth-guards.ts` replace duplicated auth patterns across API modules. These return `Result` types for consistent error handling.
+
+9. **Shared Constants**: Magic numbers are centralised in `constants.ts` for maintainability (page sizes, timeouts, thresholds).
 
 ## Key Design Decisions
 
@@ -625,11 +643,14 @@ Note: The `conversationId` returned in search results for threaded replies will 
 ## Extending the MCP
 
 ### Adding New Tools
-1. Add tool definition to `TOOLS` array in `src/server.ts`
-2. Add input schema with Zod in `src/server.ts`
-3. Create/update the relevant API module in `src/api/`
-4. Handle the tool in the switch statement in the `TeamsServer.createServer()` method
-5. Use `Result<T, McpError>` return types for consistent error handling
+1. Choose the appropriate tool file in `src/tools/` (or create a new one for a new category)
+2. Define the input schema with Zod
+3. Define the tool definition (MCP Tool interface)
+4. Implement the handler function returning `ToolResult`
+5. Export the registered tool and add it to the module's `*Tools` array
+6. Add the new array to `src/tools/registry.ts` if creating a new category
+7. Use `Result<T, McpError>` return types in underlying API modules
+8. Add shared constants to `src/constants.ts` if needed
 
 ### Adding New API Endpoints
 1. Add endpoint URL to `src/utils/api-config.ts`

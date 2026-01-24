@@ -6,12 +6,10 @@
 
 import { httpRequest } from '../utils/http.js';
 import { SUBSTRATE_API, getBearerHeaders } from '../utils/api-config.js';
-import { ErrorCode, createError } from '../types/errors.js';
-import { type Result, ok, err } from '../types/result.js';
-import {
-  getValidSubstrateToken,
-  clearTokenCache,
-} from '../auth/token-extractor.js';
+import { ErrorCode } from '../types/errors.js';
+import { type Result, ok } from '../types/result.js';
+import { clearTokenCache } from '../auth/token-extractor.js';
+import { requireSubstrateToken } from '../utils/auth-guards.js';
 import {
   parseSearchResults,
   parsePeopleResults,
@@ -42,13 +40,11 @@ export async function searchMessages(
   query: string,
   options: { from?: number; size?: number; maxResults?: number } = {}
 ): Promise<Result<SearchResult>> {
-  const token = getValidSubstrateToken();
-  if (!token) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid token available. Browser login required.'
-    ));
+  const tokenResult = requireSubstrateToken();
+  if (!tokenResult.ok) {
+    return tokenResult;
   }
+  const token = tokenResult.value;
 
   const from = options.from ?? 0;
   const size = options.size ?? 25;
@@ -140,13 +136,11 @@ export async function searchPeople(
   query: string,
   limit: number = 10
 ): Promise<Result<PeopleSearchResult>> {
-  const token = getValidSubstrateToken();
-  if (!token) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid token available. Browser login required.'
-    ));
+  const tokenResult = requireSubstrateToken();
+  if (!tokenResult.ok) {
+    return tokenResult;
   }
+  const token = tokenResult.value;
 
   const cvid = crypto.randomUUID();
   const logicalId = crypto.randomUUID();
@@ -205,13 +199,11 @@ export async function searchPeople(
 export async function getFrequentContacts(
   limit: number = 50
 ): Promise<Result<PeopleSearchResult>> {
-  const token = getValidSubstrateToken();
-  if (!token) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid token available. Browser login required.'
-    ));
+  const tokenResult = requireSubstrateToken();
+  if (!tokenResult.ok) {
+    return tokenResult;
   }
+  const token = tokenResult.value;
 
   const cvid = crypto.randomUUID();
   const logicalId = crypto.randomUUID();
@@ -284,13 +276,11 @@ export async function searchChannels(
   query: string,
   limit: number = 10
 ): Promise<Result<ChannelSearchResultSet>> {
-  const token = getValidSubstrateToken();
-  if (!token) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid token available. Browser login required.'
-    ));
+  const tokenResult = requireSubstrateToken();
+  if (!tokenResult.ok) {
+    return tokenResult;
   }
+  const token = tokenResult.value;
 
   // Run both searches in parallel
   const [orgSearchResult, myTeamsResult] = await Promise.all([
