@@ -458,7 +458,7 @@ export async function deleteMessage(
     url,
     {
       method: 'DELETE',
-      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+      headers: getMessagingHeaders(auth.skypeToken, auth.authToken),
     }
   );
 
