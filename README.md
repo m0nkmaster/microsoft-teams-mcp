@@ -1,10 +1,10 @@
 # Teams MCP Server
 
-An MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams—search messages, send replies, manage favourites, and more.
+An MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams-search messages, send replies, manage favourites, and more.
 
 ## How It Works
 
-This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, CSA)—the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
+This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, CSA)-the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
 
 **Authentication flow:**
 1. First use opens a browser for you to log in
@@ -170,19 +170,19 @@ npm run test:mcp -- favorites
 
 ## Limitations
 
-- **Initial login required** — First use opens a browser for manual authentication
-- **Undocumented APIs** — Uses Microsoft's internal APIs which may change without notice
-- **Token refresh** — Opens browser briefly every ~1 hour to refresh tokens; manual re-login only needed if session cookies expire
-- **Search limitations** — Full-text search only; thread replies not matching search terms won't appear (use `teams_get_thread` for full context)
-- **Own messages only** — Edit/delete only works on your own messages
+- **Initial login required** - First use opens a browser for manual authentication
+- **Undocumented APIs** - Uses Microsoft's internal APIs which may change without notice
+- **Token refresh** - Opens browser briefly every ~1 hour to refresh tokens; manual re-login only needed if session cookies expire
+- **Search limitations** - Full-text search only; thread replies not matching search terms won't appear (use `teams_get_thread` for full context)
+- **Own messages only** - Edit/delete only works on your own messages
 
 ## Session Files
 
 These files are created locally and gitignored:
 
-- `session-state.json` — Encrypted browser session
-- `token-cache.json` — Encrypted OAuth tokens
-- `.user-data/` — Browser profile
+- `session-state.json` - Encrypted browser session
+- `token-cache.json` - Encrypted OAuth tokens
+- `.user-data/` - Browser profile
 
 If your session expires, call `teams_login` or delete these files.
 
