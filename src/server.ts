@@ -92,7 +92,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'teams_send_message',
-    description: 'Send a message to a Teams conversation. By default, sends to your own notes (self-chat). For channel threads, provide replyToMessageId to reply to an existing thread. Requires a valid session from prior login.',
+    description: 'Send a message to a Teams conversation. By default, sends to your own notes (self-chat). For channel thread replies, use teams_reply_to_thread instead (simpler). For chats (1:1, group, meeting), just provide the conversationId.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -106,7 +106,7 @@ const TOOLS: Tool[] = [
         },
         replyToMessageId: {
           type: 'string',
-          description: 'For channel thread replies: the message ID of the thread root (the first message in the thread). When provided, the message is posted as a reply to that thread. Not needed for chats (1:1, group, meeting) as they are flat conversations.',
+          description: 'For channel thread replies (advanced). Prefer using teams_reply_to_thread instead.',
         },
       },
       required: ['content'],
@@ -114,7 +114,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'teams_reply_to_thread',
-    description: 'Reply to a channel message as a threaded reply. Use the conversationId and messageId from search results - the reply will appear under that message.',
+    description: 'Reply to a channel message as a threaded reply. Use the conversationId and messageId from search results, or conversationId and threadReplyId from a previous teams_send_message response.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -124,11 +124,11 @@ const TOOLS: Tool[] = [
         },
         conversationId: {
           type: 'string',
-          description: 'The channel conversation ID (from search results).',
+          description: 'The channel conversation ID.',
         },
         messageId: {
           type: 'string',
-          description: 'The message ID to reply to (from search results). This is the timestamp-based ID Teams uses for threading.',
+          description: 'The message ID to reply to. Use messageId from search results, or threadReplyId from a teams_send_message response.',
         },
       },
       required: ['content', 'conversationId', 'messageId'],
