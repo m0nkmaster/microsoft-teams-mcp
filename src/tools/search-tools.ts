@@ -165,7 +165,7 @@ async function handleSearch(
   );
 
   // Wait for MSAL to store tokens
-  await manager.page.waitForTimeout(3000);
+  await manager.page.waitForTimeout(MSAL_TOKEN_DELAY_MS);
 
   // Close browser after search
   await closeBrowser(manager, true);
