@@ -12,7 +12,7 @@ import {
   extractMessageAuth,
   getUserDisplayName,
 } from '../auth/token-extractor.js';
-import { stripHtml, buildMessageLink } from '../utils/parsers.js';
+import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId } from '../utils/parsers.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -444,4 +444,70 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/** Result of getting a 1:1 conversation. */
+export interface GetOneOnOneChatResult {
+  conversationId: string;
+  otherUserId: string;
+  currentUserId: string;
+}
+
+/**
+ * Gets the conversation ID for a 1:1 chat with another user.
+ * 
+ * This constructs the predictable conversation ID format used by Teams
+ * for 1:1 chats. The conversation ID is: `19:{id1}_{id2}@unq.gbl.spaces`
+ * where id1 and id2 are the two users' object IDs sorted lexicographically.
+ * 
+ * Note: This doesn't create the conversation - it just returns the ID.
+ * The conversation is implicitly created when the first message is sent.
+ * 
+ * @param otherUserIdentifier - The other user's MRI, object ID, or ID with tenant
+ * @returns The conversation ID, or an error if auth is missing or ID is invalid
+ */
+export function getOneOnOneChatId(
+  otherUserIdentifier: string
+): Result<GetOneOnOneChatResult> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  // Extract the current user's object ID from their MRI
+  const currentUserId = extractObjectId(auth.userMri);
+  if (!currentUserId) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'Could not extract user ID from session. Please try logging in again.'
+    ));
+  }
+
+  // Extract the other user's object ID
+  const otherUserId = extractObjectId(otherUserIdentifier);
+  if (!otherUserId) {
+    return err(createError(
+      ErrorCode.INVALID_INPUT,
+      `Invalid user identifier: ${otherUserIdentifier}. Expected MRI (8:orgid:guid), ID with tenant (guid@tenant), or raw GUID.`
+    ));
+  }
+
+  const conversationId = buildOneOnOneConversationId(currentUserId, otherUserId);
+
+  if (!conversationId) {
+    // This shouldn't happen if both IDs were validated above, but handle it anyway
+    return err(createError(
+      ErrorCode.UNKNOWN,
+      'Failed to construct conversation ID.'
+    ));
+  }
+
+  return ok({
+    conversationId,
+    otherUserId,
+    currentUserId,
+  });
 }

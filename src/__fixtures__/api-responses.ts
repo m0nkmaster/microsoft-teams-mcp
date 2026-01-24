@@ -97,11 +97,22 @@ export const personSuggestion = {
 };
 
 /**
- * Person with minimal info (no optional fields).
+ * Person with minimal info using a proper GUID (no optional fields).
  */
 export const personMinimal = {
-  Id: 'minimal-user-guid',
+  Id: 'b1c2d3e4-f5a6-7890-bcde-1234567890ab',
   DisplayName: 'Jane Doe',
+};
+
+/**
+ * Person with base64-encoded GUID (real-world API response format).
+ * The base64 '93qkaTtFGWpUHjyRafgdhg==' decodes to GUID '69a47af7-453b-6a19-541e-3c9169f81d86'.
+ */
+export const personWithBase64Id = {
+  Id: '93qkaTtFGWpUHjyRafgdhg==',
+  MRI: '8:orgid:93qkaTtFGWpUHjyRafgdhg==',
+  DisplayName: 'Rob MacDonald',
+  EmailAddresses: ['rob@company.com'],
 };
 
 /**

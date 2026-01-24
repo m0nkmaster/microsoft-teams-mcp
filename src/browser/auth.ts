@@ -54,6 +54,93 @@ async function hasAuthenticatedContent(page: Page): Promise<boolean> {
   return false;
 }
 
+// Search input selectors - must match those in teams/search.ts
+const SEARCH_INPUT_SELECTORS = [
+  '[data-tid="searchInputField"]',
+  '[data-tid="app-search-input"]',
+  'input[data-tid*="search"]',
+  'input[placeholder*="Search"]',
+];
+
+const SEARCH_BUTTON_SELECTORS = [
+  '[data-tid="search-box"]',
+  '[data-tid="search-button"]',
+  '[data-tid="app-bar-search"]',
+  '[role="search"] input',
+];
+
+/**
+ * Triggers a search to cause MSAL to acquire the Substrate token.
+ * This is necessary because MSAL only acquires tokens for specific scopes
+ * when the app actually makes API calls requiring those scopes.
+ */
+async function triggerTokenAcquisition(
+  page: Page,
+  log: (msg: string) => void
+): Promise<void> {
+  log('Triggering token acquisition...');
+
+  try {
+    // Wait for the app to be ready
+    await page.waitForTimeout(3000);
+
+    // Try to find a search input directly
+    let searchInput = null;
+    for (const selector of SEARCH_INPUT_SELECTORS) {
+      const loc = page.locator(selector).first();
+      if (await loc.isVisible().catch(() => false)) {
+        searchInput = loc;
+        break;
+      }
+    }
+
+    // If no input visible, try clicking a search button first
+    if (!searchInput) {
+      for (const selector of SEARCH_BUTTON_SELECTORS) {
+        const btn = page.locator(selector).first();
+        if (await btn.isVisible().catch(() => false)) {
+          await btn.click();
+          await page.waitForTimeout(1000);
+          
+          // Now look for the input again
+          for (const inputSelector of SEARCH_INPUT_SELECTORS) {
+            const loc = page.locator(inputSelector).first();
+            if (await loc.isVisible().catch(() => false)) {
+              searchInput = loc;
+              break;
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    if (searchInput) {
+      // Type a simple search query to trigger the API call
+      await searchInput.fill('test');
+      await page.keyboard.press('Enter');
+
+      // Wait for the search API call to complete
+      log('Waiting for search API response...');
+      await page.waitForTimeout(5000);
+
+      // Press Escape to close search and return to normal view
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+
+      log('Token acquisition complete.');
+    } else {
+      // Fallback: just wait and hope MSAL refreshes tokens
+      log('Search UI not found, waiting for background token refresh...');
+      await page.waitForTimeout(5000);
+    }
+  } catch (error) {
+    // Non-fatal: tokens might still work from previous session
+    log(`Token acquisition warning: ${error instanceof Error ? error.message : String(error)}`);
+    await page.waitForTimeout(3000);
+  }
+}
+
 /**
  * Gets the current authentication status.
  */
@@ -126,13 +213,8 @@ export async function waitForManualLogin(
     if (status.isAuthenticated) {
       log('Authentication successful!');
 
-      // Wait for MSAL to refresh tokens in the background
-      log('Waiting for token refresh...');
-      await page.waitForTimeout(5000);
-
-      // Navigate to trigger any pending token operations
-      await page.goto('https://teams.microsoft.com', { waitUntil: 'domcontentloaded' });
-      await page.waitForTimeout(5000);
+      // Trigger a search to cause MSAL to acquire the Substrate token
+      await triggerTokenAcquisition(page, log);
 
       // Save the session state with fresh tokens
       await saveSessionState(context);
@@ -171,10 +253,10 @@ export async function ensureAuthenticated(
   if (status.isAuthenticated) {
     log('Already authenticated.');
 
-    // Wait a moment for any token refresh to complete
-    await page.waitForTimeout(3000);
+    // Trigger a search to cause MSAL to acquire/refresh the Substrate token
+    await triggerTokenAcquisition(page, log);
 
-    // Save the session state with potentially refreshed tokens
+    // Save the session state with fresh tokens
     await saveSessionState(context);
 
     return;

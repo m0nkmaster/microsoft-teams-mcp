@@ -7,99 +7,140 @@
  * protocol layer works correctly.
  * 
  * Usage:
- *   npm run test:mcp                       # List tools and check status
- *   npm run test:mcp -- search "query"     # Search for messages
- *   npm run test:mcp -- --json             # Output as JSON
+ *   npm run test:mcp                              # List tools and check status
+ *   npm run test:mcp -- search "query"            # Search for messages (shortcut)
+ *   npm run test:mcp -- teams_search --query "q"  # Generic tool call
+ *   npm run test:mcp -- --json                    # Output as JSON
+ * 
+ * Any unrecognised command is treated as a tool name. Use --key value for parameters.
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createServer } from '../server.js';
 
-interface TestOptions {
-  command: 'list' | 'status' | 'search' | 'send' | 'me' | 'people' | 'favorites' | 'save' | 'unsave' | 'thread';
-  query?: string;
-  message?: string;
-  conversationId?: string;
-  messageId?: string;
+// Shortcuts map command names to tool names and parameter mappings
+const SHORTCUTS: Record<string, { tool: string; primaryArg?: string }> = {
+  search: { tool: 'teams_search', primaryArg: 'query' },
+  status: { tool: 'teams_status' },
+  send: { tool: 'teams_send_message', primaryArg: 'content' },
+  me: { tool: 'teams_get_me' },
+  people: { tool: 'teams_search_people', primaryArg: 'query' },
+  favorites: { tool: 'teams_get_favorites' },
+  save: { tool: 'teams_save_message' },
+  unsave: { tool: 'teams_unsave_message' },
+  thread: { tool: 'teams_get_thread' },
+  login: { tool: 'teams_login' },
+  contacts: { tool: 'teams_get_frequent_contacts' },
+  channel: { tool: 'teams_find_channel', primaryArg: 'query' },
+  chat: { tool: 'teams_get_chat', primaryArg: 'userId' },
+};
+
+// Map CLI flags to tool parameter names
+const FLAG_MAPPINGS: Record<string, string> = {
+  '--to': 'conversationId',
+  '--message': 'messageId',
+  '--from': 'from',
+  '--size': 'size',
+  '--limit': 'limit',
+  '--query': 'query',
+  '--content': 'content',
+  '--force': 'forceNew',
+  '--user': 'userId',
+  '--userId': 'userId',
+};
+
+interface ParsedArgs {
+  command: string;  // 'list' or tool name
+  toolName: string | null;
+  primaryArg: string | null;
+  args: Record<string, unknown>;
   json: boolean;
-  from?: number;
-  size?: number;
-  limit?: number;
 }
 
-function parseArgs(): TestOptions {
+function parseArgs(): ParsedArgs {
   const args = process.argv.slice(2);
-  const options: TestOptions = {
+  const result: ParsedArgs = {
     command: 'list',
+    toolName: null,
+    primaryArg: null,
+    args: {},
     json: false,
   };
 
-  for (let i = 0; i < args.length; i++) {
+  let i = 0;
+  
+  // First pass: find the command (first non-flag argument)
+  while (i < args.length) {
     const arg = args[i];
     
     if (arg === '--json') {
-      options.json = true;
-    } else if (arg === '--from' && args[i + 1]) {
-      options.from = parseInt(args[i + 1], 10);
+      result.json = true;
       i++;
-    } else if (arg === '--size' && args[i + 1]) {
-      options.size = parseInt(args[i + 1], 10);
-      i++;
-    } else if (arg === 'search') {
-      options.command = 'search';
-      // Next non-flag argument is the query
-      for (let j = i + 1; j < args.length; j++) {
-        if (!args[j].startsWith('--')) {
-          options.query = args[j];
-          break;
+      continue;
+    }
+    
+    if (arg.startsWith('--')) {
+      // Skip flag and its value
+      i += 2;
+      continue;
+    }
+    
+    // Found the command
+    result.command = arg;
+    i++;
+    break;
+  }
+
+  // Check if it's a shortcut
+  const shortcut = SHORTCUTS[result.command];
+  if (shortcut) {
+    result.toolName = shortcut.tool;
+    
+    // Look for primary argument (next non-flag arg)
+    while (i < args.length) {
+      const arg = args[i];
+      if (!arg.startsWith('--')) {
+        if (shortcut.primaryArg) {
+          result.args[shortcut.primaryArg] = arg;
         }
+        result.primaryArg = arg;
+        i++;
+        break;
       }
-    } else if (arg === 'send') {
-      options.command = 'send';
-      // Next non-flag argument is the message
-      for (let j = i + 1; j < args.length; j++) {
-        if (!args[j].startsWith('--')) {
-          options.message = args[j];
-          break;
-        }
-      }
-    } else if (arg === '--to' && args[i + 1]) {
-      options.conversationId = args[i + 1];
       i++;
-    } else if (arg === '--message' && args[i + 1]) {
-      options.messageId = args[i + 1];
-      i++;
-    } else if (arg === 'me') {
-      options.command = 'me';
-    } else if (arg === 'status') {
-      options.command = 'status';
-    } else if (arg === 'list') {
-      options.command = 'list';
-    } else if (arg === 'people') {
-      options.command = 'people';
-      // Next non-flag argument is the query
-      for (let j = i + 1; j < args.length; j++) {
-        if (!args[j].startsWith('--')) {
-          options.query = args[j];
-          break;
-        }
-      }
-    } else if (arg === 'favorites') {
-      options.command = 'favorites';
-    } else if (arg === 'save') {
-      options.command = 'save';
-    } else if (arg === 'unsave') {
-      options.command = 'unsave';
-    } else if (arg === 'thread') {
-      options.command = 'thread';
-    } else if (arg === '--limit' && args[i + 1]) {
-      options.limit = parseInt(args[i + 1], 10);
-      i++;
+    }
+  } else if (result.command !== 'list') {
+    // Treat as a tool name (add teams_ prefix if not present)
+    result.toolName = result.command.startsWith('teams_') 
+      ? result.command 
+      : `teams_${result.command}`;
+  }
+
+  // Second pass: collect all --key value pairs
+  for (let j = 0; j < args.length; j++) {
+    const arg = args[j];
+    
+    if (arg === '--json') {
+      result.json = true;
+      continue;
+    }
+    
+    if (arg.startsWith('--') && args[j + 1] !== undefined) {
+      const key = FLAG_MAPPINGS[arg] || arg.slice(2);  // Use mapping or strip --
+      let value: unknown = args[j + 1];
+      
+      // Try to parse as number or boolean
+      if (value === 'true') value = true;
+      else if (value === 'false') value = false;
+      else if (/^\d+$/.test(value as string)) value = parseInt(value as string, 10);
+      
+      result.args[key] = value;
+      j++;  // Skip the value
     }
   }
 
-  return options;
+  return result;
 }
 
 function log(message: string): void {
@@ -138,12 +179,14 @@ async function createTestClient(): Promise<{ client: Client; cleanup: () => Prom
   return { client, cleanup };
 }
 
-async function testListTools(client: Client, options: TestOptions): Promise<void> {
-  logSection('Available Tools');
+async function listTools(client: Client, json: boolean): Promise<void> {
+  if (!json) {
+    logSection('Available Tools');
+  }
   
   const result = await client.listTools();
   
-  if (options.json) {
+  if (json) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
@@ -170,54 +213,199 @@ async function testListTools(client: Client, options: TestOptions): Promise<void
     }
     log('');
   }
+  
+  // Show available shortcuts
+  log('Shortcuts:');
+  for (const [shortcut, config] of Object.entries(SHORTCUTS)) {
+    const primaryNote = config.primaryArg ? ` <${config.primaryArg}>` : '';
+    log(`  ${shortcut}${primaryNote} → ${config.tool}`);
+  }
+  log('');
+  log('Any unrecognised command is treated as a tool name.');
+  log('Use --key value for parameters, e.g.: teams_find_channel --query "name"');
 }
 
-async function testStatus(client: Client, options: TestOptions): Promise<void> {
-  logSection('Teams Status');
+async function callTool(
+  client: Client,
+  toolName: string,
+  args: Record<string, unknown>,
+  json: boolean
+): Promise<void> {
+  // Verify the tool exists
+  const tools = await client.listTools();
+  const tool = tools.tools.find(t => t.name === toolName);
   
-  const result = await client.callTool({ name: 'teams_status', arguments: {} });
-  
-  if (options.json) {
+  if (!tool) {
+    console.error(`❌ Unknown tool: ${toolName}`);
+    console.error('');
+    console.error('Available tools:');
+    for (const t of tools.tools) {
+      console.error(`  - ${t.name}`);
+    }
+    process.exit(1);
+  }
+
+  if (!json) {
+    logSection(`Calling: ${toolName}`);
+    if (Object.keys(args).length > 0) {
+      log(`Arguments: ${JSON.stringify(args)}\n`);
+    }
+  }
+
+  const result = await client.callTool({ name: toolName, arguments: args });
+
+  if (json) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  
-  // Parse the result
+
+  // Pretty-print the result
   const content = result.content as Array<{ type: string; text?: string }>;
   const textContent = content.find(c => c.type === 'text');
-  
+
   if (textContent?.text) {
-    const status = JSON.parse(textContent.text);
-    
-    log('\nDirect API (search):');
-    if (status.directApi.available) {
-      log(`  ✅ Available (${status.directApi.minutesRemaining} min remaining)`);
-    } else {
-      log('  ❌ No valid token');
+    try {
+      const response = JSON.parse(textContent.text);
+      prettyPrintResponse(response, toolName);
+    } catch {
+      // Not JSON, just print as-is
+      log(textContent.text);
     }
-    
-    log('\nMessaging:');
-    log(`  ${status.messaging?.available ? '✅ Available' : '❌ No valid session cookies'}`);
-    
-    log('\nFavorites:');
-    log(`  ${status.favorites?.available ? '✅ Available' : '❌ Missing CSA token or session cookies'}`);
-    
-    log('\nSession:');
-    log(`  Exists: ${status.session.exists ? '✅ Yes' : '❌ No'}`);
-    if (status.session.likelyExpired) {
-      log('  ⚠️  Likely expired');
-    }
-    
-    log('\nBrowser:');
-    log(`  Running: ${status.browser.running ? 'Yes' : 'No'}`);
+  } else {
+    log('(No text content in response)');
   }
 }
 
 /**
- * Extracts sender name from the sender object.
- * The API returns sender as { EmailAddress: { Name: string, Address: string } }
+ * Pretty-prints a tool response based on common patterns
  */
-function getSenderName(sender: unknown): string | null {
+function prettyPrintResponse(response: Record<string, unknown>, toolName: string): void {
+  // Check for error
+  if (response.success === false) {
+    log(`❌ Failed: ${response.error || 'Unknown error'}`);
+    if (response.code) log(`   Code: ${response.code}`);
+    if (response.suggestion) log(`   Suggestion: ${response.suggestion}`);
+    return;
+  }
+
+  log('✅ Success\n');
+
+  // Handle common response shapes
+  if (response.results && Array.isArray(response.results)) {
+    printResultsList(response.results, response);
+  } else if (response.favorites && Array.isArray(response.favorites)) {
+    printFavoritesList(response.favorites);
+  } else if (response.messages && Array.isArray(response.messages)) {
+    printMessagesList(response.messages);
+  } else if (response.contacts && Array.isArray(response.contacts)) {
+    printContactsList(response.contacts);
+  } else if (response.profile) {
+    printProfile(response.profile as Record<string, unknown>);
+  } else {
+    // Generic output for other responses
+    printGenericResponse(response);
+  }
+
+  // Print pagination if present
+  if (response.pagination) {
+    const p = response.pagination as Record<string, unknown>;
+    log(`\nPagination: from=${p.from}, size=${p.size}, returned=${p.returned}`);
+    if (p.total !== undefined) log(`Total available: ${p.total}`);
+    if (p.hasMore) log(`More results available (use --from ${p.nextFrom})`);
+  }
+}
+
+function printResultsList(results: unknown[], response: Record<string, unknown>): void {
+  log(`Found ${response.resultCount ?? results.length} results:\n`);
+  
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i] as Record<string, unknown>;
+    const num = ((response.pagination as Record<string, unknown>)?.from as number ?? 0) + i + 1;
+    
+    // Try to extract meaningful content
+    const content = String(r.content ?? r.displayName ?? r.name ?? '').substring(0, 100).replace(/\n/g, ' ');
+    log(`${num}. ${content}${content.length >= 100 ? '...' : ''}`);
+    
+    // Print common fields
+    const sender = extractSenderName(r.sender);
+    if (sender) log(`   From: ${sender}`);
+    if (r.email) log(`   Email: ${r.email}`);
+    if (r.teamName) log(`   Team: ${r.teamName}`);
+    if (r.channelName && r.channelName !== r.teamName) log(`   Channel: ${r.channelName}`);
+    if (r.timestamp) log(`   Time: ${r.timestamp}`);
+    if (r.conversationId) log(`   ConversationId: ${r.conversationId}`);
+    if (r.jobTitle) log(`   Title: ${r.jobTitle}`);
+    if (r.department) log(`   Dept: ${r.department}`);
+    if (r.mri) log(`   MRI: ${r.mri}`);
+    log('');
+  }
+}
+
+function printFavoritesList(favorites: unknown[]): void {
+  log(`Found ${favorites.length} favourites:\n`);
+  
+  for (const f of favorites) {
+    const fav = f as Record<string, unknown>;
+    const typeLabel = fav.conversationType ? ` [${fav.conversationType}]` : '';
+    const nameLabel = fav.displayName || '(unnamed)';
+    log(`⭐ ${nameLabel}${typeLabel}`);
+    log(`   ID: ${fav.conversationId}`);
+  }
+}
+
+function printMessagesList(messages: unknown[]): void {
+  log(`Got ${messages.length} messages:\n`);
+  
+  for (const msg of messages) {
+    const m = msg as Record<string, unknown>;
+    const preview = String(m.content ?? '').substring(0, 100).replace(/\n/g, ' ');
+    const sender = (m.sender as Record<string, unknown>)?.displayName || 
+                   (m.sender as Record<string, unknown>)?.mri || 'Unknown';
+    const time = m.timestamp ? new Date(m.timestamp as string).toLocaleString() : '';
+    const fromMe = m.isFromMe ? ' (you)' : '';
+    
+    log(`📝 ${sender}${fromMe} - ${time}`);
+    log(`   ${preview}${String(m.content ?? '').length > 100 ? '...' : ''}`);
+    log('');
+  }
+}
+
+function printContactsList(contacts: unknown[]): void {
+  log(`Found ${contacts.length} contacts:\n`);
+  
+  for (const c of contacts) {
+    const contact = c as Record<string, unknown>;
+    log(`👤 ${contact.displayName}`);
+    if (contact.email) log(`   Email: ${contact.email}`);
+    if (contact.jobTitle) log(`   Title: ${contact.jobTitle}`);
+    if (contact.department) log(`   Dept: ${contact.department}`);
+    log('');
+  }
+}
+
+function printProfile(profile: Record<string, unknown>): void {
+  log('👤 Profile:\n');
+  for (const [key, value] of Object.entries(profile)) {
+    if (value !== null && value !== undefined) {
+      log(`   ${key}: ${value}`);
+    }
+  }
+}
+
+function printGenericResponse(response: Record<string, unknown>): void {
+  // Filter out success flag and print remaining fields
+  for (const [key, value] of Object.entries(response)) {
+    if (key === 'success') continue;
+    
+    if (typeof value === 'object' && value !== null) {
+      log(`${key}: ${JSON.stringify(value, null, 2)}`);
+    } else {
+      log(`${key}: ${value}`);
+    }
+  }
+}
+
+function extractSenderName(sender: unknown): string | null {
   if (!sender) return null;
   if (typeof sender === 'string') return sender;
   if (typeof sender === 'object') {
@@ -228,349 +416,18 @@ function getSenderName(sender: unknown): string | null {
       if (email.Name) return String(email.Name);
       if (email.Address) return String(email.Address);
     }
-    // Handle { name: string } structure
+    // Handle { name: string } or { displayName: string } structure
+    if (s.displayName) return String(s.displayName);
     if (s.name) return String(s.name);
     if (s.Name) return String(s.Name);
   }
   return null;
 }
 
-async function testSearch(client: Client, options: TestOptions): Promise<void> {
-  if (!options.query) {
-    console.error('❌ Error: Search query required');
-    console.error('   Usage: npm run test:mcp -- search "your query"');
-    process.exit(1);
-  }
-  
-  if (!options.json) {
-    logSection(`Search: "${options.query}"`);
-  }
-  
-  const args: Record<string, unknown> = { query: options.query };
-  if (options.from !== undefined) args.from = options.from;
-  if (options.size !== undefined) args.size = options.size;
-  
-  if (!options.json) {
-    log(`Calling teams_search via MCP protocol...`);
-    log(`Arguments: ${JSON.stringify(args)}\n`);
-  }
-  
-  const result = await client.callTool({ name: 'teams_search', arguments: args });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  // Parse the result
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Search failed: ${response.error}`);
-      return;
-    }
-    
-    log(`✅ Search successful (mode: ${response.mode})`);
-    log(`   Results: ${response.resultCount}`);
-    
-    if (response.pagination) {
-      const p = response.pagination;
-      log(`   Pagination: from=${p.from}, size=${p.size}, returned=${p.returned}`);
-      if (p.total !== undefined) {
-        log(`   Total available: ${p.total}`);
-      }
-      if (p.hasMore) {
-        log(`   More results available (use --from ${p.nextFrom})`);
-      }
-    }
-    
-    if (response.results && response.results.length > 0) {
-      log('\n📋 Results:\n');
-      
-      for (let i = 0; i < response.results.length; i++) {
-        const r = response.results[i];
-        const num = (response.pagination?.from ?? 0) + i + 1;
-        const preview = (r.content ?? '').substring(0, 100).replace(/\n/g, ' ');
-        
-        log(`${num}. ${preview}${r.content?.length > 100 ? '...' : ''}`);
-        
-        const senderName = getSenderName(r.sender);
-        if (senderName) log(`   From: ${senderName}`);
-        if (r.teamName) log(`   Team: ${r.teamName}`);
-        if (r.channelName && r.channelName !== r.teamName) log(`   Channel: ${r.channelName}`);
-        if (r.timestamp) log(`   Time: ${r.timestamp}`);
-        log('');
-      }
-    }
-  }
-}
-
-async function testSend(client: Client, options: TestOptions): Promise<void> {
-  if (!options.message) {
-    console.error('❌ Error: Message content required');
-    console.error('   Usage: npm run test:mcp -- send "your message"');
-    process.exit(1);
-  }
-  
-  if (!options.json) {
-    logSection(`Send Message`);
-  }
-  
-  const args: Record<string, unknown> = { content: options.message };
-  if (options.conversationId) args.conversationId = options.conversationId;
-  
-  if (!options.json) {
-    log(`Calling teams_send_message via MCP protocol...`);
-    log(`Arguments: ${JSON.stringify(args)}\n`);
-  }
-  
-  const result = await client.callTool({ name: 'teams_send_message', arguments: args });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  // Parse the result
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Send failed: ${response.error}`);
-      return;
-    }
-    
-    log(`✅ Message sent successfully!`);
-    log(`   Message ID: ${response.messageId}`);
-    if (response.timestamp) {
-      log(`   Timestamp: ${new Date(response.timestamp).toISOString()}`);
-    }
-    log(`   Conversation: ${response.conversationId}`);
-  }
-}
-
-async function testMe(client: Client, options: TestOptions): Promise<void> {
-  if (!options.json) {
-    logSection(`Get Current User`);
-  }
-  
-  if (!options.json) {
-    log(`Calling teams_get_me via MCP protocol...`);
-  }
-  
-  const result = await client.callTool({ name: 'teams_get_me', arguments: {} });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  // Parse the result
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Failed: ${response.error}`);
-      return;
-    }
-    
-    const p = response.profile;
-    log(`\n👤 Current User\n`);
-    log(`   Name: ${p.displayName}`);
-    log(`   Email: ${p.email}`);
-    log(`   ID: ${p.id}`);
-    log(`   MRI: ${p.mri}`);
-    if (p.tenantId) {
-      log(`   Tenant: ${p.tenantId}`);
-    }
-  }
-}
-
-async function testPeople(client: Client, options: TestOptions): Promise<void> {
-  if (!options.query) {
-    console.error('❌ Error: Search query required');
-    console.error('   Usage: npm run test:mcp -- people "name or email"');
-    process.exit(1);
-  }
-  
-  if (!options.json) {
-    logSection(`Search People: "${options.query}"`);
-    log(`Calling teams_search_people via MCP protocol...`);
-  }
-  
-  const result = await client.callTool({ 
-    name: 'teams_search_people', 
-    arguments: { query: options.query } 
-  });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Failed: ${response.error}`);
-      return;
-    }
-    
-    log(`\n✅ Found ${response.returned} people:\n`);
-    
-    for (const p of response.results) {
-      log(`👤 ${p.displayName}`);
-      if (p.email) log(`   Email: ${p.email}`);
-      if (p.jobTitle) log(`   Title: ${p.jobTitle}`);
-      if (p.department) log(`   Dept: ${p.department}`);
-      log(`   MRI: ${p.mri}`);
-      log('');
-    }
-  }
-}
-
-async function testFavorites(client: Client, options: TestOptions): Promise<void> {
-  if (!options.json) {
-    logSection(`Get Favourites`);
-    log(`Calling teams_get_favorites via MCP protocol...`);
-  }
-  
-  const result = await client.callTool({ name: 'teams_get_favorites', arguments: {} });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Failed: ${response.error}`);
-      return;
-    }
-    
-    log(`\n⭐ Found ${response.count} favourites:\n`);
-    
-    for (const f of response.favorites) {
-      const typeLabel = f.conversationType ? ` [${f.conversationType}]` : '';
-      const nameLabel = f.displayName || '(unnamed)';
-      log(`   ${nameLabel}${typeLabel}`);
-      log(`     ID: ${f.conversationId}`);
-    }
-  }
-}
-
-async function testThread(client: Client, options: TestOptions): Promise<void> {
-  if (!options.conversationId) {
-    console.error(`❌ Error: Conversation ID required`);
-    console.error(`   Usage: npm run test:mcp -- thread --to "conversationId" [--limit 50]`);
-    process.exit(1);
-  }
-  
-  if (!options.json) {
-    logSection(`Get Thread Messages`);
-    log(`Calling teams_get_thread via MCP protocol...`);
-  }
-  
-  const args: Record<string, unknown> = { conversationId: options.conversationId };
-  if (options.limit) args.limit = options.limit;
-  
-  const result = await client.callTool({ name: 'teams_get_thread', arguments: args });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Failed: ${response.error}`);
-      return;
-    }
-    
-    log(`\n✅ Got ${response.messageCount} messages from thread:\n`);
-    
-    for (const msg of response.messages || []) {
-      const preview = msg.content.substring(0, 100).replace(/\n/g, ' ');
-      const sender = msg.sender?.displayName || msg.sender?.mri || 'Unknown';
-      const time = new Date(msg.timestamp).toLocaleString();
-      const fromMe = msg.isFromMe ? ' (you)' : '';
-      
-      log(`📝 ${sender}${fromMe} - ${time}`);
-      log(`   ${preview}${msg.content.length > 100 ? '...' : ''}`);
-      log('');
-    }
-  }
-}
-
-async function testSaveMessage(client: Client, options: TestOptions, save: boolean): Promise<void> {
-  if (!options.conversationId || !options.messageId) {
-    console.error(`❌ Error: Conversation ID and message ID required`);
-    console.error(`   Usage: npm run test:mcp -- ${save ? 'save' : 'unsave'} --to "conversationId" --message "messageId"`);
-    process.exit(1);
-  }
-  
-  if (!options.json) {
-    logSection(save ? `Save Message` : `Unsave Message`);
-    log(`Calling teams_${save ? 'save' : 'unsave'}_message via MCP protocol...`);
-  }
-  
-  const result = await client.callTool({ 
-    name: save ? 'teams_save_message' : 'teams_unsave_message', 
-    arguments: { 
-      conversationId: options.conversationId,
-      messageId: options.messageId,
-    } 
-  });
-  
-  if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
-    return;
-  }
-  
-  const content = result.content as Array<{ type: string; text?: string }>;
-  const textContent = content.find(c => c.type === 'text');
-  
-  if (textContent?.text) {
-    const response = JSON.parse(textContent.text);
-    
-    if (!response.success) {
-      log(`❌ Failed: ${response.error}`);
-      return;
-    }
-    
-    log(`\n✅ Message ${save ? 'saved' : 'unsaved'} successfully!`);
-    log(`   Conversation: ${response.conversationId}`);
-    log(`   Message: ${response.messageId}`);
-  }
-}
-
 async function main(): Promise<void> {
-  const options = parseArgs();
+  const parsed = parseArgs();
   
-  if (!options.json) {
+  if (!parsed.json) {
     console.log('\n🧪 MCP Protocol Test Harness');
     console.log('============================');
   }
@@ -581,44 +438,17 @@ async function main(): Promise<void> {
     const { client, cleanup: cleanupFn } = await createTestClient();
     cleanup = cleanupFn;
     
-    if (!options.json) {
+    if (!parsed.json) {
       log('\n✅ Connected to MCP server via in-memory transport');
     }
     
-    switch (options.command) {
-      case 'list':
-        await testListTools(client, options);
-        break;
-      case 'status':
-        await testStatus(client, options);
-        break;
-      case 'search':
-        await testSearch(client, options);
-        break;
-      case 'send':
-        await testSend(client, options);
-        break;
-      case 'me':
-        await testMe(client, options);
-        break;
-      case 'people':
-        await testPeople(client, options);
-        break;
-      case 'favorites':
-        await testFavorites(client, options);
-        break;
-      case 'save':
-        await testSaveMessage(client, options, true);
-        break;
-      case 'unsave':
-        await testSaveMessage(client, options, false);
-        break;
-      case 'thread':
-        await testThread(client, options);
-        break;
+    if (parsed.command === 'list' || !parsed.toolName) {
+      await listTools(client, parsed.json);
+    } else {
+      await callTool(client, parsed.toolName, parsed.args, parsed.json);
     }
     
-    if (!options.json) {
+    if (!parsed.json) {
       logSection('Complete');
       log('MCP protocol test finished successfully.');
     }

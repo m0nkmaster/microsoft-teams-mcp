@@ -109,17 +109,17 @@ This document defines user stories and personas to guide development of the Team
 > "Summarise what happened in #project-alpha today"
 
 **Flow:**
-1. Find channel by name
-2. Get recent messages from channel
+1. Find channel by name using `teams_find_channel`
+2. Get recent messages from channel using `teams_get_thread`
 3. Generate summary
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_find_channel` | ❌ Needed |
-| `teams_get_channel_posts` | ❌ Needed |
+| `teams_find_channel` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented (works with channel IDs) |
 
-**Gap:** Channel discovery and message retrieval not yet implemented.
+**Status:** ✅ Works now - use `teams_find_channel` to discover channels by name, then `teams_get_thread` with the returned `channelId` to get messages.
 
 ---
 
@@ -185,18 +185,20 @@ This document defines user stories and personas to guide development of the Team
 > "Send a message to John Smith asking about the project status"
 
 **Flow:**
-1. Search for person by name
-2. Get their conversation ID
-3. Send message
+1. Search for person by name using `teams_search_people`
+2. Get their conversation ID using `teams_get_chat`
+3. Send message using `teams_send_message`
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
 | `teams_search_people` | ✅ Implemented |
-| `teams_get_or_create_chat` | ❌ Needed - start new 1:1 chats |
+| `teams_get_chat` | ✅ Implemented |
 | `teams_send_message` | ✅ Implemented |
 
-**Status:** ⚠️ Partial - can find people and message existing conversations. Cannot start a new 1:1 chat with someone you haven't messaged before.
+**Status:** ✅ Fully working - can find anyone and start a new 1:1 chat with them.
+
+**Technical Note:** The conversation ID for 1:1 chats follows a predictable format: `19:{id1}_{id2}@unq.gbl.spaces` where the two user object IDs are sorted lexicographically. The `teams_get_chat` tool computes this ID from the user's object ID (from people search). The conversation is created implicitly when the first message is sent.
 
 ---
 
@@ -319,8 +321,8 @@ Based on user value and API readiness:
 ### Phase 2 - Core Functionality
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 4.1 Find person | `teams_search_people` | ✅ Done (partial - can't create new chats) |
-| 2.3 Channel catchup | `teams_get_channel_posts` (or `in:channel` search) | Medium |
+| 4.1 Find person | `teams_search_people` + `teams_get_chat` | ✅ Done |
+| 2.3 Channel catchup | `teams_find_channel` + `teams_get_thread` | ✅ Done |
 | 6.1 Find files | Files API | Medium |
 
 ### Phase 3 - Advanced Features
@@ -349,10 +351,15 @@ Based on user value and API readiness:
 - ~~**Implement favourites tools**~~ ✅ Done - `teams_get_favorites`, `teams_add_favorite`, `teams_remove_favorite`
 - ~~**Implement save/unsave message**~~ ✅ Done - `teams_save_message`, `teams_unsave_message`
 - ~~**Implement `teams_get_thread`**~~ ✅ Done - Get replies to a specific message
+- ~~**Implement `teams_find_channel`**~~ ✅ Done - Find channels across the organisation
+- ~~**Implement `teams_get_chat`**~~ ✅ Done - Get conversation ID for 1:1 chats (enables messaging new contacts)
 
 ### Remaining
-1. **Implement `teams_get_or_create_chat`** - Create new 1:1 chats with people (enables messaging new contacts)
-2. **Implement `teams_get_channel_posts`** - Enables channel catchup (alternative: use `in:channel` search operator)
+1. **Implement `teams_get_files`** - List files shared in a conversation (API discovered, implementation pending)
+
+### No Longer Needed
+- ~~**`teams_get_channel_posts`**~~ - Channel catchup now works via `teams_find_channel` + `teams_get_thread`
+- ~~**`teams_get_or_create_chat`**~~ - Implemented as `teams_get_chat` (conversation ID is predictable, no creation needed)
 
 ---
 

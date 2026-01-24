@@ -196,6 +196,62 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
+### 1.4 Channel Search (Organisation-wide) ✅ IMPLEMENTED
+
+**Endpoint:** `POST https://substrate.office.com/search/api/v1/suggestions?scenario=powerbar&setflight=TurnOffMPLSuppressionTeams,EnableTeamsChannelDomainPowerbar&domain=TeamsChannel`
+
+**Use Case:** Search for Teams channels across the entire organisation (not just channels the user is a member of).
+
+**Request:**
+```json
+{
+  "EntityRequests": [
+    {
+      "Query": {
+        "QueryString": "testing",
+        "DisplayQueryString": "testing"
+      },
+      "EntityType": "TeamsChannel",
+      "Size": 10
+    }
+  ],
+  "cvid": "uuid",
+  "logicalId": "uuid"
+}
+```
+
+**Response:**
+```json
+{
+  "Groups": [
+    {
+      "Suggestions": [
+        {
+          "Name": "AI In Testing",
+          "ThreadId": "19:ca554e7ce3ab4a2f8099765fba3079bf@thread.tacv2",
+          "TeamName": "PE AI Excellence",
+          "GroupId": "df865310-bf69-4f1b-8dc7-ebd0cbfa090f",
+          "EntityType": "ChannelSuggestion",
+          "ChannelType": "Standard",
+          "Text": "testing",
+          "PropertyHits": ["Name"],
+          "ReferenceId": "uuid"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key Fields:**
+- `Name`: Channel display name
+- `ThreadId`: Conversation ID for use with messaging/thread APIs
+- `TeamName`: Parent team's display name
+- `GroupId`: Team's Azure AD group ID
+- `ChannelType`: "Standard", "Private", or "Shared"
+
+---
+
 ## 2. Channel & Chat APIs
 
 ### 2.1 Teams List (User's Joined Teams) ✅ NEW
@@ -842,7 +898,7 @@ Based on discovered APIs, here are potential tools to implement:
 | `teams_send_message` | chatsvc messages API | ✅ Done (uses skypetoken cookies) |
 | `teams_get_me` | JWT token extraction | ✅ Done |
 
-### 🔜 Ready to Implement
+### ✅ Recently Implemented
 
 | Tool | API | Notes |
 |------|-----|-------|
@@ -852,11 +908,24 @@ Based on discovered APIs, here are potential tools to implement:
 | `teams_save_message` | rcmetadata API | Bookmark a message |
 | `teams_unsave_message` | rcmetadata API | Remove bookmark from message |
 | `teams_search_people` | Substrate suggestions | Find people by name/email |
+| `teams_get_frequent_contacts` | Substrate peoplecache | Get frequently contacted people |
+| `teams_get_thread` | chatsvc messages API | Get messages from any conversation (chats, channels, meetings) |
+| `teams_find_channel` | Substrate channel suggestions | Find channels across the organisation |
+
+### 🔜 Ready to Implement
+
+| Tool | API | Notes |
+|------|-----|-------|
 | `teams_get_person` | Delve person API | Get specific person's details |
-| `teams_get_channel_posts` | CSA containers API | Get messages from a channel |
 | `teams_get_files` | AllFiles API | List files shared in a conversation |
 
-### ⚠️ Needs More Research
+### ✅ Implemented via Discovery
+
+| Tool | Notes |
+|------|-------|
+| `teams_get_chat` | Get conversation ID for 1:1 chats. No API call needed - the ID is predictable from user object IDs. |
+
+### ⚠️ Needs More Research (Existing)
 
 | Tool | Notes |
 |------|-------|
@@ -864,6 +933,35 @@ Based on discovered APIs, here are potential tools to implement:
 | `teams_get_saved_messages` | No single endpoint - saved flag is per-message in rcMetadata |
 | `teams_activity` | 48:notifications exists but format unclear |
 | `teams_calendar` | Outlook calendar APIs available - need to extract meetings |
+
+### 📝 Implementation Notes
+
+**Channel Posts via `teams_get_thread`:**
+
+The `teams_get_channel_posts` tool is no longer needed as a separate implementation. The existing `teams_get_thread` tool works with channel IDs:
+
+1. Use `teams_find_channel` to discover channels by name → returns `channelId` (format: `19:xxx@thread.tacv2`)
+2. Use `teams_get_thread` with that `channelId` to get messages
+
+The CSA containers API (section 2.2) provides additional features like `threadedPostsOnly` for top-level posts only, but for most use cases `teams_get_thread` via chatsvc is sufficient.
+
+**1:1 Chat Conversation IDs (Discovered):**
+
+Research revealed that 1:1 chat conversation IDs are **predictable** and don't require a creation API:
+
+**Format:** `19:{userId1}_{userId2}@unq.gbl.spaces`
+
+Where:
+- `userId1` and `userId2` are Azure AD object IDs (GUIDs)
+- The IDs are **sorted lexicographically** (ensures both participants get the same ID)
+- The conversation is created implicitly when the first message is sent
+
+**Example:**
+- Your ID: `ab76f827-27e2-4c67-a765-f1a53145fa24`
+- Other person: `5817f485-f870-46eb-bbc4-de216babac62`
+- Since '5' < 'a' alphabetically: `19:5817f485-..._ab76f827-...@unq.gbl.spaces`
+
+**Implementation:** The `teams_get_chat` tool computes this ID from any user identifier format (MRI, ID with tenant, or raw GUID). Use the result with `teams_send_message`.
 
 ### 🔮 Future Possibilities
 

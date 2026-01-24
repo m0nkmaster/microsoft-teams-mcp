@@ -67,9 +67,11 @@ The search implementation uses a hybrid approach:
 2. **Browser Fallback**: If no valid token is available (first run or token expired), opens a visible browser for login, then extracts tokens for future use.
 
 ### Authentication Flow
-1. **First search**: Opens browser → user logs in → search performed → tokens extracted → browser closed
-2. **Subsequent searches**: Uses cached tokens for direct API calls (no browser)
+1. **Login/first search**: Opens browser → user logs in → search triggered to acquire Substrate token → session saved → browser closed
+2. **Subsequent API calls**: Uses cached tokens for direct API calls (no browser)
 3. **Token expiry**: When tokens expire (~1 hour), falls back to browser to refresh them
+
+The `teams_login` tool triggers a search after authentication to ensure the Substrate API token is acquired. Without this, only session cookies would be saved, and API-dependent tools would fail.
 
 ### Direct API Details
 The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) provides:
@@ -116,6 +118,26 @@ The chatsvc conversation API returns `threadProperties` with type information:
 - `topic`: Meeting title or user-set chat topic
 - For chats without topics: extract from `members` array or recent messages
 
+### User ID Formats
+
+Teams APIs return user IDs in multiple formats. The `extractObjectId()` function in `parsers.ts` handles all of these:
+
+| Format | Example | Notes |
+|--------|---------|-------|
+| Raw GUID | `ab76f827-27e2-4c67-a765-f1a53145fa24` | Standard format |
+| MRI | `8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24` | Teams internal identifier |
+| ID with tenant | `ab76f827-...@56b731a8-...` | GUID followed by tenant ID |
+| Base64-encoded GUID | `93qkaTtFGWpUHjyRafgdhg==` | 16 bytes, little-endian |
+| Skype ID | `orgid:ab76f827-...` | Used in skypetoken claims |
+
+**Base64 GUID decoding:** The Substrate people search API returns user IDs as base64-encoded GUIDs. These are 16 bytes encoded in base64 (24 chars with padding). Microsoft uses little-endian byte ordering for the first three GUID groups (Data1, Data2, Data3).
+
+**1:1 Chat ID format:** Conversation IDs for 1:1 chats follow this predictable format:
+```
+19:{userId1}_{userId2}@unq.gbl.spaces
+```
+The two user object IDs (GUIDs) are sorted lexicographically. This format works for internal users. External/guest users may require a different format (not yet researched).
+
 ### Session Persistence
 Playwright's `storageState()` is used to save and restore browser sessions. This means:
 - Session cookies help with faster re-authentication
@@ -145,6 +167,8 @@ Session state and token cache files are protected by:
 | `teams_save_message` | Bookmark a message |
 | `teams_unsave_message` | Remove bookmark from a message |
 | `teams_get_thread` | Get messages from a conversation/thread |
+| `teams_find_channel` | Find channels by name (your teams + org-wide), shows membership |
+| `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
 
 ### Design Philosophy
 
@@ -305,6 +329,59 @@ Name sources by type:
 
 **Note:** Messages are sorted oldest-first. This uses the same session cookie authentication as messaging.
 
+### teams_find_channel Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| query | string | required | Channel name to search for (partial match) |
+| limit | number | 10 | Maximum number of results (1-50) |
+
+**Response** includes:
+- `count` - Number of matching channels
+- `channels[]` with:
+  - `channelId` - Channel conversation ID (use with `teams_get_thread` to read messages)
+  - `channelName` - Channel display name
+  - `teamName` - Parent team display name
+  - `teamId` - Parent team group ID (may be empty for some channels)
+  - `channelType` - "Standard", "Private", or "Shared"
+  - `description` - Channel description (if set)
+  - `isMember` - Whether you're a member of this channel's team
+
+**How it works:** This tool combines two searches:
+1. **User's teams/channels** (Teams List API) - Reliable, complete list of channels you're a member of
+2. **Organisation-wide discovery** (Substrate suggestions API) - Broader but less reliable typeahead search
+
+Results are merged and deduplicated. Channels from your teams appear first with `isMember: true`.
+
+**Use cases:**
+1. Finding channels you're a member of (reliable, includes private channels)
+2. Discovering channels to join or follow (org-wide search)
+3. Getting channel IDs to read messages with `teams_get_thread`
+
+**Note:** The org-wide search uses a typeahead/autocomplete API which may not find all channels, especially with multi-word queries. Your own team channels are searched reliably via client-side filtering.
+
+### teams_get_chat Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| userId | string | required | The user's identifier (MRI, object ID with tenant, or raw GUID) |
+
+**Response** includes:
+- `conversationId` - The 1:1 conversation ID (use with `teams_send_message`)
+- `otherUserId` - The other user's object ID
+- `currentUserId` - Your object ID
+
+**Use case:** Get the conversation ID for a 1:1 chat with someone, then use it to send a message. The conversation is automatically created when the first message is sent.
+
+**Example flow:**
+```
+1. teams_search_people "John Smith" → returns { id: "abc123-..." }
+2. teams_get_chat "abc123-..." → returns { conversationId: "19:abc123..._def456...@unq.gbl.spaces" }
+3. teams_send_message content="Hello!" conversationId="19:abc123..._def456...@unq.gbl.spaces"
+```
+
+**Technical note:** The conversation ID format for 1:1 chats is `19:{id1}_{id2}@unq.gbl.spaces` where the two user object IDs are sorted lexicographically. This is a predictable format - Teams creates the conversation implicitly when the first message is sent.
+
 ## Development Commands
 
 ```bash
@@ -322,41 +399,33 @@ Several CLI tools are available for testing and debugging:
 
 Tests the server through the actual MCP protocol using in-memory transports. This verifies the full MCP layer works correctly, not just the underlying functions.
 
+The harness can call **any tool** generically. Unrecognised commands are treated as tool names (with `teams_` prefix added if missing). Use `--key value` for parameters.
+
 ```bash
-# List available MCP tools
+# List available MCP tools and shortcuts
 npm run test:mcp
 
-# Search via MCP protocol
-npm run test:mcp -- search "your query"
+# Generic tool call (any tool works)
+npm run test:mcp -- teams_find_channel --query "weaponx"
+npm run test:mcp -- find_channel --query "weaponx"   # auto-prefixes teams_
 
-# Search with pagination
+# Shortcuts for common tools
+npm run test:mcp -- search "your query"              # teams_search
 npm run test:mcp -- search "your query" --from 25 --size 10
-
-# Check status via MCP
-npm run test:mcp -- status
+npm run test:mcp -- status                           # teams_status
+npm run test:mcp -- send "Hello from MCP!"           # teams_send_message
+npm run test:mcp -- send "Message" --to "conv-id"
+npm run test:mcp -- people "john smith"              # teams_search_people
+npm run test:mcp -- favorites                        # teams_get_favorites
+npm run test:mcp -- contacts                         # teams_get_frequent_contacts
+npm run test:mcp -- channel "project-alpha"          # teams_find_channel
+npm run test:mcp -- chat "user-guid-or-mri"          # teams_get_chat
+npm run test:mcp -- thread --to "conv-id"            # teams_get_thread
+npm run test:mcp -- save --to "conv-id" --message "msg-id"
+npm run test:mcp -- unsave --to "conv-id" --message "msg-id"
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json
-
-# Send a message to yourself (notes)
-npm run test:mcp -- send "Hello from MCP!"
-
-# Send to specific conversation
-npm run test:mcp -- send "Message" --to "conversation-id"
-
-# Search for people
-npm run test:mcp -- people "john smith"
-
-# Get favourites
-npm run test:mcp -- favorites
-
-# Save/unsave a message
-npm run test:mcp -- save --to "conversation-id" --message "message-id"
-npm run test:mcp -- unsave --to "conversation-id" --message "message-id"
-
-# Get thread/conversation messages
-npm run test:mcp -- thread --to "conversation-id"
-npm run test:mcp -- thread --to "conversation-id" --limit 20
 ```
 
 ### Direct CLI Tools
@@ -498,6 +567,8 @@ The unit tests cover:
 - JWT profile extraction (`parseJwtProfile`)
 - Token expiry calculations (`calculateTokenStatus`)
 - People results parsing (`parsePeopleResults`)
+- Base64 GUID decoding (`decodeBase64Guid`)
+- User ID extraction from various formats (`extractObjectId`)
 
 ### Adding New Tests
 
@@ -536,6 +607,7 @@ From research, Teams uses these primary APIs:
 | `substrate.office.com/searchservice/api/v2/query` | Full message search with pagination |
 | `substrate.office.com/search/api/v1/suggestions` | People/message typeahead |
 | `substrate.office.com/search/api/v1/suggestions?scenario=peoplecache` | Frequent contacts list |
+| `substrate.office.com/search/api/v1/suggestions?domain=TeamsChannel` | Organisation-wide channel search |
 
 ### Messages
 | Endpoint | Purpose |
@@ -579,10 +651,11 @@ Based on API research, these tools could be implemented:
 | `teams_save_message` | rcmetadata API | Easy | ✅ Implemented |
 | `teams_unsave_message` | rcmetadata API | Easy | ✅ Implemented |
 | `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
-| `teams_find_channel` | CSA v3 teams/users/me API | Easy | Pending |
+| `teams_find_channel` | Teams List + Substrate suggestions | Easy | ✅ Implemented (hybrid search) |
 | `teams_get_person` | Delve person API | Easy | Pending |
-| `teams_get_channel_posts` | CSA containers API | Medium | Pending |
+| `teams_get_channel_posts` | CSA containers API | Medium | Not needed - use `teams_get_thread` with channel ID |
 | `teams_get_files` | AllFiles API | Medium | Pending |
+| `teams_get_chat` | Computed from user IDs | Easy | ✅ Implemented - get conversation ID for 1:1 chat |
 
 ### Not Yet Feasible
 - **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata

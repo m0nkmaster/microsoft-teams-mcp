@@ -16,6 +16,9 @@ import {
   calculateTokenStatus,
   parseSearchResults,
   parsePeopleResults,
+  extractObjectId,
+  buildOneOnOneConversationId,
+  decodeBase64Guid,
 } from './parsers.js';
 import {
   searchResultItem,
@@ -25,6 +28,7 @@ import {
   searchEntitySetsResponse,
   personSuggestion,
   personMinimal,
+  personWithBase64Id,
   peopleGroupsResponse,
   jwtPayloadFull,
   jwtPayloadMinimal,
@@ -105,6 +109,30 @@ describe('extractMessageTimestamp', () => {
   });
 });
 
+describe('decodeBase64Guid', () => {
+  it('decodes base64-encoded GUID correctly', () => {
+    // '93qkaTtFGWpUHjyRafgdhg==' is a real base64-encoded GUID
+    const result = decodeBase64Guid('93qkaTtFGWpUHjyRafgdhg==');
+    expect(result).toBe('69a47af7-453b-6a19-541e-3c9169f81d86');
+  });
+
+  it('returns null for invalid base64', () => {
+    expect(decodeBase64Guid('not-valid-base64!')).toBeNull();
+  });
+
+  it('returns null for wrong length', () => {
+    // Too short (only 8 bytes when decoded)
+    expect(decodeBase64Guid('AAAAAAAAAAA=')).toBeNull();
+    // Too long (24 bytes when decoded)
+    expect(decodeBase64Guid('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==')).toBeNull();
+  });
+
+  it('returns lowercase GUID', () => {
+    const result = decodeBase64Guid('93qkaTtFGWpUHjyRafgdhg==');
+    expect(result).toBe(result?.toLowerCase());
+  });
+});
+
 describe('parsePersonSuggestion', () => {
   it('parses complete person data', () => {
     const result = parsePersonSuggestion(personSuggestion);
@@ -121,27 +149,41 @@ describe('parsePersonSuggestion', () => {
     expect(result!.companyName).toBe('Acme Corp');
   });
 
-  it('handles minimal person data', () => {
+  it('handles minimal person data with GUID format', () => {
     const result = parsePersonSuggestion(personMinimal);
     
     expect(result).not.toBeNull();
-    expect(result!.id).toBe('minimal-user-guid');
-    expect(result!.mri).toBe('8:orgid:minimal-user-guid');
+    expect(result!.id).toBe('b1c2d3e4-f5a6-7890-bcde-1234567890ab');
+    expect(result!.mri).toBe('8:orgid:b1c2d3e4-f5a6-7890-bcde-1234567890ab');
     expect(result!.displayName).toBe('Jane Doe');
     expect(result!.email).toBeUndefined();
   });
 
-  it('extracts ID from tenant-qualified format', () => {
+  it('decodes base64-encoded IDs', () => {
+    const result = parsePersonSuggestion(personWithBase64Id);
+    
+    expect(result).not.toBeNull();
+    expect(result!.id).toBe('69a47af7-453b-6a19-541e-3c9169f81d86');
+    expect(result!.mri).toBe('8:orgid:69a47af7-453b-6a19-541e-3c9169f81d86');
+    expect(result!.displayName).toBe('Rob MacDonald');
+    expect(result!.email).toBe('rob@company.com');
+  });
+
+  it('extracts ID from tenant-qualified GUID format', () => {
     const result = parsePersonSuggestion({
-      Id: 'guid123@tenant.onmicrosoft.com',
+      Id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890@tenant.onmicrosoft.com',
       DisplayName: 'Test User',
     });
     
-    expect(result!.id).toBe('guid123');
+    expect(result!.id).toBe('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
   });
 
   it('returns null for missing ID', () => {
     expect(parsePersonSuggestion({ DisplayName: 'No ID' })).toBeNull();
+  });
+
+  it('returns null for invalid ID format', () => {
+    expect(parsePersonSuggestion({ Id: 'invalid-format', DisplayName: 'Test' })).toBeNull();
   });
 });
 
@@ -341,5 +383,99 @@ describe('parsePeopleResults', () => {
   it('handles groups with no suggestions', () => {
     const groups = [{ Suggestions: [] }, { OtherField: 'value' }];
     expect(parsePeopleResults(groups)).toHaveLength(0);
+  });
+});
+
+describe('extractObjectId', () => {
+  it('extracts GUID from MRI format', () => {
+    expect(extractObjectId('8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24'))
+      .toBe('ab76f827-27e2-4c67-a765-f1a53145fa24');
+  });
+
+  it('extracts GUID from Skype ID format (without 8: prefix)', () => {
+    expect(extractObjectId('orgid:ab76f827-27e2-4c67-a765-f1a53145fa24'))
+      .toBe('ab76f827-27e2-4c67-a765-f1a53145fa24');
+  });
+
+  it('extracts GUID from ID with tenant format', () => {
+    expect(extractObjectId('5817f485-f870-46eb-bbc4-de216babac62@56b731a8-a2ac-4c32-bf6b-616810e913c6'))
+      .toBe('5817f485-f870-46eb-bbc4-de216babac62');
+  });
+
+  it('returns raw GUID unchanged', () => {
+    expect(extractObjectId('ab76f827-27e2-4c67-a765-f1a53145fa24'))
+      .toBe('ab76f827-27e2-4c67-a765-f1a53145fa24');
+  });
+
+  it('normalises to lowercase', () => {
+    expect(extractObjectId('AB76F827-27E2-4C67-A765-F1A53145FA24'))
+      .toBe('ab76f827-27e2-4c67-a765-f1a53145fa24');
+  });
+
+  it('decodes base64-encoded GUID', () => {
+    expect(extractObjectId('93qkaTtFGWpUHjyRafgdhg=='))
+      .toBe('69a47af7-453b-6a19-541e-3c9169f81d86');
+  });
+
+  it('decodes base64 GUID from MRI format', () => {
+    expect(extractObjectId('8:orgid:93qkaTtFGWpUHjyRafgdhg=='))
+      .toBe('69a47af7-453b-6a19-541e-3c9169f81d86');
+  });
+
+  it('decodes base64 GUID from Skype ID format', () => {
+    expect(extractObjectId('orgid:93qkaTtFGWpUHjyRafgdhg=='))
+      .toBe('69a47af7-453b-6a19-541e-3c9169f81d86');
+  });
+
+  it('returns null for invalid formats', () => {
+    expect(extractObjectId('')).toBeNull();
+    expect(extractObjectId('not-a-guid')).toBeNull();
+    expect(extractObjectId('8:orgid:invalid')).toBeNull();
+    expect(extractObjectId('orgid:invalid')).toBeNull();
+    expect(extractObjectId('missing-sections-1234')).toBeNull();
+  });
+});
+
+describe('buildOneOnOneConversationId', () => {
+  const userId1 = 'ab76f827-27e2-4c67-a765-f1a53145fa24';
+  const userId2 = '5817f485-f870-46eb-bbc4-de216babac62';
+
+  it('builds conversation ID with sorted user IDs', () => {
+    // userId2 ('5817...') comes before userId1 ('ab76...') alphabetically
+    const result = buildOneOnOneConversationId(userId1, userId2);
+    expect(result).toBe('19:5817f485-f870-46eb-bbc4-de216babac62_ab76f827-27e2-4c67-a765-f1a53145fa24@unq.gbl.spaces');
+  });
+
+  it('produces same result regardless of argument order', () => {
+    const result1 = buildOneOnOneConversationId(userId1, userId2);
+    const result2 = buildOneOnOneConversationId(userId2, userId1);
+    expect(result1).toBe(result2);
+  });
+
+  it('handles MRI format input', () => {
+    const mri1 = `8:orgid:${userId1}`;
+    const mri2 = `8:orgid:${userId2}`;
+    const result = buildOneOnOneConversationId(mri1, mri2);
+    expect(result).toBe('19:5817f485-f870-46eb-bbc4-de216babac62_ab76f827-27e2-4c67-a765-f1a53145fa24@unq.gbl.spaces');
+  });
+
+  it('handles ID with tenant format', () => {
+    const idWithTenant = '5817f485-f870-46eb-bbc4-de216babac62@56b731a8-a2ac-4c32-bf6b-616810e913c6';
+    const result = buildOneOnOneConversationId(userId1, idWithTenant);
+    expect(result).toBe('19:5817f485-f870-46eb-bbc4-de216babac62_ab76f827-27e2-4c67-a765-f1a53145fa24@unq.gbl.spaces');
+  });
+
+  it('handles base64-encoded GUID input', () => {
+    // '93qkaTtFGWpUHjyRafgdhg==' decodes to '69a47af7-453b-6a19-541e-3c9169f81d86'
+    const base64Id = '93qkaTtFGWpUHjyRafgdhg==';
+    const result = buildOneOnOneConversationId(base64Id, userId2);
+    // '5817...' < '69a4...' so 5817 comes first
+    expect(result).toBe('19:5817f485-f870-46eb-bbc4-de216babac62_69a47af7-453b-6a19-541e-3c9169f81d86@unq.gbl.spaces');
+  });
+
+  it('returns null for invalid input', () => {
+    expect(buildOneOnOneConversationId('invalid', userId2)).toBeNull();
+    expect(buildOneOnOneConversationId(userId1, 'invalid')).toBeNull();
+    expect(buildOneOnOneConversationId('', '')).toBeNull();
   });
 });
