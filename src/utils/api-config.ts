@@ -76,6 +76,14 @@ export const CHATSVC_API = {
   /** Save/unsave message metadata URL. */
   messageMetadata: (region: Region, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/rcmetadata/${messageId}`,
+  
+  /** Edit a specific message URL. */
+  editMessage: (region: Region, conversationId: string, messageId: string) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}`,
+  
+  /** Delete a specific message URL (soft delete). */
+  deleteMessage: (region: Region, conversationId: string, messageId: string) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}?behavior=softDelete`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */
