@@ -726,11 +726,20 @@ export class TeamsServer {
               return this.formatError(result.error);
             }
 
+            // The timestamp is what Teams uses for threading - convert to string for use as threadReplyId
+            const threadReplyId = result.value.timestamp ? String(result.value.timestamp) : undefined;
+
             const response: Record<string, unknown> = {
               messageId: result.value.messageId,
               timestamp: result.value.timestamp,
               conversationId: input.conversationId,
             };
+
+            // Add threadReplyId for channel messages (needed to reply to this message later)
+            if (threadReplyId && input.conversationId.includes('@thread.tacv2')) {
+              response.threadReplyId = threadReplyId;
+              response.note = 'Use threadReplyId (not messageId) if you want to reply to this message later.';
+            }
 
             // Include replyToMessageId in response if this was a thread reply
             if (input.replyToMessageId) {

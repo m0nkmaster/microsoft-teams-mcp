@@ -275,6 +275,17 @@ teams_send_message content="Hello team!" conversationId="19:channel@thread.tacv2
 teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
 ```
 
+**Response fields:**
+
+| Field | Description |
+|-------|-------------|
+| `messageId` | Client-generated ID (not used for threading) |
+| `timestamp` | Server timestamp in milliseconds |
+| `threadReplyId` | Use this to reply to this message later (only for channel messages) |
+| `conversationId` | The conversation the message was sent to |
+
+**Important:** When replying to a newly-sent message (not from search), use `threadReplyId` from the send response - not `messageId`. The `threadReplyId` is the timestamp-based ID that Teams uses for threading.
+
 **Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
 
 ### teams_reply_to_thread Parameters
