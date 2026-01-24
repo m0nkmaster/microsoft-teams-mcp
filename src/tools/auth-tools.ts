@@ -77,18 +77,24 @@ async function handleLogin(
   const browserManager = await createBrowserContext({ headless: false });
   ctx.server.setBrowserManager(browserManager);
 
-  if (input.forceNew) {
-    await forceNewLogin(
-      browserManager.page,
-      browserManager.context,
-      (msg) => console.error(`[login] ${msg}`)
-    );
-  } else {
-    await ensureAuthenticated(
-      browserManager.page,
-      browserManager.context,
-      (msg) => console.error(`[login] ${msg}`)
-    );
+  try {
+    if (input.forceNew) {
+      await forceNewLogin(
+        browserManager.page,
+        browserManager.context,
+        (msg) => console.error(`[login] ${msg}`)
+      );
+    } else {
+      await ensureAuthenticated(
+        browserManager.page,
+        browserManager.context,
+        (msg) => console.error(`[login] ${msg}`)
+      );
+    }
+  } finally {
+    // Close browser after login - we only need the saved session/tokens
+    await closeBrowser(browserManager, true);
+    ctx.server.resetBrowserState();
   }
 
   ctx.server.markInitialised();

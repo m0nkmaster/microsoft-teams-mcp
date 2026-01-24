@@ -12,7 +12,6 @@
 
 import { createBrowserContext, closeBrowser, type BrowserManager } from '../browser/context.js';
 import { ensureAuthenticated, forceNewLogin } from '../browser/auth.js';
-import { searchTeamsWithPagination } from '../teams/search.js';
 import {
   hasSessionState,
   getSessionAge,
@@ -78,7 +77,7 @@ Teams MCP CLI
 
 Commands:
   status              Check session and authentication status
-  search <query>      Search Teams for messages
+  search <query>      Search Teams for messages (requires valid token)
   send <message>      Send a message to yourself (notes)
   send --to <id>      Send a message to a specific conversation
   me                  Get current user profile (email, name, Teams ID)
@@ -87,10 +86,7 @@ Commands:
   help                Show this help message
 
 Options:
-  --headless          Run browser in headless mode (where applicable)
   --json              Output results as JSON
-  --debug             Show debug output for troubleshooting
-  --browser           Force browser mode (skip direct API)
 
 Pagination Options (for search):
   --from <n>          Starting offset (default: 0, for page 2 use --from 25)
@@ -105,7 +101,6 @@ Examples:
   npm run cli -- search "meeting notes"
   npm run cli -- search "project update" --json
   npm run cli -- search "query" --from 25
-  npm run cli -- search "query" --browser
   npm run cli -- send "Test message to myself"
   npm run cli -- login --force
 `);
@@ -161,14 +156,20 @@ async function commandSearch(
     process.exit(1);
   }
 
-  const headless = flags.has('headless');
   const asJson = flags.has('json');
-  const debug = flags.has('debug');
-  const forceBrowser = flags.has('browser');
 
   const from = options.has('from') ? parseInt(options.get('from')!, 10) : 0;
   const size = options.has('size') ? parseInt(options.get('size')!, 10) : 25;
   const maxResults = options.has('maxResults') ? parseInt(options.get('maxResults')!, 10) : 25;
+
+  if (!hasValidSubstrateToken()) {
+    if (asJson) {
+      console.log(JSON.stringify({ success: false, error: 'No valid token. Please run: npm run cli -- login' }, null, 2));
+    } else {
+      console.error('❌ No valid token. Please run: npm run cli -- login');
+    }
+    process.exit(1);
+  }
 
   if (!asJson) {
     console.log(`\n🔍 Searching for: "${query}"`);
@@ -177,93 +178,35 @@ async function commandSearch(
     }
   }
 
-  // Try direct API first
-  if (!forceBrowser && hasValidSubstrateToken()) {
-    if (!asJson) {
-      console.log('   Using direct API...\n');
-    }
+  const result = await searchMessages(query, { from, size, maxResults });
 
-    const result = await searchMessages(query, { from, size, maxResults });
-
-    if (result.ok) {
-      if (asJson) {
-        console.log(JSON.stringify({
-          mode: 'direct-api',
-          query,
-          count: result.value.results.length,
-          pagination: {
-            from: result.value.pagination.from,
-            size: result.value.pagination.size,
-            returned: result.value.pagination.returned,
-            total: result.value.pagination.total,
-            hasMore: result.value.pagination.hasMore,
-            nextFrom: result.value.pagination.hasMore
-              ? result.value.pagination.from + result.value.pagination.returned
-              : undefined,
-          },
-          results: result.value.results,
-        }, null, 2));
-      } else {
-        printResults(result.value.results, result.value.pagination);
-      }
-      return;
+  if (!result.ok) {
+    if (asJson) {
+      console.log(JSON.stringify({ success: false, error: result.error.message }, null, 2));
+    } else {
+      console.error(`❌ Search failed: ${result.error.message}`);
     }
-
-    if (!asJson) {
-      console.log(`   Direct API failed: ${result.error.message}`);
-      console.log('   Falling back to browser...\n');
-    }
-  } else if (!asJson && !forceBrowser) {
-    console.log('   No valid token, using browser...\n');
-  } else if (!asJson) {
-    console.log('   Using browser (--browser flag)...\n');
+    process.exit(1);
   }
 
-  // Fall back to browser-based search
-  let manager: BrowserManager | null = null;
-
-  try {
-    manager = await createBrowserContext({ headless });
-
-    await ensureAuthenticated(
-      manager.page,
-      manager.context,
-      asJson ? undefined : (msg) => console.log(`   ${msg}`)
-    );
-
-    const { results, pagination } = await searchTeamsWithPagination(manager.page, query, {
-      maxResults,
-      from,
-      size,
-      waitMs: 10000,
-      debug,
-    });
-
-    await manager.page.waitForTimeout(3000);
-
-    if (asJson) {
-      console.log(JSON.stringify({
-        mode: 'browser',
-        query,
-        count: results.length,
-        pagination: {
-          from: pagination.from,
-          size: pagination.size,
-          returned: pagination.returned,
-          total: pagination.total,
-          hasMore: pagination.hasMore,
-          nextFrom: pagination.hasMore ? pagination.from + pagination.returned : undefined,
-        },
-        results,
-      }, null, 2));
-    } else {
-      printResults(results, pagination);
-      console.log('💡 Session saved. Future searches can use direct API.');
-    }
-  } finally {
-    if (manager) {
-      await closeBrowser(manager, true);
-    }
+  if (asJson) {
+    console.log(JSON.stringify({
+      query,
+      count: result.value.results.length,
+      pagination: {
+        from: result.value.pagination.from,
+        size: result.value.pagination.size,
+        returned: result.value.pagination.returned,
+        total: result.value.pagination.total,
+        hasMore: result.value.pagination.hasMore,
+        nextFrom: result.value.pagination.hasMore
+          ? result.value.pagination.from + result.value.pagination.returned
+          : undefined,
+      },
+      results: result.value.results,
+    }, null, 2));
+  } else {
+    printResults(result.value.results, result.value.pagination);
   }
 }
 

@@ -4,7 +4,7 @@ This document captures project knowledge to help AI agents work effectively with
 
 ## Project Overview
 
-This is an MCP (Model Context Protocol) server that enables AI assistants to search Microsoft Teams messages. Rather than using the complex Microsoft Graph API, it uses Playwright browser automation to interact with the Teams web app directly.
+This is an MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams. Rather than using the complex Microsoft Graph API, it uses Teams' internal APIs (Substrate, chatsvc, CSA) with authentication tokens extracted from a browser session. The browser is only used for initial login - all operations use direct API calls.
 
 ## Architecture
 
@@ -30,13 +30,9 @@ src/
 │   ├── substrate-api.ts  # Search and people APIs (Substrate v2)
 │   ├── chatsvc-api.ts    # Messaging, threads, save/unsave (chatsvc)
 │   └── csa-api.ts        # Favorites API (CSA)
-├── browser/              # Playwright browser automation
+├── browser/              # Playwright browser automation (login only)
 │   ├── context.ts        # Browser/context management with encrypted session
 │   └── auth.ts           # Authentication detection and manual login handling
-├── teams/                # Teams-specific DOM automation (fallback only)
-│   ├── search.ts         # Browser-based search (fallback when no token)
-│   ├── messages.ts       # Message extraction from DOM
-│   └── api-interceptor.ts # Network request interception
 ├── utils/
 │   ├── parsers.ts        # Pure parsing functions (testable)
 │   ├── parsers.test.ts   # Unit tests for parsers
@@ -77,19 +73,14 @@ src/
 
 ## Key Design Decisions
 
-### Direct API over Browser Automation
-The search implementation uses a hybrid approach:
+### Direct API Approach
+All operations use direct API calls to Teams' internal APIs. The browser is only used for authentication:
 
-1. **Direct API (preferred)**: Makes HTTP requests directly to the Substrate v2 search API using extracted authentication tokens. No browser needed after initial login.
+1. **Login**: Opens visible browser → user authenticates → session state saved → browser closed
+2. **All subsequent operations**: Use cached tokens for direct API calls (no browser)
+3. **Token expiry**: When tokens expire (~1 hour), user must re-authenticate via `teams_login`
 
-2. **Browser Fallback**: If no valid token is available (first run or token expired), opens a visible browser for login, then extracts tokens for future use.
-
-### Authentication Flow
-1. **Login/first search**: Opens browser → user logs in → search triggered to acquire Substrate token → session saved → browser closed
-2. **Subsequent API calls**: Uses cached tokens for direct API calls (no browser)
-3. **Token expiry**: When tokens expire (~1 hour), falls back to browser to refresh them
-
-The `teams_login` tool triggers a search after authentication to ensure the Substrate API token is acquired. Without this, only session cookies would be saved, and API-dependent tools would fail.
+This approach provides faster, more reliable operations compared to DOM scraping, with structured JSON responses and proper pagination support.
 
 ### Direct API Details
 The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) provides:
@@ -99,10 +90,20 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 - Hit-highlighted search snippets
 
 ### Token Management
-- Tokens are extracted from browser localStorage after a successful search
+- Tokens are extracted from browser localStorage after login
 - The Substrate search token (`SubstrateSearch-Internal.ReadWrite` scope) is required for search
 - Tokens typically expire after ~1 hour
-- Expired tokens trigger automatic browser fallback
+- Expired tokens require re-authentication via `teams_login`
+
+### System Browser Usage
+The server uses the system's installed browser rather than downloading Playwright's bundled Chromium (~180MB savings):
+
+- **Windows**: Uses Microsoft Edge (always pre-installed on Windows 10+)
+- **macOS/Linux**: Uses Google Chrome
+
+This is configured via Playwright's `channel` option in `src/browser/context.ts`. Users can skip the browser download during install with `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install`.
+
+If the system browser isn't available, a helpful error message suggests installing Chrome or running `npx playwright install chromium` as a fallback.
 
 ### Authentication Patterns
 Different Teams APIs use different authentication mechanisms:
@@ -157,10 +158,10 @@ Teams APIs return user IDs in multiple formats. The `extractObjectId()` function
 The two user object IDs (GUIDs) are sorted lexicographically. This format works for internal users. External/guest users may require a different format (not yet researched).
 
 ### Session Persistence
-Playwright's `storageState()` is used to save and restore browser sessions. This means:
-- Session cookies help with faster re-authentication
-- MSAL tokens refresh automatically when you perform actions in the browser
-- After a browser-based search, tokens are captured and cached for direct API use
+Playwright's `storageState()` is used to save browser session state after login. This includes:
+- Session cookies (for messaging APIs)
+- MSAL tokens in localStorage (for search and people APIs)
+- Tokens are extracted and cached for direct API use
 
 ### Credential Security
 Session state and token cache files are protected by:
@@ -566,14 +567,8 @@ npm run test:mcp -- search "your query" --json
 # Check session status
 npm run cli -- status
 
-# Search Teams (visible browser)
+# Search Teams (requires valid token - run login first)
 npm run cli -- search "your query"
-
-# Search with debug output
-npm run cli -- search "your query" --debug
-
-# Search in headless mode (requires saved session)
-npm run cli -- search "your query" --headless
 
 # Output as JSON
 npm run cli -- search "your query" --json
@@ -587,34 +582,23 @@ npm run cli -- send "Hello from CLI!"
 # Send to specific conversation
 npm run cli -- send "Message" --to "conversation-id"
 
-# Login flow
+# Login flow (opens browser for authentication)
 npm run cli -- login
 npm run cli -- login --force  # Clear session and re-login
-
-# Full test suite
-npm run test:manual
-npm run test:manual -- --search "your query"
-
-# Debug search with screenshots
-npm run debug:search
-npm run debug:search -- "your query"
 ```
-
-The `debug:search` command saves screenshots to `debug-output/` and is useful when selectors need updating.
 
 ## Common Issues and Solutions
 
-### Session Expired
-If searches fail with authentication errors:
+### Session/Token Expired
+If API calls fail with authentication errors:
 1. Call `teams_login` with `forceNew: true`
-2. Or delete `session-state.json` and run `npm run research`
+2. Or delete `session-state.json` and run `npm run cli -- login`
 
-### Search Returns Empty Results
-- Teams UI selectors may have changed; check `src/teams/search.ts` for selector updates
-- The API interception patterns may need updating; check `src/teams/api-interceptor.ts`
-
-### Browser Won't Launch
-- Ensure Playwright browsers are installed: `npx playwright install chromium`
+### Browser Won't Launch (for login)
+- Ensure you have Chrome (macOS/Linux) or Edge (Windows) installed
+- On Windows, Edge should be pre-installed; try updating Windows if missing
+- On macOS/Linux, install Chrome from https://www.google.com/chrome/
+- Alternatively, download Playwright's bundled browser: `npx playwright install chromium`
 - Check for existing browser processes that may be blocking
 
 ### Search Doesn't Find All Thread Replies
@@ -657,17 +641,6 @@ Note: The `conversationId` returned in search results for threaded replies will 
 2. Create a function in the appropriate `src/api/*.ts` module
 3. Use `httpRequest()` from `src/utils/http.ts` for automatic retry and timeout handling
 4. Return `Result<T, McpError>` for type-safe error handling
-
-### Updating Selectors
-Teams may update their UI. Key selector files:
-- `src/teams/search.ts`: Search box and result selectors
-- `src/browser/auth.ts`: Authentication detection selectors
-
-Reference: `teams-export/teams-export.js` contains a working bookmarklet with proven DOM selectors for Teams message extraction. Key selectors include:
-- `[data-tid="chat-pane-item"]` - Message container
-- `[data-tid="chat-pane-message"]` - Message body
-- `[data-tid="message-author-name"]` - Sender name
-- `[id^="content-"]:not([id^="content-control"])` - Message content
 
 ### Capturing New API Endpoints
 Run `npm run research`, perform actions in Teams, and check the terminal output for captured requests.
@@ -723,12 +696,10 @@ See `.github/workflows/ci.yml` for the workflow configuration.
 
 ## Integration Testing
 
-Due to the nature of browser automation against a live service:
+For testing against the live Teams APIs:
 - Use `npm run test:mcp -- search "query"` to test via the full MCP protocol layer
-- Use `npm run cli -- search "query" --debug` for quick testing of underlying functions
-- Use `npm run debug:search` when selectors need investigation (saves screenshots)
+- Use `npm run cli -- search "query"` for quick testing of underlying functions
 - Use `npm run research` to explore new API patterns (logs all network traffic)
-- Check `debug-output/` for screenshots and HTML dumps when debugging
 
 The MCP test harness (`test:mcp`) uses the SDK's `InMemoryTransport` to connect a test client to the server in-process, verifying that tool definitions, input validation, and response formatting all work correctly through the protocol layer.
 

@@ -5,11 +5,8 @@
 import { z } from 'zod';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { RegisteredTool, ToolContext, ToolResult } from './index.js';
-import { hasValidSubstrateToken } from '../auth/token-extractor.js';
 import { searchMessages, searchChannels } from '../api/substrate-api.js';
 import { getThreadMessages } from '../api/chatsvc-api.js';
-import { searchTeamsWithPagination } from '../teams/search.js';
-import { closeBrowser } from '../browser/context.js';
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
@@ -17,7 +14,6 @@ import {
   MAX_THREAD_LIMIT,
   DEFAULT_CHANNEL_LIMIT,
   MAX_CHANNEL_LIMIT,
-  MSAL_TOKEN_DELAY_MS,
 } from '../constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,80 +112,34 @@ const findChannelToolDefinition: Tool = {
 
 async function handleSearch(
   input: z.infer<typeof SearchInputSchema>,
-  ctx: ToolContext
+  _ctx: ToolContext
 ): Promise<ToolResult> {
-  // Try direct API first
-  if (hasValidSubstrateToken()) {
-    const result = await searchMessages(input.query, {
-      maxResults: input.maxResults,
-      from: input.from,
-      size: input.size,
-    });
+  const result = await searchMessages(input.query, {
+    maxResults: input.maxResults,
+    from: input.from,
+    size: input.size,
+  });
 
-    if (result.ok) {
-      return {
-        success: true,
-        data: {
-          mode: 'direct-api',
-          query: input.query,
-          resultCount: result.value.results.length,
-          pagination: {
-            from: result.value.pagination.from,
-            size: result.value.pagination.size,
-            returned: result.value.pagination.returned,
-            total: result.value.pagination.total,
-            hasMore: result.value.pagination.hasMore,
-            nextFrom: result.value.pagination.hasMore
-              ? result.value.pagination.from + result.value.pagination.returned
-              : undefined,
-          },
-          results: result.value.results,
-        },
-      };
-    }
-
-    // Log error but fall through to browser
-    console.error('[search] Direct API failed:', result.error.message);
+  if (!result.ok) {
+    return { success: false, error: result.error };
   }
-
-  // Fall back to browser-based search
-  const manager = await ctx.server.ensureBrowser(false);
-
-  const { results, pagination } = await searchTeamsWithPagination(
-    manager.page,
-    input.query,
-    {
-      maxResults: input.maxResults,
-      from: input.from,
-      size: input.size,
-    }
-  );
-
-  // Wait for MSAL to store tokens
-  await manager.page.waitForTimeout(MSAL_TOKEN_DELAY_MS);
-
-  // Close browser after search
-  await closeBrowser(manager, true);
-  ctx.server.resetBrowserState();
 
   return {
     success: true,
     data: {
-      mode: 'browser',
-      note: 'Session saved. Future searches will use direct API.',
       query: input.query,
-      resultCount: results.length,
+      resultCount: result.value.results.length,
       pagination: {
-        from: pagination.from,
-        size: pagination.size,
-        returned: pagination.returned,
-        total: pagination.total,
-        hasMore: pagination.hasMore,
-        nextFrom: pagination.hasMore
-          ? pagination.from + pagination.returned
+        from: result.value.pagination.from,
+        size: result.value.pagination.size,
+        returned: result.value.pagination.returned,
+        total: result.value.pagination.total,
+        hasMore: result.value.pagination.hasMore,
+        nextFrom: result.value.pagination.hasMore
+          ? result.value.pagination.from + result.value.pagination.returned
           : undefined,
       },
-      results,
+      results: result.value.results,
     },
   };
 }
