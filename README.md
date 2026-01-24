@@ -7,10 +7,10 @@ An MCP (Model Context Protocol) server that enables AI assistants to interact wi
 This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, CSA)-the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
 
 **Authentication flow:**
-1. First use opens a browser for you to log in
-2. OAuth tokens are extracted and cached
-3. Subsequent calls use cached tokens directly (no browser)
-4. Tokens auto-refresh when expired (~1 hour); session cookies keep you logged in longer
+1. Run `teams_login` to open a browser and log in
+2. OAuth tokens and session cookies are extracted and cached
+3. All subsequent calls use cached tokens directly (no browser)
+4. When tokens expire (~1 hour), run `teams_login` again
 
 ## Installation
 
@@ -180,9 +180,9 @@ npm run test:mcp -- favorites
 
 ## Limitations
 
-- **Initial login required** - First use opens a browser for manual authentication
+- **Login required** - Run `teams_login` to authenticate (opens browser)
+- **Token expiry** - Tokens expire after ~1 hour; run `teams_login` again to re-authenticate
 - **Undocumented APIs** - Uses Microsoft's internal APIs which may change without notice
-- **Token refresh** - Opens browser briefly every ~1 hour to refresh tokens; manual re-login only needed if session cookies expire
 - **Search limitations** - Full-text search only; thread replies not matching search terms won't appear (use `teams_get_thread` for full context)
 - **Own messages only** - Edit/delete only works on your own messages
 
