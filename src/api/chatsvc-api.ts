@@ -5,7 +5,7 @@
  */
 
 import { httpRequest } from '../utils/http.js';
-import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion, type Region } from '../utils/api-config.js';
+import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, getTeamsHeaders, validateRegion, type Region } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import {
@@ -349,6 +349,126 @@ async function setMessageSavedState(
     conversationId,
     messageId,
     saved,
+  });
+}
+
+/** Result of editing a message. */
+export interface EditMessageResult {
+  messageId: string;
+  conversationId: string;
+}
+
+/** Result of deleting a message. */
+export interface DeleteMessageResult {
+  messageId: string;
+  conversationId: string;
+}
+
+/**
+ * Edits an existing message.
+ * 
+ * Note: You can only edit your own messages. The API will reject
+ * attempts to edit messages from other users.
+ * 
+ * @param conversationId - The conversation containing the message
+ * @param messageId - The ID of the message to edit
+ * @param newContent - The new content for the message
+ * @param region - API region (default: 'amer')
+ */
+export async function editMessage(
+  conversationId: string,
+  messageId: string,
+  newContent: string,
+  region: string = 'amer'
+): Promise<Result<EditMessageResult>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const displayName = getUserDisplayName() || 'User';
+  
+  // Wrap content in paragraph if not already HTML
+  const htmlContent = newContent.startsWith('<') ? newContent : `<p>${escapeHtml(newContent)}</p>`;
+
+  // Build the edit request body
+  // The API requires the message structure with updated content
+  const body = {
+    id: messageId,
+    type: 'Message',
+    conversationid: conversationId,
+    content: htmlContent,
+    messagetype: 'RichText/Html',
+    contenttype: 'text',
+    imdisplayname: displayName,
+  };
+
+  const url = CHATSVC_API.editMessage(validRegion, conversationId, messageId);
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'PUT',
+      headers: getMessagingHeaders(auth.skypeToken, auth.authToken),
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    messageId,
+    conversationId,
+  });
+}
+
+/**
+ * Deletes a message (soft delete).
+ * 
+ * Note: You can only delete your own messages, unless you are a
+ * channel owner/moderator. The API will reject unauthorised attempts.
+ * 
+ * @param conversationId - The conversation containing the message
+ * @param messageId - The ID of the message to delete
+ * @param region - API region (default: 'amer')
+ */
+export async function deleteMessage(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<Result<DeleteMessageResult>> {
+  const auth = extractMessageAuth();
+  if (!auth) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'No valid authentication. Browser login required.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.deleteMessage(validRegion, conversationId, messageId);
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'DELETE',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    messageId,
+    conversationId,
   });
 }
 

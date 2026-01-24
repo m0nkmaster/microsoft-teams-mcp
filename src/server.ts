@@ -35,7 +35,7 @@ import {
 
 // API modules
 import { searchMessages, searchPeople, getFrequentContacts, searchChannels } from './api/substrate-api.js';
-import { sendMessage, sendNoteToSelf, replyToThread, getThreadMessages, saveMessage, unsaveMessage, getOneOnOneChatId } from './api/chatsvc-api.js';
+import { sendMessage, sendNoteToSelf, replyToThread, getThreadMessages, saveMessage, unsaveMessage, getOneOnOneChatId, editMessage, deleteMessage } from './api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from './api/csa-api.js';
 
 // Types
@@ -295,6 +295,46 @@ const TOOLS: Tool[] = [
       required: ['userId'],
     },
   },
+  {
+    name: 'teams_edit_message',
+    description: 'Edit one of your own messages. You can only edit messages you sent. The API will reject attempts to edit other users\' messages.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conversationId: {
+          type: 'string',
+          description: 'The conversation ID containing the message',
+        },
+        messageId: {
+          type: 'string',
+          description: 'The message ID to edit (numeric string from search results or teams_get_thread)',
+        },
+        content: {
+          type: 'string',
+          description: 'The new content for the message. Can include basic HTML formatting.',
+        },
+      },
+      required: ['conversationId', 'messageId', 'content'],
+    },
+  },
+  {
+    name: 'teams_delete_message',
+    description: 'Delete one of your own messages (soft delete). You can only delete messages you sent, unless you are a channel owner/moderator. The API will reject unauthorised attempts.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conversationId: {
+          type: 'string',
+          description: 'The conversation ID containing the message',
+        },
+        messageId: {
+          type: 'string',
+          description: 'The message ID to delete (numeric string from search results or teams_get_thread)',
+        },
+      },
+      required: ['conversationId', 'messageId'],
+    },
+  },
 ];
 
 // Input schemas for validation
@@ -351,6 +391,17 @@ const FindChannelInputSchema = z.object({
 
 const GetChatInputSchema = z.object({
   userId: z.string().min(1, 'User ID cannot be empty'),
+});
+
+const EditMessageInputSchema = z.object({
+  conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
+  messageId: z.string().min(1, 'Message ID cannot be empty'),
+  content: z.string().min(1, 'Content cannot be empty'),
+});
+
+const DeleteMessageInputSchema = z.object({
+  conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
+  messageId: z.string().min(1, 'Message ID cannot be empty'),
 });
 
 /**
@@ -931,6 +982,45 @@ export class TeamsServer {
               otherUserId: result.value.otherUserId,
               currentUserId: result.value.currentUserId,
               note: 'Use this conversationId with teams_send_message to send a message. The conversation is created automatically when the first message is sent.',
+            });
+          }
+
+          case 'teams_edit_message': {
+            const input = EditMessageInputSchema.parse(args);
+
+            const result = await editMessage(
+              input.conversationId,
+              input.messageId,
+              input.content
+            );
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              message: 'Message edited successfully',
+              conversationId: result.value.conversationId,
+              messageId: result.value.messageId,
+            });
+          }
+
+          case 'teams_delete_message': {
+            const input = DeleteMessageInputSchema.parse(args);
+
+            const result = await deleteMessage(
+              input.conversationId,
+              input.messageId
+            );
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            return this.formatSuccess({
+              message: 'Message deleted successfully',
+              conversationId: result.value.conversationId,
+              messageId: result.value.messageId,
             });
           }
 

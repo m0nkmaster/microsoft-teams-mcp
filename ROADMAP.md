@@ -1,9 +1,5 @@
 # Future plans and bugs to fix
 
-## ✅ find channel
-
-Implemented `teams_find_channel` tool. Uses the Substrate suggestions API with `domain=TeamsChannel` to search ALL channels across the organisation (not just channels in the user's teams). Returns channel name, team name, and conversation ID for use with `teams_get_thread`.
-
 ## Token refresh mechanism
 
 Proactively refresh tokens before they expire (~1 hour) instead of falling back to browser login.
@@ -12,6 +8,8 @@ Proactively refresh tokens before they expire (~1 hour) instead of falling back 
 
 Search/discover teams by name (similar to find channel but returns team-level info).
 
+## Improve UI for login/token refresh (popup message to close browser)
+
 ## meeting related stuff
 
 - Get messages from meeting chat threads
@@ -19,5 +17,6 @@ Search/discover teams by name (similar to find channel but returns team-level in
 - Find meeting recordings
 
 
-## Edit and Delete messages
+## ✅ Edit and Delete messages
 
+Implemented `teams_edit_message` and `teams_delete_message` tools. Edit uses PUT to update message content; delete uses DELETE with `?behavior=softDelete` query parameter. Both only work on your own messages (unless you're a channel moderator for delete).
