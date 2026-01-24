@@ -35,7 +35,7 @@ import {
 
 // API modules
 import { searchMessages, searchPeople, getFrequentContacts, searchChannels } from './api/substrate-api.js';
-import { sendMessage, sendNoteToSelf, getThreadMessages, saveMessage, unsaveMessage, getOneOnOneChatId } from './api/chatsvc-api.js';
+import { sendMessage, sendNoteToSelf, replyToThread, getThreadMessages, saveMessage, unsaveMessage, getOneOnOneChatId } from './api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from './api/csa-api.js';
 
 // Types
@@ -92,7 +92,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'teams_send_message',
-    description: 'Send a message to a Teams conversation. By default, sends to your own notes (self-chat). Requires a valid session from prior login.',
+    description: 'Send a message to a Teams conversation. By default, sends to your own notes (self-chat). For channel threads, provide replyToMessageId to reply to an existing thread. Requires a valid session from prior login.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -102,10 +102,36 @@ const TOOLS: Tool[] = [
         },
         conversationId: {
           type: 'string',
-          description: 'The conversation ID to send to. Use "48:notes" for self-chat (default), or a specific conversation ID.',
+          description: 'The conversation ID to send to. Use "48:notes" for self-chat (default), or a channel/chat conversation ID.',
+        },
+        replyToMessageId: {
+          type: 'string',
+          description: 'For channel thread replies: the message ID of the thread root (the first message in the thread). When provided, the message is posted as a reply to that thread. Not needed for chats (1:1, group, meeting) as they are flat conversations.',
         },
       },
       required: ['content'],
+    },
+  },
+  {
+    name: 'teams_reply_to_thread',
+    description: 'Reply to a thread in a Teams channel. This is simpler than teams_send_message for thread replies - just provide any message ID from the thread and the reply will be posted correctly. The tool automatically finds the thread root.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: 'The reply content to send.',
+        },
+        conversationId: {
+          type: 'string',
+          description: 'The channel conversation ID (from search results or teams_get_thread).',
+        },
+        messageId: {
+          type: 'string',
+          description: 'Any message ID in the thread you want to reply to. The tool will find the thread root automatically.',
+        },
+      },
+      required: ['content', 'conversationId', 'messageId'],
     },
   },
   {
@@ -286,6 +312,13 @@ const LoginInputSchema = z.object({
 const SendMessageInputSchema = z.object({
   content: z.string().min(1, 'Message content cannot be empty'),
   conversationId: z.string().optional().default('48:notes'),
+  replyToMessageId: z.string().optional(),
+});
+
+const ReplyToThreadInputSchema = z.object({
+  content: z.string().min(1, 'Reply content cannot be empty'),
+  conversationId: z.string().min(1, 'Conversation ID is required'),
+  messageId: z.string().min(1, 'Message ID is required'),
 });
 
 const SearchPeopleInputSchema = z.object({
@@ -685,7 +718,37 @@ export class TeamsServer {
 
             const result = input.conversationId === '48:notes'
               ? await sendNoteToSelf(input.content)
-              : await sendMessage(input.conversationId, input.content);
+              : await sendMessage(input.conversationId, input.content, {
+                  replyToMessageId: input.replyToMessageId,
+                });
+
+            if (!result.ok) {
+              return this.formatError(result.error);
+            }
+
+            const response: Record<string, unknown> = {
+              messageId: result.value.messageId,
+              timestamp: result.value.timestamp,
+              conversationId: input.conversationId,
+            };
+
+            // Include replyToMessageId in response if this was a thread reply
+            if (input.replyToMessageId) {
+              response.replyToMessageId = input.replyToMessageId;
+              response.note = 'Message posted as a reply to the thread.';
+            }
+
+            return this.formatSuccess(response);
+          }
+
+          case 'teams_reply_to_thread': {
+            const input = ReplyToThreadInputSchema.parse(args);
+
+            const result = await replyToThread(
+              input.conversationId,
+              input.messageId,
+              input.content
+            );
 
             if (!result.ok) {
               return this.formatError(result.error);
@@ -694,7 +757,9 @@ export class TeamsServer {
             return this.formatSuccess({
               messageId: result.value.messageId,
               timestamp: result.value.timestamp,
-              conversationId: input.conversationId,
+              conversationId: result.value.conversationId,
+              threadRootMessageId: result.value.threadRootMessageId,
+              note: 'Reply posted to thread successfully.',
             });
           }
 

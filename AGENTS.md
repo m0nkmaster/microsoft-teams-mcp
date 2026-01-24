@@ -156,6 +156,7 @@ Session state and token cache files are protected by:
 |------|---------|
 | `teams_search` | Search messages with query operators, supports pagination |
 | `teams_send_message` | Send a message to a Teams conversation |
+| `teams_reply_to_thread` | Reply to a channel thread (simpler than teams_send_message for replies) |
 | `teams_get_me` | Get current user profile (email, name, ID) |
 | `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
 | `teams_search_people` | Search for people by name or email |
@@ -245,8 +246,63 @@ The `messageLink` is a direct URL to open the message in Teams (format: `https:/
 |-----------|------|---------|-------------|
 | content | string | required | Message content (HTML supported) |
 | conversationId | string | `48:notes` | Conversation to send to. Default is self-chat (notes). |
+| replyToMessageId | string | - | For channel thread replies: the message ID of the thread root. |
+
+**Thread Reply Semantics:**
+
+Teams has different messaging models for channels vs chats:
+
+- **Channels** have threaded conversations. Each top-level post creates a thread, and replies go to that specific thread.
+- **Chats** (1:1, group, meeting) are flat - all messages go to the same conversation without threading.
+
+To reply to a channel thread:
+1. Get the `conversationId` (channel ID) and `messageId` (thread root ID) from search results or `teams_get_thread`
+2. Call `teams_send_message` with both `conversationId` AND `replyToMessageId`
+
+To post a new top-level message in a channel:
+- Only provide `conversationId` (the channel ID), omit `replyToMessageId`
+
+**Examples:**
+
+```
+# Reply to an existing thread in a channel
+teams_send_message content="Thanks!" conversationId="19:channel@thread.tacv2" replyToMessageId="1769274474340"
+
+# Post a new top-level message in a channel
+teams_send_message content="Hello team!" conversationId="19:channel@thread.tacv2"
+
+# Send a message in a chat (no threading)
+teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
+```
 
 **Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
+
+### teams_reply_to_thread Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| content | string | required | The reply content to send. |
+| conversationId | string | required | The channel conversation ID. |
+| messageId | string | required | Any message ID in the thread you want to reply to. |
+
+**Why use this instead of `teams_send_message`?**
+
+This tool is simpler for channel thread replies because:
+1. You don't need to know the thread root message ID - just provide any message from the thread
+2. The tool automatically fetches the thread and finds the root
+3. It handles all the URL construction internally
+
+**Example workflow:**
+
+```
+1. teams_search "budget report" → find a message with conversationId and messageId
+2. teams_reply_to_thread content="Thanks!" conversationId="19:channel@thread.tacv2" messageId="1769274474340"
+```
+
+**Response** includes:
+- `messageId` - Your new reply's message ID
+- `threadRootMessageId` - The thread root that was used
+- `conversationId` - The channel ID
 
 ### teams_get_me Parameters
 
@@ -415,6 +471,7 @@ npm run test:mcp -- search "your query" --from 25 --size 10
 npm run test:mcp -- status                           # teams_status
 npm run test:mcp -- send "Hello from MCP!"           # teams_send_message
 npm run test:mcp -- send "Message" --to "conv-id"
+npm run test:mcp -- reply "Thanks!" --to "channel-id" --message "msg-id"  # teams_reply_to_thread (simpler)
 npm run test:mcp -- people "john smith"              # teams_search_people
 npm run test:mcp -- favorites                        # teams_get_favorites
 npm run test:mcp -- contacts                         # teams_get_frequent_contacts
@@ -652,6 +709,7 @@ Based on API research, these tools could be implemented:
 | `teams_unsave_message` | rcmetadata API | Easy | ✅ Implemented |
 | `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
 | `teams_find_channel` | Teams List + Substrate suggestions | Easy | ✅ Implemented (hybrid search) |
+| `teams_reply_to_thread` | chatsvc messages API | Easy | ✅ Implemented - simple thread replies |
 | `teams_get_person` | Delve person API | Easy | Pending |
 | `teams_get_channel_posts` | CSA containers API | Medium | Not needed - use `teams_get_thread` with channel ID |
 | `teams_get_files` | AllFiles API | Medium | Pending |

@@ -681,7 +681,31 @@ from:john sent:lastweek # John's messages last week
 
 ---
 
-### 4.2 Typing Indicator
+### 4.2 Reply to Thread (Channel)
+
+**Endpoint:** `POST https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{channelId};messageid={threadRootMessageId}/messages`
+
+**Use Case:** Reply to an existing thread in a channel. The `;messageid=` suffix in the URL path indicates this is a reply to a specific thread.
+
+**URL Pattern Differences:**
+
+| Action | URL Path |
+|--------|----------|
+| New channel post | `conversations/{channelId}/messages` |
+| Reply to thread | `conversations/{channelId};messageid={threadRootId}/messages` |
+| Chat message | `conversations/{chatId}/messages` |
+
+**Request:** Same structure as regular message send.
+
+**Notes:**
+- The `threadRootMessageId` is the timestamp/ID of the first message in the thread
+- The `;messageid=` is URL-encoded as `%3Bmessageid%3D` in the actual request
+- The `conversationLink` in the body should also include `;messageid={id}` for thread replies
+- Chats (1:1, group, meeting) don't use threading - all messages go to the flat conversation
+
+---
+
+### 4.3 Typing Indicator
 
 **Endpoint:** `POST https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/messages`
 

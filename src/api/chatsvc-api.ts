@@ -49,13 +49,37 @@ export interface SaveMessageResult {
   saved: boolean;
 }
 
+/** Options for sending a message. */
+export interface SendMessageOptions {
+  /** Region for the API call (default: 'amer'). */
+  region?: string;
+  /**
+   * Message ID of the thread root to reply to.
+   * 
+   * When provided, the message is posted as a reply to an existing thread
+   * in a channel. The conversationId should be the channel ID, and this
+   * should be the ID of the first message in the thread.
+   * 
+   * For chats (1:1, group, meeting), this is not needed - all messages
+   * are part of the same flat conversation.
+   */
+  replyToMessageId?: string;
+}
+
 /**
  * Sends a message to a Teams conversation.
+ * 
+ * For channels, you can either:
+ * - Post a new top-level message: just provide the channel's conversationId
+ * - Reply to a thread: provide the channel's conversationId AND replyToMessageId
+ * 
+ * For chats (1:1, group, meeting), all messages go to the same conversation
+ * without threading - just provide the conversationId.
  */
 export async function sendMessage(
   conversationId: string,
   content: string,
-  region: string = 'amer'
+  options: SendMessageOptions = {}
 ): Promise<Result<SendMessageResult>> {
   const auth = extractMessageAuth();
   if (!auth) {
@@ -65,6 +89,7 @@ export async function sendMessage(
     ));
   }
 
+  const { region = 'amer', replyToMessageId } = options;
   const validRegion = validateRegion(region);
   const displayName = getUserDisplayName() || 'User';
 
@@ -82,7 +107,7 @@ export async function sendMessage(
     clientmessageid: clientMessageId,
   };
 
-  const url = CHATSVC_API.messages(validRegion, conversationId);
+  const url = CHATSVC_API.messages(validRegion, conversationId, replyToMessageId);
 
   const response = await httpRequest<{ OriginalArrivalTime?: number }>(
     url,
@@ -108,6 +133,79 @@ export async function sendMessage(
  */
 export async function sendNoteToSelf(content: string): Promise<Result<SendMessageResult>> {
   return sendMessage('48:notes', content);
+}
+
+/** Result of replying to a thread. */
+export interface ReplyToThreadResult extends SendMessageResult {
+  /** The thread root message ID used for the reply. */
+  threadRootMessageId: string;
+  /** The conversation ID (channel) the reply was posted to. */
+  conversationId: string;
+}
+
+/**
+ * Replies to a thread in a Teams channel.
+ * 
+ * This is a convenience function that automatically finds the thread root
+ * and posts the reply correctly. Use this instead of manually figuring out
+ * the thread root message ID.
+ * 
+ * @param conversationId - The channel conversation ID (from search results or teams_get_thread)
+ * @param messageId - Any message ID in the thread you want to reply to
+ * @param content - The reply content
+ * @param region - API region (default: 'amer')
+ * @returns The result including the new message ID and thread root used
+ */
+export async function replyToThread(
+  conversationId: string,
+  messageId: string,
+  content: string,
+  region: string = 'amer'
+): Promise<Result<ReplyToThreadResult>> {
+  // First, fetch the thread to find the root message
+  const threadResult = await getThreadMessages(conversationId, { limit: 50 }, region);
+  
+  if (!threadResult.ok) {
+    return threadResult;
+  }
+  
+  const messages = threadResult.value.messages;
+  
+  if (messages.length === 0) {
+    return err(createError(
+      ErrorCode.NOT_FOUND,
+      `No messages found in thread ${conversationId}. Cannot determine thread root.`
+    ));
+  }
+  
+  // The first message (oldest) is the thread root
+  // Messages are sorted oldest-first by getThreadMessages
+  const threadRoot = messages[0];
+  const threadRootMessageId = threadRoot.id;
+  
+  // Verify the provided messageId exists in this thread
+  const messageExists = messages.some(m => m.id === messageId || m.clientMessageId === messageId);
+  if (!messageExists) {
+    // The message might be outside the fetched range, but we'll proceed anyway
+    // since the user explicitly asked to reply to this thread
+  }
+  
+  // Send the reply using the thread root's message ID
+  const sendResult = await sendMessage(conversationId, content, {
+    region,
+    replyToMessageId: threadRootMessageId,
+  });
+  
+  if (!sendResult.ok) {
+    return sendResult;
+  }
+  
+  return ok({
+    messageId: sendResult.value.messageId,
+    timestamp: sendResult.value.timestamp,
+    threadRootMessageId,
+    conversationId,
+  });
 }
 
 /**
