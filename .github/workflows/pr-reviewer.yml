@@ -70,7 +70,6 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cursor-agent -p "You are a helpful code reviewer. Review this pull request and provide constructive feedback.
 
@@ -81,34 +80,48 @@ jobs:
           Your task:
           1. Read the diff from pr-diff.txt
           2. Identify any bugs, security issues, performance problems, or code quality improvements
-          3. Post your review as a GitHub PR comment using the gh CLI
+          3. Write your review to a file called review-output.md
           
-          For each suggestion, use GitHub's suggestion syntax so it can be accepted with one click:
+          For code suggestions, use GitHub's suggestion syntax:
           \`\`\`suggestion
           corrected code here
           \`\`\`
           
-          Use the gh CLI to post your review:
-          - For a summary comment: gh pr comment $PR_NUMBER --body 'your review'
-          - For inline suggestions: gh pr review $PR_NUMBER --comment --body 'your review'
-          
           Be constructive and specific. Focus on meaningful improvements, not style nitpicks.
           If the code looks good, say so briefly.
           
-          Sign your comments with: <!-- pr-reviewer-bot -->"
+          IMPORTANT: Write your complete review to review-output.md using the file write tool."
 
-      - name: Respond to comment
-        if: github.event_name != 'pull_request'
+      - name: Post review comment
+        if: github.event_name == 'pull_request'
         env:
-          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Skip if this is a bot comment
-          if echo "$COMMENT_BODY" | grep -q "<!-- pr-reviewer-bot -->"; then
-            echo "Skipping bot comment"
-            exit 0
+          if [ -s review-output.md ]; then
+            # Append signature
+            echo "" >> review-output.md
+            echo "<!-- pr-reviewer-bot -->" >> review-output.md
+            gh pr comment $PR_NUMBER --body-file review-output.md
+          else
+            echo "No review output generated"
+            exit 1
           fi
-          
+
+      - name: Check if bot comment
+        if: github.event_name != 'pull_request'
+        id: check-bot
+        run: |
+          if echo "$COMMENT_BODY" | grep -q "<!-- pr-reviewer-bot -->"; then
+            echo "is_bot=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_bot=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Respond to comment
+        if: github.event_name != 'pull_request' && steps.check-bot.outputs.is_bot != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
           cursor-agent -p "You are an AI code reviewer assistant responding to a comment on a pull request.
 
           PR Title: $PR_TITLE
@@ -123,8 +136,25 @@ jobs:
           - Acknowledge if the commenter makes a good point
           - Provide additional context or alternatives
 
-          If the comment doesn't require a response (e.g., just 'thanks' or 'done'), don't post anything.
-
-          Use: gh pr comment $PR_NUMBER --body 'your response'
+          If the comment doesn't require a response (e.g., just 'thanks' or 'done'), write 'NO_RESPONSE_NEEDED' to response-output.md and nothing else.
           
-          Sign your comments with: <!-- pr-reviewer-bot -->"
+          Otherwise, write your complete response to response-output.md using the file write tool."
+
+      - name: Post response comment
+        if: github.event_name != 'pull_request' && steps.check-bot.outputs.is_bot != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -s response-output.md ]; then
+            # Check if agent decided no response is needed
+            if grep -q "NO_RESPONSE_NEEDED" response-output.md; then
+              echo "No response needed for this comment"
+              exit 0
+            fi
+            # Append signature
+            echo "" >> response-output.md
+            echo "<!-- pr-reviewer-bot -->" >> response-output.md
+            gh pr comment $PR_NUMBER --body-file response-output.md
+          else
+            echo "No response output generated"
+          fi
