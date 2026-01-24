@@ -80,32 +80,102 @@ jobs:
           Your task:
           1. Read the diff from pr-diff.txt
           2. Identify any bugs, security issues, performance problems, or code quality improvements
-          3. Write your review to a file called review-output.md
+          3. Write your review as JSON to review-output.json
           
-          For code suggestions, use GitHub's suggestion syntax:
-          \`\`\`suggestion
-          corrected code here
-          \`\`\`
+          OUTPUT FORMAT (review-output.json):
+          {
+            \"summary\": \"Brief overall assessment of the PR\",
+            \"verdict\": \"approve\" | \"request_changes\" | \"comment\",
+            \"comments\": [
+              {
+                \"path\": \"src/example.ts\",
+                \"line\": 42,
+                \"body\": \"Issue description here. For code suggestions use:\\n\\\`\\\`\\\`suggestion\\ncorrected code\\n\\\`\\\`\\\`\"
+              }
+            ]
+          }
           
-          Be constructive and specific. Focus on meaningful improvements, not style nitpicks.
-          If the code looks good, say so briefly.
+          RULES:
+          - 'path' must match exactly a file path from the diff (e.g., 'src/api/chatsvc-api.ts')
+          - 'line' must be a line number that exists in the NEW version of the file (right side of diff, lines with + or unchanged)
+          - Use 'verdict': 'approve' if code is good, 'request_changes' for blocking issues, 'comment' for suggestions
+          - comments array can be empty if no inline feedback needed
+          - Be constructive and specific. Focus on meaningful improvements, not style nitpicks.
           
-          IMPORTANT: Write your complete review to review-output.md using the file write tool."
+          IMPORTANT: Write valid JSON to review-output.json using the file write tool."
 
-      - name: Post review comment
+      - name: Post review with inline comments
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -s review-output.md ]; then
-            # Append signature
-            echo "" >> review-output.md
-            echo "<!-- pr-reviewer-bot -->" >> review-output.md
-            gh pr comment $PR_NUMBER --body-file review-output.md
-          else
+          if [ ! -s review-output.json ]; then
             echo "No review output generated"
             exit 1
           fi
+          
+          # Validate JSON
+          if ! jq empty review-output.json 2>/dev/null; then
+            echo "Invalid JSON in review-output.json, falling back to plain comment"
+            gh pr comment $PR_NUMBER --body "$(cat review-output.json)
+
+          <!-- pr-reviewer-bot -->"
+            exit 0
+          fi
+          
+          # Extract fields
+          SUMMARY=$(jq -r '.summary // "No summary provided"' review-output.json)
+          VERDICT=$(jq -r '.verdict // "comment"' review-output.json | tr '[:lower:]' '[:upper:]')
+          
+          # Map verdict to GitHub event
+          case "$VERDICT" in
+            APPROVE) EVENT="APPROVE" ;;
+            REQUEST_CHANGES) EVENT="REQUEST_CHANGES" ;;
+            *) EVENT="COMMENT" ;;
+          esac
+          
+          # Build the review payload
+          REVIEW_BODY="${SUMMARY}
+
+          <!-- pr-reviewer-bot -->"
+          
+          # Check if there are inline comments
+          COMMENT_COUNT=$(jq '.comments | length' review-output.json)
+          
+          if [ "$COMMENT_COUNT" -gt 0 ]; then
+            # Build review with inline comments
+            jq -n \
+              --arg body "$REVIEW_BODY" \
+              --arg event "$EVENT" \
+              --slurpfile review review-output.json \
+              '{
+                body: $body,
+                event: $event,
+                comments: [$review[0].comments[] | {path: .path, line: .line, body: .body}]
+              }' > review-payload.json
+            
+            echo "Posting review with $COMMENT_COUNT inline comment(s)..."
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+              --input review-payload.json
+          else
+            # No inline comments, just post the review summary
+            echo "Posting review summary (no inline comments)..."
+            jq -n \
+              --arg body "$REVIEW_BODY" \
+              --arg event "$EVENT" \
+              '{body: $body, event: $event}' > review-payload.json
+            
+            gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
+              --input review-payload.json
+          fi
+          
+          echo "Review posted successfully"
 
       - name: Check if bot comment
         if: github.event_name != 'pull_request'
