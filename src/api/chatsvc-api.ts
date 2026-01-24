@@ -5,13 +5,11 @@
  */
 
 import { httpRequest } from '../utils/http.js';
-import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion, type Region } from '../utils/api-config.js';
+import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
-import {
-  extractMessageAuth,
-  getUserDisplayName,
-} from '../auth/token-extractor.js';
+import { getUserDisplayName, extractMessageAuth } from '../auth/token-extractor.js';
+import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId } from '../utils/parsers.js';
 
 /** Result of sending a message. */
@@ -81,13 +79,11 @@ export async function sendMessage(
   content: string,
   options: SendMessageOptions = {}
 ): Promise<Result<SendMessageResult>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   const { region = 'amer', replyToMessageId } = options;
   const validRegion = validateRegion(region);
@@ -195,13 +191,11 @@ export async function getThreadMessages(
   options: { limit?: number; startTime?: number } = {},
   region: string = 'amer'
 ): Promise<Result<GetThreadResult>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   const validRegion = validateRegion(region);
   const limit = options.limit ?? 50;
@@ -318,13 +312,11 @@ async function setMessageSavedState(
   saved: boolean,
   region: string
 ): Promise<Result<SaveMessageResult>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   const validRegion = validateRegion(region);
   const url = CHATSVC_API.messageMetadata(validRegion, conversationId, messageId);
@@ -381,13 +373,11 @@ export async function editMessage(
   newContent: string,
   region: string = 'amer'
 ): Promise<Result<EditMessageResult>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   const validRegion = validateRegion(region);
   const displayName = getUserDisplayName() || 'User';
@@ -443,13 +433,11 @@ export async function deleteMessage(
   messageId: string,
   region: string = 'amer'
 ): Promise<Result<DeleteMessageResult>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   const validRegion = validateRegion(region);
   const url = CHATSVC_API.deleteMessage(validRegion, conversationId, messageId);
@@ -479,13 +467,11 @@ export async function getConversationProperties(
   conversationId: string,
   region: string = 'amer'
 ): Promise<Result<{ displayName?: string; conversationType?: string }>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   const validRegion = validateRegion(region);
   const url = CHATSVC_API.conversation(validRegion, conversationId) + '?view=msnp24Equivalent';
@@ -578,13 +564,11 @@ export async function extractParticipantNames(
   conversationId: string,
   region: string = 'amer'
 ): Promise<Result<string | undefined>> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return ok(undefined); // Non-critical: just return undefined if not authenticated
   }
+  const auth = authResult.value;
 
   const validRegion = validateRegion(region);
   let url = CHATSVC_API.messages(validRegion, conversationId);
@@ -666,13 +650,11 @@ export interface GetOneOnOneChatResult {
 export function getOneOnOneChatId(
   otherUserIdentifier: string
 ): Result<GetOneOnOneChatResult> {
-  const auth = extractMessageAuth();
-  if (!auth) {
-    return err(createError(
-      ErrorCode.AUTH_REQUIRED,
-      'No valid authentication. Browser login required.'
-    ));
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
   }
+  const auth = authResult.value;
 
   // Extract the current user's object ID from their MRI
   const currentUserId = extractObjectId(auth.userMri);

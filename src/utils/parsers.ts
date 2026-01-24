@@ -6,6 +6,7 @@
  */
 
 import type { TeamsSearchResult } from '../types/teams.js';
+import { MIN_CONTENT_LENGTH } from '../constants.js';
 
 /** Person search result from Substrate suggestions API. */
 export interface PersonSearchResult {
@@ -165,7 +166,7 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
                   item.Summary as string || 
                   '';
   
-  if (content.length < 5) return null;
+  if (content.length < MIN_CONTENT_LENGTH) return null;
 
   const id = item.Id as string || 
              item.ReferenceId as string || 
