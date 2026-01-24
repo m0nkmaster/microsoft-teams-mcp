@@ -17,3 +17,8 @@ Search/discover teams by name (similar to find channel but returns team-level in
 - Get messages from meeting chat threads
 - Calendar integration (upcoming meetings)
 - Find meeting recordings
+
+
+## Graph API
+
+We are using graph API for user profile, can we actually access more of it with the creds we have? 
