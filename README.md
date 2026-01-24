@@ -1,16 +1,18 @@
 # Teams MCP Server
 
-An MCP (Model Context Protocol) server that enables AI assistants to search Microsoft Teams messages via browser automation and direct API calls.
-
-## Why Browser Automation?
-
-Microsoft Graph API requires complex authentication setup, Azure AD app registration, and specific permissions. This project sidesteps that by automating the Teams web app directly, using your existing browser session.
+An MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams via direct API calls.
 
 ## How It Works
 
-1. **First search**: Opens browser → you log in → search runs → auth tokens captured
-2. **Subsequent searches**: Uses cached tokens to call the Substrate API directly (no browser)
-3. **Token expiry**: Automatically falls back to browser when tokens expire (~1 hour)
+This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, CSA) - the same APIs the Teams web app uses. Authentication is handled by opening a browser for you to log in, then extracting and caching the OAuth tokens.
+
+1. **First use**: Opens browser → you log in → tokens extracted and cached
+2. **Normal operation**: Direct API calls using cached tokens (no browser needed)
+3. **Token refresh**: When tokens expire (~1 hour), browser opens briefly to refresh them automatically using saved session cookies
+
+## Why This Approach?
+
+Microsoft Graph API requires Azure AD app registration, admin consent, and specific permissions. This project uses your existing Teams credentials instead - no Azure setup required.
 
 ## Prerequisites
 
@@ -81,6 +83,8 @@ Or for development:
 
 ## Available Tools
 
+### Core Tools
+
 | Tool | Description |
 |------|-------------|
 | `teams_search` | Search messages with operators (`from:`, `sent:`, `in:`, etc.) |
@@ -88,6 +92,31 @@ Or for development:
 | `teams_send_message` | Send a message to a Teams conversation (default: self-chat) |
 | `teams_login` | Trigger manual login (visible browser) |
 | `teams_status` | Check authentication and session state |
+
+### People & Contacts
+
+| Tool | Description |
+|------|-------------|
+| `teams_search_people` | Search for people by name or email |
+| `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
+| `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
+
+### Conversations & Channels
+
+| Tool | Description |
+|------|-------------|
+| `teams_get_thread` | Get messages from a conversation/thread |
+| `teams_find_channel` | Find channels by name (your teams + org-wide) |
+| `teams_get_favorites` | Get pinned/favourite conversations |
+| `teams_add_favorite` | Pin a conversation |
+| `teams_remove_favorite` | Unpin a conversation |
+
+### Message Actions
+
+| Tool | Description |
+|------|-------------|
+| `teams_save_message` | Bookmark a message |
+| `teams_unsave_message` | Remove bookmark from a message |
 
 ### Search Operators
 
@@ -98,10 +127,22 @@ sent:lastweek              # Messages from last week
 in:project-alpha           # Messages in channel
 "Rob Smith"                # Find @mentions (name in quotes)
 hasattachment:true         # Messages with files
-NOT from:me                # Exclude your messages
+NOT from:email@co.com      # Exclude results
 ```
 
-Combine: `from:sarah sent:lastweek hasattachment:true`
+**Note:** `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your email/displayName, then use those values.
+
+Combine: `from:sarah@co.com sent:lastweek hasattachment:true`
+
+## MCP Resources
+
+The server also exposes passive resources for context discovery:
+
+| Resource URI | Description |
+|--------------|-------------|
+| `teams://me/profile` | Current user's profile (email, displayName, ID) |
+| `teams://me/favorites` | Pinned/favourite conversations |
+| `teams://status` | Authentication status for all APIs |
 
 ## Session Management
 
@@ -126,9 +167,9 @@ npm run research
 
 ## Limitations
 
-- Requires initial manual login
-- May break if Microsoft changes the Teams web app
-- Tokens expire after ~1 hour (auto-fallback to browser)
+- Requires initial manual login via browser
+- Uses undocumented Microsoft APIs (may change without notice)
+- Token refresh opens browser briefly (~1 hour intervals); manual re-login only needed if session cookies expire
 
 ---
 
