@@ -10,7 +10,7 @@ import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName, extractMessageAuth } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
-import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId } from '../utils/parsers.js';
+import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp } from '../utils/parsers.js';
 import { DEFAULT_ACTIVITY_LIMIT } from '../constants.js';
 
 /** Result of sending a message. */
@@ -1053,21 +1053,8 @@ export async function getActivityFeed(
     const fromMri = msg.from as string || '';
     const displayName = msg.imdisplayname as string || msg.displayName as string;
 
-    // Safely determine timestamp - avoid RangeError if id isn't numeric
-    const timestamp = (() => {
-      const arrivalTime = msg.originalarrivaltime as string;
-      const composeTime = msg.composetime as string;
-      if (arrivalTime) return arrivalTime;
-      if (composeTime) return composeTime;
-
-      const numericId = parseInt(id, 10);
-      if (!isNaN(numericId)) {
-        return new Date(numericId).toISOString();
-      }
-      return null;
-    })();
-
-    // Skip items without a valid timestamp
+    // Safely extract timestamp - returns null if no valid timestamp found
+    const timestamp = extractActivityTimestamp(msg);
     if (!timestamp) continue;
 
     const conversationId = msg.conversationid as string || msg.conversationId as string;
