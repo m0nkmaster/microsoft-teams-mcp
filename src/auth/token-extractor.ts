@@ -16,6 +16,7 @@ import {
   type TokenCache,
 } from './session-store.js';
 import { parseJwtProfile, type UserProfile } from '../utils/parsers.js';
+import { MRI_ORGID_PREFIX } from '../constants.js';
 
 // ============================================================================
 // JWT Utilities
@@ -223,7 +224,7 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
 
       // Capture user MRI from any token's oid claim
       if (typeof payload.oid === 'string' && !userMri) {
-        userMri = `8:orgid:${payload.oid}`;
+        userMri = `${MRI_ORGID_PREFIX}${payload.oid}`;
       }
 
       // Track best candidate for each service
@@ -264,7 +265,7 @@ function extractUserMriFromSubstrate(state?: SessionState): string | null {
 
   const payload = decodeJwtPayload(substrateInfo.token);
   if (typeof payload?.oid === 'string') {
-    return `8:orgid:${payload.oid}`;
+    return `${MRI_ORGID_PREFIX}${payload.oid}`;
   }
   return null;
 }
@@ -308,7 +309,7 @@ function extractMriFromSkypeToken(token: string): string | null {
 
 function extractMriFromAuthToken(token: string): string | null {
   const payload = decodeJwtPayload(token);
-  return typeof payload?.oid === 'string' ? `8:orgid:${payload.oid}` : null;
+  return typeof payload?.oid === 'string' ? `${MRI_ORGID_PREFIX}${payload.oid}` : null;
 }
 
 /**

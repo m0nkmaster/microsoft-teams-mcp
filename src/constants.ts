@@ -127,3 +127,10 @@ export const MAX_UNREAD_AGGREGATE_CHECK = 20;
 
 /** Threshold for proactive token refresh (10 minutes before expiry). */
 export const TOKEN_REFRESH_THRESHOLD_MS = 10 * 60 * 1000;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** MRI prefix for organisation users (orgid). */
+export const MRI_ORGID_PREFIX = '8:orgid:';
