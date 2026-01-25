@@ -176,7 +176,7 @@ npm run test:mcp -- unread                # Check unread counts
 ## Limitations
 
 - **Login required** - Run `teams_login` to authenticate (opens browser)
-- **Token expiry** - Tokens expire after ~1 hour; run `teams_login` again when needed
+- **Token expiry** - Tokens expire after ~1 hour; headless refresg is attempted or run `teams_login` again when needed
 - **Undocumented APIs** - Uses Microsoft's internal APIs which may change without notice
 - **Search limitations** - Full-text search only; thread replies not matching search terms won't appear (use `teams_get_thread` for full context)
 - **Own messages only** - Edit/delete only works on your own messages
