@@ -66,6 +66,7 @@ Then configure:
 | `teams_search` | Search messages with operators (`from:`, `sent:`, `in:`, `hasattachment:`, etc.) |
 | `teams_get_thread` | Get messages from a conversation/thread |
 | `teams_find_channel` | Find channels by name (your teams + org-wide discovery) |
+| `teams_get_activity` | Get activity feed (mentions, reactions, replies, notifications) |
 
 ### Messaging
 
@@ -94,6 +95,8 @@ Then configure:
 | `teams_remove_favorite` | Unpin a conversation |
 | `teams_save_message` | Bookmark a message |
 | `teams_unsave_message` | Remove bookmark from a message |
+| `teams_get_unread` | Get unread counts (aggregate or per-conversation) |
+| `teams_mark_read` | Mark a conversation as read up to a message |
 
 ### Session
 
@@ -166,6 +169,8 @@ npm run test:mcp -- search "your query"
 npm run test:mcp -- status
 npm run test:mcp -- people "john smith"
 npm run test:mcp -- favorites
+npm run test:mcp -- activity              # Get activity feed
+npm run test:mcp -- unread                # Check unread counts
 ```
 
 ## Limitations
