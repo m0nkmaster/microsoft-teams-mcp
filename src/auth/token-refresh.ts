@@ -6,7 +6,7 @@
  * silently refresh tokens, then save the updated state. Seamless to the user.
  */
 
-import { TOKEN_REFRESH_THRESHOLD_MS, MSAL_TOKEN_DELAY_MS } from '../constants.js';
+import { MSAL_TOKEN_DELAY_MS, TOKEN_REFRESH_THRESHOLD_MS } from '../constants.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import {
@@ -141,45 +141,4 @@ export async function refreshTokensViaBrowser(): Promise<Result<TokenRefreshResu
       { suggestions: ['Call teams_login to re-authenticate'] }
     ));
   }
-}
-
-/**
- * Checks if tokens need refreshing (less than threshold time remaining).
- * 
- * @returns true if tokens should be refreshed proactively
- */
-export function shouldRefreshToken(): boolean {
-  const substrate = extractSubstrateToken();
-  if (!substrate) return false;
-
-  const timeRemaining = substrate.expiry.getTime() - Date.now();
-  return timeRemaining > 0 && timeRemaining < TOKEN_REFRESH_THRESHOLD_MS;
-}
-
-/**
- * Checks if tokens are completely expired.
- * 
- * @returns true if tokens have expired and cannot be used
- */
-export function isTokenExpired(): boolean {
-  const substrate = extractSubstrateToken();
-  if (!substrate) return true;
-  return substrate.expiry.getTime() <= Date.now();
-}
-
-/**
- * Attempts to proactively refresh tokens if they're approaching expiry.
- * 
- * This is a convenience function that checks if refresh is needed and
- * performs it if necessary. Safe to call on any operation - it only
- * opens a browser when actually needed.
- * 
- * @returns The refresh result if refresh was attempted, null if not needed
- */
-export async function refreshIfNeeded(): Promise<Result<TokenRefreshResult> | null> {
-  if (!shouldRefreshToken()) {
-    return null;
-  }
-
-  return refreshTokensViaBrowser();
 }
