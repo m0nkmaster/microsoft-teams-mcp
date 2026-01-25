@@ -145,7 +145,7 @@ npm run cli -- status
 npm run cli -- search "meeting notes"
 npm run cli -- search "project" --from 0 --size 50
 
-# Send messages
+# Send messages (default: your own notes/self-chat)
 npm run cli -- send "Hello from Teams MCP!"
 npm run cli -- send "Message" --to "conversation-id"
 
