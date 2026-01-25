@@ -15,6 +15,29 @@ import {
 } from './session-store.js';
 import { parseJwtProfile, type UserProfile } from '../utils/parsers.js';
 
+/**
+ * Decodes a JWT token's payload without verifying the signature.
+ * Returns null if the token is invalid.
+ */
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    return JSON.parse(Buffer.from(parts[1], 'base64').toString());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Gets the expiry date from a JWT token.
+ */
+function getJwtExpiry(token: string): Date | null {
+  const payload = decodeJwtPayload(token);
+  if (!payload?.exp || typeof payload.exp !== 'number') return null;
+  return new Date(payload.exp * 1000);
+}
+
 /** Substrate search token information. */
 export interface SubstrateTokenInfo {
   token: string;
@@ -52,10 +75,8 @@ export function extractSubstrateToken(state?: SessionState): SubstrateTokenInfo 
         const token = val.secret;
         if (!token || typeof token !== 'string') continue;
 
-        const parts = token.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-          const expiry = new Date(payload.exp * 1000);
+        const expiry = getJwtExpiry(token);
+        if (expiry) {
           return { token, expiry };
         }
       }
@@ -146,20 +167,17 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
   for (const item of teamsOrigin.localStorage) {
     try {
       const val = JSON.parse(item.value);
-
       if (!val.target || !val.secret) continue;
 
       const secret = val.secret;
       if (typeof secret !== 'string' || !secret.startsWith('ey')) continue;
 
-      const parts = secret.split('.');
-      if (parts.length !== 3) continue;
-
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      const payload = decodeJwtPayload(secret);
+      if (!payload?.exp || typeof payload.exp !== 'number') continue;
       const tokenExpiry = new Date(payload.exp * 1000);
 
       // Extract user MRI from any token
-      if (payload.oid && !userMri) {
+      if (typeof payload.oid === 'string' && !userMri) {
         userMri = `8:orgid:${payload.oid}`;
       }
 
@@ -187,16 +205,9 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
   if (!userMri) {
     const substrateInfo = extractSubstrateToken(sessionState);
     if (substrateInfo) {
-      try {
-        const parts = substrateInfo.token.split('.');
-        if (parts.length === 3) {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-          if (payload.oid) {
-            userMri = `8:orgid:${payload.oid}`;
-          }
-        }
-      } catch {
-        // Ignore
+      const payload = decodeJwtPayload(substrateInfo.token);
+      if (typeof payload?.oid === 'string') {
+        userMri = `8:orgid:${payload.oid}`;
       }
     }
   }
@@ -238,31 +249,17 @@ export function extractMessageAuth(state?: SessionState): MessageAuthInfo | null
 
   // Get userMri from skypeToken payload
   if (skypeToken) {
-    try {
-      const parts = skypeToken.split('.');
-      if (parts.length >= 2) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-        if (payload.skypeid) {
-          userMri = payload.skypeid;
-        }
-      }
-    } catch {
-      // Not a JWT format, that's fine
+    const payload = decodeJwtPayload(skypeToken);
+    if (typeof payload?.skypeid === 'string') {
+      userMri = payload.skypeid;
     }
   }
 
   // Fallback to extracting userMri from authToken
   if (!userMri && authToken) {
-    try {
-      const parts = authToken.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-        if (payload.oid) {
-          userMri = `8:orgid:${payload.oid}`;
-        }
-      }
-    } catch {
-      // Ignore
+    const payload = decodeJwtPayload(authToken);
+    if (typeof payload?.oid === 'string') {
+      userMri = `8:orgid:${payload.oid}`;
     }
   }
 
@@ -308,21 +305,16 @@ export function getUserProfile(state?: SessionState): UserProfile | null {
   const teamsOrigin = getTeamsOrigin(sessionState);
   if (!teamsOrigin) return null;
 
-  // Look through localStorage for any JWT with user info
   for (const item of teamsOrigin.localStorage) {
     try {
       const val = JSON.parse(item.value);
-
       if (!val.secret || typeof val.secret !== 'string') continue;
       if (!val.secret.startsWith('ey')) continue;
 
-      const parts = val.secret.split('.');
-      if (parts.length !== 3) continue;
-
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-      const profile = parseJwtProfile(payload);
-      if (profile) {
-        return profile;
+      const payload = decodeJwtPayload(val.secret);
+      if (payload) {
+        const profile = parseJwtProfile(payload);
+        if (profile) return profile;
       }
     } catch {
       continue;
@@ -357,15 +349,8 @@ export function getUserDisplayName(state?: SessionState): string | null {
   // Try to get from token
   const teamsToken = extractTeamsToken(sessionState);
   if (teamsToken) {
-    try {
-      const parts = teamsToken.token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-        if (payload.name) return payload.name;
-      }
-    } catch {
-      // Ignore
-    }
+    const payload = decodeJwtPayload(teamsToken.token);
+    if (typeof payload?.name === 'string') return payload.name;
   }
 
   return null;

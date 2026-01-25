@@ -143,18 +143,8 @@ export interface ReplyToThreadResult extends SendMessageResult {
 /**
  * Replies to a thread in a Teams channel.
  * 
- * Uses the provided messageId directly as the thread root. In Teams channels:
- * - If messageId is a top-level post, the reply goes under that post
- * - If messageId is already a reply within a thread, the reply goes to the same thread
- * 
- * For channel messages from search results, the messageId is typically the thread root
- * (the original message that started the thread).
- * 
- * @param conversationId - The channel conversation ID (from search results)
- * @param messageId - The message ID to reply to (typically the thread root from search)
- * @param content - The reply content
- * @param region - API region (default: 'amer')
- * @returns The result including the new message ID
+ * Uses the provided messageId as the thread root. For search results,
+ * this is typically the original message that started the thread.
  */
 export async function replyToThread(
   conversationId: string,
@@ -162,11 +152,7 @@ export async function replyToThread(
   content: string,
   region: string = 'amer'
 ): Promise<Result<ReplyToThreadResult>> {
-  // Use the provided messageId directly as the thread root
-  // Search results return the thread root ID for channel messages
   const threadRootMessageId = messageId;
-  
-  // Send the reply using the provided message ID as the thread root
   const sendResult = await sendMessage(conversationId, content, {
     region,
     replyToMessageId: threadRootMessageId,
@@ -638,15 +624,9 @@ export interface GetOneOnOneChatResult {
 /**
  * Gets the conversation ID for a 1:1 chat with another user.
  * 
- * This constructs the predictable conversation ID format used by Teams
- * for 1:1 chats. The conversation ID is: `19:{id1}_{id2}@unq.gbl.spaces`
- * where id1 and id2 are the two users' object IDs sorted lexicographically.
- * 
- * Note: This doesn't create the conversation - it just returns the ID.
- * The conversation is implicitly created when the first message is sent.
- * 
- * @param otherUserIdentifier - The other user's MRI, object ID, or ID with tenant
- * @returns The conversation ID, or an error if auth is missing or ID is invalid
+ * Constructs the predictable format: `19:{id1}_{id2}@unq.gbl.spaces`
+ * where IDs are sorted lexicographically. The conversation is created
+ * implicitly when the first message is sent.
  */
 export function getOneOnOneChatId(
   otherUserIdentifier: string
@@ -721,13 +701,7 @@ export interface MarkAsReadResult {
 
 /**
  * Gets the consumption horizon (read receipts) for a conversation.
- * 
- * The consumption horizon tells us where each user has read up to in the conversation.
- * For the current user, this indicates which messages are "unread".
- * 
- * @param conversationId - The conversation/thread ID
- * @param region - API region (default: 'amer')
- * @returns Consumption horizon information
+ * The consumption horizon indicates where each user has read up to.
  */
 export async function getConsumptionHorizon(
   conversationId: string,
@@ -794,11 +768,6 @@ export async function getConsumptionHorizon(
 
 /**
  * Marks a conversation as read up to a specific message.
- * 
- * @param conversationId - The conversation to mark as read
- * @param messageId - The message ID to mark as read up to
- * @param region - API region (default: 'amer')
- * @returns Result indicating success
  */
 export async function markAsRead(
   conversationId: string,
@@ -814,10 +783,8 @@ export async function markAsRead(
   const validRegion = validateRegion(region);
   const url = CHATSVC_API.updateConsumptionHorizon(validRegion, conversationId);
 
-  // Consumption horizon format: "{timestamp};{timestamp};{messageId}"
-  // Both timestamps are typically the same (the message timestamp)
-  const timestamp = messageId;
-  const consumptionHorizon = `${timestamp};${timestamp};${messageId}`;
+  // Format: "{messageId};{messageId};{messageId}" - all three values are the same
+  const consumptionHorizon = `${messageId};${messageId};${messageId}`;
 
   const response = await httpRequest<unknown>(
     url,
@@ -843,10 +810,6 @@ export async function markAsRead(
 /**
  * Gets unread count for a conversation by comparing consumption horizon
  * with recent messages.
- * 
- * @param conversationId - The conversation to check
- * @param region - API region (default: 'amer')
- * @returns Object with unread count and last read position
  */
 export async function getUnreadStatus(
   conversationId: string,
@@ -896,12 +859,7 @@ export async function getUnreadStatus(
     }
   }
 
-  // If we didn't find the last read message in recent history,
-  // all fetched messages are potentially unread
-  if (!foundLastRead && lastReadId) {
-    // The last read is older than our window - can't determine exact count
-    // Return what we counted as a lower bound
-  }
+  // If last read message wasn't in our window, count is a lower bound
 
   return ok({
     conversationId,
@@ -984,13 +942,7 @@ function detectActivityType(msg: Record<string, unknown>): ActivityType {
 
 /**
  * Gets the activity feed (notifications) for the current user.
- * 
- * The activity feed includes mentions, reactions, replies, and other
- * notifications about activity in the user's Teams conversations.
- * 
- * @param options - Optional limit for number of items
- * @param region - API region (default: 'amer')
- * @returns Activity items and optional sync state
+ * Includes mentions, reactions, replies, and other notifications.
  */
 export async function getActivityFeed(
   options: { limit?: number } = {},
