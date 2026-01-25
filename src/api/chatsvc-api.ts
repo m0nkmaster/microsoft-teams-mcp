@@ -783,7 +783,7 @@ export async function markAsRead(
   const validRegion = validateRegion(region);
   const url = CHATSVC_API.updateConsumptionHorizon(validRegion, conversationId);
 
-  // Format: "{timestamp};{timestamp};{messageId}"
+  // Format: "{messageId};{messageId};{messageId}" - all three values are the same
   const consumptionHorizon = `${messageId};${messageId};${messageId}`;
 
   const response = await httpRequest<unknown>(

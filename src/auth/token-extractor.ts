@@ -173,12 +173,12 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
       if (typeof secret !== 'string' || !secret.startsWith('ey')) continue;
 
       const payload = decodeJwtPayload(secret);
-      if (!payload?.exp) continue;
-      const tokenExpiry = new Date((payload.exp as number) * 1000);
+      if (!payload?.exp || typeof payload.exp !== 'number') continue;
+      const tokenExpiry = new Date(payload.exp * 1000);
 
       // Extract user MRI from any token
-      if (payload.oid && !userMri) {
-        userMri = `8:orgid:${payload.oid as string}`;
+      if (typeof payload.oid === 'string' && !userMri) {
+        userMri = `8:orgid:${payload.oid}`;
       }
 
       // Prefer chatsvcagg.teams.microsoft.com token
@@ -206,8 +206,8 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
     const substrateInfo = extractSubstrateToken(sessionState);
     if (substrateInfo) {
       const payload = decodeJwtPayload(substrateInfo.token);
-      if (payload?.oid) {
-        userMri = `8:orgid:${payload.oid as string}`;
+      if (typeof payload?.oid === 'string') {
+        userMri = `8:orgid:${payload.oid}`;
       }
     }
   }
@@ -250,16 +250,16 @@ export function extractMessageAuth(state?: SessionState): MessageAuthInfo | null
   // Get userMri from skypeToken payload
   if (skypeToken) {
     const payload = decodeJwtPayload(skypeToken);
-    if (payload?.skypeid) {
-      userMri = payload.skypeid as string;
+    if (typeof payload?.skypeid === 'string') {
+      userMri = payload.skypeid;
     }
   }
 
   // Fallback to extracting userMri from authToken
   if (!userMri && authToken) {
     const payload = decodeJwtPayload(authToken);
-    if (payload?.oid) {
-      userMri = `8:orgid:${payload.oid as string}`;
+    if (typeof payload?.oid === 'string') {
+      userMri = `8:orgid:${payload.oid}`;
     }
   }
 
@@ -350,7 +350,7 @@ export function getUserDisplayName(state?: SessionState): string | null {
   const teamsToken = extractTeamsToken(sessionState);
   if (teamsToken) {
     const payload = decodeJwtPayload(teamsToken.token);
-    if (payload?.name) return payload.name as string;
+    if (typeof payload?.name === 'string') return payload.name;
   }
 
   return null;
