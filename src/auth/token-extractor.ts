@@ -2,6 +2,8 @@
  * Token extraction from session state.
  * 
  * Extracts various authentication tokens from Playwright's saved session state.
+ * Teams stores MSAL tokens in localStorage; we parse these to get bearer tokens
+ * for various APIs (Substrate search, chatsvc messaging, etc.).
  */
 
 import {
@@ -15,9 +17,12 @@ import {
 } from './session-store.js';
 import { parseJwtProfile, type UserProfile } from '../utils/parsers.js';
 
+// ============================================================================
+// JWT Utilities
+// ============================================================================
+
 /**
  * Decodes a JWT token's payload without verifying the signature.
- * Returns null if the token is invalid.
  */
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
@@ -30,7 +35,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 }
 
 /**
- * Gets the expiry date from a JWT token.
+ * Gets the expiry date from a JWT token's `exp` claim.
  */
 function getJwtExpiry(token: string): Date | null {
   const payload = decodeJwtPayload(token);
@@ -38,47 +43,79 @@ function getJwtExpiry(token: string): Date | null {
   return new Date(payload.exp * 1000);
 }
 
-/** Substrate search token information. */
+/**
+ * Checks if a string looks like a JWT (starts with 'ey').
+ */
+function isJwtToken(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('ey');
+}
+
+// ============================================================================
+// Session Helpers
+// ============================================================================
+
+/**
+ * Resolves session state and Teams origin in one call.
+ * Many functions need both, so this reduces boilerplate.
+ */
+function getTeamsLocalStorage(state?: SessionState): Array<{ name: string; value: string }> | null {
+  const sessionState = state ?? readSessionState();
+  if (!sessionState) return null;
+
+  const teamsOrigin = getTeamsOrigin(sessionState);
+  return teamsOrigin?.localStorage ?? null;
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/** Substrate search token (for search/people APIs). */
 export interface SubstrateTokenInfo {
   token: string;
   expiry: Date;
 }
 
-/** Teams API token information. */
+/** Teams chat API token (for chatsvc). */
 export interface TeamsTokenInfo {
   token: string;
   expiry: Date;
   userMri: string;
 }
 
-/** Message authentication information (cookies). */
+/** Cookie-based auth for messaging APIs. */
 export interface MessageAuthInfo {
   skypeToken: string;
   authToken: string;
   userMri: string;
 }
 
+// ============================================================================
+// Token Extraction
+// ============================================================================
+
 /**
  * Extracts the Substrate search token from session state.
+ * This token is used for search and people APIs.
  */
 export function extractSubstrateToken(state?: SessionState): SubstrateTokenInfo | null {
-  const sessionState = state ?? readSessionState();
-  if (!sessionState) return null;
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
 
-  const teamsOrigin = getTeamsOrigin(sessionState);
-  if (!teamsOrigin) return null;
-
-  for (const item of teamsOrigin.localStorage) {
+  for (const item of localStorage) {
     try {
-      const val = JSON.parse(item.value);
-      if (val.target?.includes('substrate.office.com/search/SubstrateSearch')) {
-        const token = val.secret;
-        if (!token || typeof token !== 'string') continue;
+      const entry = JSON.parse(item.value);
+      
+      // Look for the Substrate search token by its target scope
+      if (!entry.target?.includes('substrate.office.com/search/SubstrateSearch')) {
+        continue;
+      }
 
-        const expiry = getJwtExpiry(token);
-        if (expiry) {
-          return { token, expiry };
-        }
+      if (!isJwtToken(entry.secret)) continue;
+
+      const expiry = getJwtExpiry(entry.secret);
+      if (expiry) {
+        return { token: entry.secret, expiry };
       }
     } catch {
       continue;
@@ -87,6 +124,10 @@ export function extractSubstrateToken(state?: SessionState): SubstrateTokenInfo 
 
   return null;
 }
+
+// ============================================================================
+// Cached Token Access
+// ============================================================================
 
 /**
  * Gets a valid Substrate token, either from cache or by extracting from session.
@@ -148,52 +189,51 @@ export function getSubstrateTokenStatus(): {
   };
 }
 
+/** Candidate token found during extraction. */
+interface TokenCandidate {
+  token: string;
+  expiry: Date;
+  userMri?: string;
+}
+
 /**
  * Extracts the Teams chat API token from session state.
+ * 
+ * Teams stores multiple tokens for different services. We prefer:
+ * 1. chatsvcagg.teams.microsoft.com (primary chat API)
+ * 2. api.spaces.skype.com (fallback)
  */
 export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
-  const sessionState = state ?? readSessionState();
-  if (!sessionState) return null;
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
 
-  const teamsOrigin = getTeamsOrigin(sessionState);
-  if (!teamsOrigin) return null;
-
-  let chatToken: string | null = null;
-  let chatTokenExpiry: Date | null = null;
-  let skypeToken: string | null = null;
-  let skypeTokenExpiry: Date | null = null;
+  let chatsvcCandidate: TokenCandidate | null = null;
+  let skypeCandidate: TokenCandidate | null = null;
   let userMri: string | null = null;
 
-  for (const item of teamsOrigin.localStorage) {
+  for (const item of localStorage) {
     try {
-      const val = JSON.parse(item.value);
-      if (!val.target || !val.secret) continue;
+      const entry = JSON.parse(item.value);
+      if (!entry.target || !isJwtToken(entry.secret)) continue;
 
-      const secret = val.secret;
-      if (typeof secret !== 'string' || !secret.startsWith('ey')) continue;
-
-      const payload = decodeJwtPayload(secret);
+      const payload = decodeJwtPayload(entry.secret);
       if (!payload?.exp || typeof payload.exp !== 'number') continue;
-      const tokenExpiry = new Date(payload.exp * 1000);
 
-      // Extract user MRI from any token
+      const expiry = new Date(payload.exp * 1000);
+
+      // Capture user MRI from any token's oid claim
       if (typeof payload.oid === 'string' && !userMri) {
         userMri = `8:orgid:${payload.oid}`;
       }
 
-      // Prefer chatsvcagg.teams.microsoft.com token
-      if (val.target.includes('chatsvcagg.teams.microsoft.com')) {
-        if (!chatTokenExpiry || tokenExpiry > chatTokenExpiry) {
-          chatToken = secret;
-          chatTokenExpiry = tokenExpiry;
+      // Track best candidate for each service
+      if (entry.target.includes('chatsvcagg.teams.microsoft.com')) {
+        if (!chatsvcCandidate || expiry > chatsvcCandidate.expiry) {
+          chatsvcCandidate = { token: entry.secret, expiry };
         }
-      }
-
-      // Fallback to api.spaces.skype.com token
-      if (val.target.includes('api.spaces.skype.com')) {
-        if (!skypeTokenExpiry || tokenExpiry > skypeTokenExpiry) {
-          skypeToken = secret;
-          skypeTokenExpiry = tokenExpiry;
+      } else if (entry.target.includes('api.spaces.skype.com')) {
+        if (!skypeCandidate || expiry > skypeCandidate.expiry) {
+          skypeCandidate = { token: entry.secret, expiry };
         }
       }
     } catch {
@@ -201,93 +241,95 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
     }
   }
 
-  // If we still don't have userMri, try to get it from the Substrate token
+  // Fallback: extract userMri from Substrate token if not found
   if (!userMri) {
-    const substrateInfo = extractSubstrateToken(sessionState);
-    if (substrateInfo) {
-      const payload = decodeJwtPayload(substrateInfo.token);
-      if (typeof payload?.oid === 'string') {
-        userMri = `8:orgid:${payload.oid}`;
-      }
-    }
+    userMri = extractUserMriFromSubstrate(state);
   }
 
-  // Prefer chatsvc token, fallback to skype token
-  const token = chatToken || skypeToken;
-  const expiry = chatToken ? chatTokenExpiry : skypeTokenExpiry;
-
-  if (token && expiry && userMri && expiry.getTime() > Date.now()) {
-    return { token, expiry, userMri };
+  // Prefer chatsvc, fall back to skype
+  const best = chatsvcCandidate ?? skypeCandidate;
+  if (!best || !userMri || best.expiry.getTime() <= Date.now()) {
+    return null;
   }
 
+  return { token: best.token, expiry: best.expiry, userMri };
+}
+
+/**
+ * Extracts user MRI from the Substrate token's oid claim.
+ */
+function extractUserMriFromSubstrate(state?: SessionState): string | null {
+  const substrateInfo = extractSubstrateToken(state);
+  if (!substrateInfo) return null;
+
+  const payload = decodeJwtPayload(substrateInfo.token);
+  if (typeof payload?.oid === 'string') {
+    return `8:orgid:${payload.oid}`;
+  }
   return null;
 }
 
 /**
- * Extracts authentication info needed for messaging API (uses cookies).
+ * Extracts authentication info needed for messaging API.
+ * Unlike other APIs, messaging uses cookies rather than localStorage tokens.
  */
 export function extractMessageAuth(state?: SessionState): MessageAuthInfo | null {
   const sessionState = state ?? readSessionState();
   if (!sessionState) return null;
 
-  let skypeToken: string | null = null;
-  let authToken: string | null = null;
-  let userMri: string | null = null;
+  const cookies = sessionState.cookies ?? [];
+  const teamsCookies = cookies.filter(c => c.domain?.includes('teams.microsoft.com'));
 
-  // Extract tokens from cookies
-  for (const cookie of sessionState.cookies || []) {
-    if (cookie.name === 'skypetoken_asm' && cookie.domain?.includes('teams.microsoft.com')) {
-      skypeToken = cookie.value;
-    }
-    if (cookie.name === 'authtoken' && cookie.domain?.includes('teams.microsoft.com')) {
-      authToken = decodeURIComponent(cookie.value);
-      if (authToken.startsWith('Bearer=')) {
-        authToken = authToken.substring(7);
-      }
-    }
+  // Extract the two required cookies
+  const skypeToken = teamsCookies.find(c => c.name === 'skypetoken_asm')?.value ?? null;
+  const rawAuthToken = teamsCookies.find(c => c.name === 'authtoken')?.value ?? null;
+  
+  if (!skypeToken || !rawAuthToken) return null;
+
+  // Decode authtoken (URL-encoded, may have 'Bearer=' prefix)
+  let authToken = decodeURIComponent(rawAuthToken);
+  if (authToken.startsWith('Bearer=')) {
+    authToken = authToken.substring(7);
   }
 
-  // Get userMri from skypeToken payload
-  if (skypeToken) {
-    const payload = decodeJwtPayload(skypeToken);
-    if (typeof payload?.skypeid === 'string') {
-      userMri = payload.skypeid;
-    }
-  }
+  // Extract userMri from skypeToken's skypeid claim, or fall back to authToken's oid
+  const userMri = extractMriFromSkypeToken(skypeToken) 
+    ?? extractMriFromAuthToken(authToken);
 
-  // Fallback to extracting userMri from authToken
-  if (!userMri && authToken) {
-    const payload = decodeJwtPayload(authToken);
-    if (typeof payload?.oid === 'string') {
-      userMri = `8:orgid:${payload.oid}`;
-    }
-  }
+  if (!userMri) return null;
 
-  if (skypeToken && authToken && userMri) {
-    return { skypeToken, authToken, userMri };
-  }
+  return { skypeToken, authToken, userMri };
+}
 
-  return null;
+function extractMriFromSkypeToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  return typeof payload?.skypeid === 'string' ? payload.skypeid : null;
+}
+
+function extractMriFromAuthToken(token: string): string | null {
+  const payload = decodeJwtPayload(token);
+  return typeof payload?.oid === 'string' ? `8:orgid:${payload.oid}` : null;
 }
 
 /**
  * Extracts the CSA token for the conversationFolders API.
+ * This searches all origins, not just teams.microsoft.com.
  */
 export function extractCsaToken(state?: SessionState): string | null {
   const sessionState = state ?? readSessionState();
   if (!sessionState) return null;
 
-  for (const origin of sessionState.origins || []) {
-    for (const item of origin.localStorage || []) {
-      if (item.name.includes('chatsvcagg.teams.microsoft.com') && !item.name.startsWith('tmp.')) {
-        try {
-          const data = JSON.parse(item.value) as { secret?: string };
-          if (data.secret) {
-            return data.secret;
-          }
-        } catch {
-          // Ignore parse errors
-        }
+  for (const origin of sessionState.origins ?? []) {
+    for (const item of origin.localStorage ?? []) {
+      // Skip temporary entries, look for chatsvcagg tokens
+      if (item.name.startsWith('tmp.')) continue;
+      if (!item.name.includes('chatsvcagg.teams.microsoft.com')) continue;
+
+      try {
+        const entry = JSON.parse(item.value) as { secret?: string };
+        if (entry.secret) return entry.secret;
+      } catch {
+        // Ignore parse errors
       }
     }
   }
@@ -295,23 +337,23 @@ export function extractCsaToken(state?: SessionState): string | null {
   return null;
 }
 
+// ============================================================================
+// User Profile
+// ============================================================================
+
 /**
  * Gets the current user's profile from cached JWT tokens.
  */
 export function getUserProfile(state?: SessionState): UserProfile | null {
-  const sessionState = state ?? readSessionState();
-  if (!sessionState) return null;
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
 
-  const teamsOrigin = getTeamsOrigin(sessionState);
-  if (!teamsOrigin) return null;
-
-  for (const item of teamsOrigin.localStorage) {
+  for (const item of localStorage) {
     try {
-      const val = JSON.parse(item.value);
-      if (!val.secret || typeof val.secret !== 'string') continue;
-      if (!val.secret.startsWith('ey')) continue;
+      const entry = JSON.parse(item.value);
+      if (!isJwtToken(entry.secret)) continue;
 
-      const payload = decodeJwtPayload(val.secret);
+      const payload = decodeJwtPayload(entry.secret);
       if (payload) {
         const profile = parseJwtProfile(payload);
         if (profile) return profile;
@@ -326,28 +368,30 @@ export function getUserProfile(state?: SessionState): UserProfile | null {
 
 /**
  * Gets user's display name from session state.
+ * Searches localStorage entries first, then falls back to JWT claims.
  */
 export function getUserDisplayName(state?: SessionState): string | null {
-  const sessionState = state ?? readSessionState();
-  if (!sessionState) return null;
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
 
-  const teamsOrigin = getTeamsOrigin(sessionState);
-  if (!teamsOrigin) return null;
+  // First pass: look for explicit displayName in localStorage
+  for (const item of localStorage) {
+    // Quick filter before parsing
+    if (!item.value?.includes('displayName') && !item.value?.includes('givenName')) {
+      continue;
+    }
 
-  for (const item of teamsOrigin.localStorage) {
     try {
-      if (item.value?.includes('displayName') || item.value?.includes('givenName')) {
-        const val = JSON.parse(item.value);
-        if (val.displayName) return val.displayName;
-        if (val.name?.displayName) return val.name.displayName;
-      }
+      const entry = JSON.parse(item.value);
+      if (entry.displayName) return entry.displayName;
+      if (entry.name?.displayName) return entry.name.displayName;
     } catch {
       continue;
     }
   }
 
-  // Try to get from token
-  const teamsToken = extractTeamsToken(sessionState);
+  // Fallback: extract from Teams token's name claim
+  const teamsToken = extractTeamsToken(state);
   if (teamsToken) {
     const payload = decodeJwtPayload(teamsToken.token);
     if (typeof payload?.name === 'string') return payload.name;
@@ -355,6 +399,10 @@ export function getUserDisplayName(state?: SessionState): string | null {
 
   return null;
 }
+
+// ============================================================================
+// Token Status Checks
+// ============================================================================
 
 /**
  * Checks if tokens in session state are expired.
