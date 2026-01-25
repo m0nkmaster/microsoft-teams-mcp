@@ -100,3 +100,10 @@ export const RETRY_MAX_DELAY_MS = 10000;
 
 /** Self-chat (notes) conversation ID. */
 export const SELF_CHAT_ID = '48:notes';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Token Refresh
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Threshold for proactive token refresh (10 minutes before expiry). */
+export const TOKEN_REFRESH_THRESHOLD_MS = 10 * 60 * 1000;

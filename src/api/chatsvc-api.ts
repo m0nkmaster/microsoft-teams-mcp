@@ -690,3 +690,222 @@ export function getOneOnOneChatId(
     currentUserId,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Consumption Horizon (Read Status) Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Consumption horizon information for a conversation. */
+export interface ConsumptionHorizonInfo {
+  /** The conversation/thread ID. */
+  conversationId: string;
+  /** The version timestamp of the consumption horizon. */
+  version?: string;
+  /** The last read message ID (timestamp). */
+  lastReadMessageId?: string;
+  /** The last read timestamp. */
+  lastReadTimestamp?: number;
+  /** Raw consumption horizons array from API. */
+  consumptionHorizons: Array<{
+    id: string;
+    consumptionHorizon: string;
+  }>;
+}
+
+/** Result of marking a conversation as read. */
+export interface MarkAsReadResult {
+  conversationId: string;
+  markedUpTo: string;
+}
+
+/**
+ * Gets the consumption horizon (read receipts) for a conversation.
+ * 
+ * The consumption horizon tells us where each user has read up to in the conversation.
+ * For the current user, this indicates which messages are "unread".
+ * 
+ * @param conversationId - The conversation/thread ID
+ * @param region - API region (default: 'amer')
+ * @returns Consumption horizon information
+ */
+export async function getConsumptionHorizon(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<Result<ConsumptionHorizonInfo>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.consumptionHorizons(validRegion, conversationId);
+
+  const response = await httpRequest<{
+    id?: string;
+    version?: string;
+    consumptionhorizons?: Array<{
+      id: string;
+      consumptionhorizon: string;
+    }>;
+  }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const data = response.value.data;
+  const horizons = data.consumptionhorizons || [];
+
+  // Find the current user's consumption horizon
+  let lastReadMessageId: string | undefined;
+  let lastReadTimestamp: number | undefined;
+
+  for (const h of horizons) {
+    if (h.id === auth.userMri || h.id.includes(auth.userMri)) {
+      // Consumption horizon format: "{timestamp};{timestamp};{messageId}"
+      const parts = h.consumptionhorizon.split(';');
+      if (parts.length >= 3) {
+        lastReadMessageId = parts[2];
+        lastReadTimestamp = parseInt(parts[0], 10);
+      }
+      break;
+    }
+  }
+
+  return ok({
+    conversationId,
+    version: data.version,
+    lastReadMessageId,
+    lastReadTimestamp,
+    consumptionHorizons: horizons.map(h => ({
+      id: h.id,
+      consumptionHorizon: h.consumptionhorizon,
+    })),
+  });
+}
+
+/**
+ * Marks a conversation as read up to a specific message.
+ * 
+ * @param conversationId - The conversation to mark as read
+ * @param messageId - The message ID to mark as read up to
+ * @param region - API region (default: 'amer')
+ * @returns Result indicating success
+ */
+export async function markAsRead(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<Result<MarkAsReadResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.updateConsumptionHorizon(validRegion, conversationId);
+
+  // Consumption horizon format: "{timestamp};{timestamp};{messageId}"
+  // Both timestamps are typically the same (the message timestamp)
+  const timestamp = messageId;
+  const consumptionHorizon = `${timestamp};${timestamp};${messageId}`;
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'PUT',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+      body: JSON.stringify({
+        consumptionhorizon: consumptionHorizon,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    conversationId,
+    markedUpTo: messageId,
+  });
+}
+
+/**
+ * Gets unread count for a conversation by comparing consumption horizon
+ * with recent messages.
+ * 
+ * @param conversationId - The conversation to check
+ * @param region - API region (default: 'amer')
+ * @returns Object with unread count and last read position
+ */
+export async function getUnreadStatus(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<Result<{
+  conversationId: string;
+  unreadCount: number;
+  lastReadMessageId?: string;
+  latestMessageId?: string;
+}>> {
+  // Get consumption horizon
+  const horizonResult = await getConsumptionHorizon(conversationId, region);
+  if (!horizonResult.ok) {
+    return horizonResult;
+  }
+
+  // Get recent messages
+  const messagesResult = await getThreadMessages(conversationId, { limit: 50 }, region);
+  if (!messagesResult.ok) {
+    return messagesResult;
+  }
+
+  const lastReadId = horizonResult.value.lastReadMessageId;
+  const messages = messagesResult.value.messages;
+
+  // Count messages after the last read position
+  let unreadCount = 0;
+  let foundLastRead = false;
+  let latestMessageId: string | undefined;
+
+  // Messages are sorted oldest-first, so reverse to process newest-first
+  const reversedMessages = [...messages].reverse();
+
+  for (const msg of reversedMessages) {
+    if (!latestMessageId && !msg.isFromMe) {
+      latestMessageId = msg.id;
+    }
+
+    if (lastReadId && msg.id === lastReadId) {
+      foundLastRead = true;
+      break;
+    }
+
+    // Count messages not from the current user
+    if (!msg.isFromMe) {
+      unreadCount++;
+    }
+  }
+
+  // If we didn't find the last read message in recent history,
+  // all fetched messages are potentially unread
+  if (!foundLastRead && lastReadId) {
+    // The last read is older than our window - can't determine exact count
+    // Return what we counted as a lower bound
+  }
+
+  return ok({
+    conversationId,
+    unreadCount,
+    lastReadMessageId: lastReadId,
+    latestMessageId,
+  });
+}

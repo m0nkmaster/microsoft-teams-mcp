@@ -11,8 +11,11 @@ import {
   getValidSubstrateToken,
   extractMessageAuth,
   extractCsaToken,
+  extractSubstrateToken,
   type MessageAuthInfo,
 } from '../auth/token-extractor.js';
+import { TOKEN_REFRESH_THRESHOLD_MS } from '../constants.js';
+import { refreshTokensViaBrowser } from '../auth/token-refresh.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Error Messages
@@ -47,6 +50,53 @@ export function requireSubstrateToken(): Result<string, McpError> {
   if (!token) {
     return err(createError(ErrorCode.AUTH_REQUIRED, AUTH_ERROR_MESSAGES.substrateToken));
   }
+  return ok(token);
+}
+
+/**
+ * Checks if the Substrate token is approaching expiry and needs refresh.
+ * 
+ * @returns true if token will expire within the refresh threshold
+ */
+function shouldRefreshSubstrateToken(): boolean {
+  const substrate = extractSubstrateToken();
+  if (!substrate) return false;
+
+  const timeRemaining = substrate.expiry.getTime() - Date.now();
+  return timeRemaining > 0 && timeRemaining < TOKEN_REFRESH_THRESHOLD_MS;
+}
+
+/**
+ * Requires a valid Substrate token with proactive refresh.
+ * 
+ * This async version attempts to refresh tokens if they're approaching
+ * expiry (within 10 minutes). Use this in tool handlers for better UX.
+ */
+export async function requireSubstrateTokenAsync(): Promise<Result<string, McpError>> {
+  // Check if we need to refresh proactively
+  if (shouldRefreshSubstrateToken()) {
+    const refreshResult = await refreshTokensViaBrowser();
+    if (refreshResult.ok) {
+      // Refresh succeeded, get the new token
+      const token = getValidSubstrateToken();
+      if (token) {
+        return ok(token);
+      }
+    }
+    // Refresh failed but token might still be valid, continue
+  }
+
+  // Try to get existing token
+  const token = getValidSubstrateToken();
+  if (!token) {
+    // Token expired and refresh not available/failed
+    return err(createError(
+      ErrorCode.AUTH_EXPIRED,
+      'Token expired and automatic refresh failed. Please run teams_login to re-authenticate.',
+      { suggestions: ['Call teams_login to re-authenticate'] }
+    ));
+  }
+
   return ok(token);
 }
 
