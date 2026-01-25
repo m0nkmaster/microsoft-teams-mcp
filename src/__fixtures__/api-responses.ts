@@ -15,7 +15,7 @@ export const searchResultItem = {
   HitHighlightedSummary: 'Let me check the <c0>budget</c0> report for Q3',
   Summary: 'Let me check the budget report for Q3',
   Source: {
-    ReceivedTime: '2026-01-20T14:30:00.000Z',
+    DateTimeReceived: '2026-01-20T14:30:00.000Z',
     From: {
       EmailAddress: {
         Name: 'Smith, John',
@@ -39,7 +39,7 @@ export const searchResultWithHtml = {
   ReferenceId: 'xyz789.1000.1',
   HitHighlightedSummary: '<p>Meeting <strong>notes</strong> from &amp; yesterday&apos;s call</p><br/><div>Action items:</div>',
   Source: {
-    ReceivedTime: '2026-01-21T09:00:00.000Z',
+    DateTimeReceived: '2026-01-21T09:00:00.000Z',
     From: 'Jane Doe',
     ClientThreadId: '19:meeting123@thread.v2',
   },
@@ -177,7 +177,7 @@ export const jwtPayloadSpaceName = {
  */
 export const sourceWithMessageId = {
   MessageId: '1705760000000',
-  ReceivedTime: '2026-01-20T12:00:00.000Z',
+  DateTimeReceived: '2026-01-20T12:00:00.000Z',
   ClientConversationId: '19:thread@tacv2',
 };
 
@@ -185,7 +185,7 @@ export const sourceWithMessageId = {
  * Message source with ID in ClientConversationId.
  */
 export const sourceWithConvIdMessageId = {
-  ReceivedTime: '2026-01-20T12:00:00.000Z',
+  DateTimeReceived: '2026-01-20T12:00:00.000Z',
   ClientConversationId: '19:thread@tacv2;messageid=1705770000000',
 };
 

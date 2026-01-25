@@ -469,17 +469,17 @@ async function handleUnsaveMessage(
   };
 }
 
-async function handleGetChat(
+function handleGetChat(
   input: z.infer<typeof GetChatInputSchema>,
   _ctx: ToolContext
 ): Promise<ToolResult> {
   const result = getOneOnOneChatId(input.userId);
 
   if (!result.ok) {
-    return { success: false, error: result.error };
+    return Promise.resolve({ success: false, error: result.error });
   }
 
-  return {
+  return Promise.resolve({
     success: true,
     data: {
       conversationId: result.value.conversationId,
@@ -487,7 +487,7 @@ async function handleGetChat(
       currentUserId: result.value.currentUserId,
       note: 'Use this conversationId with teams_send_message to send a message. The conversation is created automatically when the first message is sent.',
     },
-  };
+  });
 }
 
 async function handleEditMessage(
