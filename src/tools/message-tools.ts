@@ -16,6 +16,7 @@ import {
   deleteMessage,
   getUnreadStatus,
   markAsRead,
+  getActivityFeed,
 } from '../api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from '../api/csa-api.js';
 import { SELF_CHAT_ID } from '../constants.js';
@@ -67,6 +68,10 @@ export const GetUnreadInputSchema = z.object({
 export const MarkAsReadInputSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
   messageId: z.string().min(1, 'Message ID cannot be empty'),
+});
+
+export const GetActivityInputSchema = z.object({
+  limit: z.number().min(1).max(200).optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,6 +288,20 @@ const markAsReadToolDefinition: Tool = {
       },
     },
     required: ['conversationId', 'messageId'],
+  },
+};
+
+const getActivityToolDefinition: Tool = {
+  name: 'teams_get_activity',
+  description: 'Get the user\'s activity feed - mentions, reactions, replies, and other notifications. Returns recent activity items with sender, content, and source conversation context.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of activity items to return (default: 50, max: 200)',
+      },
+    },
   },
 };
 
@@ -614,6 +633,26 @@ async function handleMarkAsRead(
   };
 }
 
+async function handleGetActivity(
+  input: z.infer<typeof GetActivityInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await getActivityFeed({ limit: input.limit });
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      count: result.value.activities.length,
+      activities: result.value.activities,
+      syncState: result.value.syncState,
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -690,6 +729,12 @@ export const markAsReadTool: RegisteredTool<typeof MarkAsReadInputSchema> = {
   handler: handleMarkAsRead,
 };
 
+export const getActivityTool: RegisteredTool<typeof GetActivityInputSchema> = {
+  definition: getActivityToolDefinition,
+  schema: GetActivityInputSchema,
+  handler: handleGetActivity,
+};
+
 /** All message-related tools. */
 export const messageTools = [
   sendMessageTool,
@@ -704,4 +749,5 @@ export const messageTools = [
   deleteMessageTool,
   getUnreadTool,
   markAsReadTool,
+  getActivityTool,
 ];
