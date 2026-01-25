@@ -965,7 +965,7 @@ function detectActivityType(msg: Record<string, unknown>): ActivityType {
   }
   
   // Check for reaction-related message types
-  if (messageType.includes('Reaction') || messageType.includes('reaction')) {
+  if (messageType.toLowerCase().includes('reaction')) {
     return 'reaction';
   }
   
