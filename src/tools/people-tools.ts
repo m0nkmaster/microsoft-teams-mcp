@@ -78,26 +78,26 @@ const frequentContactsToolDefinition: Tool = {
 // Handlers
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleGetMe(
+function handleGetMe(
   _input: Record<string, never>,
   _ctx: ToolContext
 ): Promise<ToolResult> {
   const profile = getUserProfile();
 
   if (!profile) {
-    return {
+    return Promise.resolve({
       success: false,
       error: createError(
         ErrorCode.AUTH_REQUIRED,
         'No valid session. Please use teams_login first.'
       ),
-    };
+    });
   }
 
-  return {
+  return Promise.resolve({
     success: true,
     data: { profile },
-  };
+  });
 }
 
 async function handleSearchPeople(

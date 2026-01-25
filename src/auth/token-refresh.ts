@@ -1,12 +1,9 @@
 /**
  * Token refresh via headless browser.
  * 
- * Microsoft Teams uses SPA (Single-Page Application) OAuth2 which restricts
- * refresh tokens to browser-based CORS requests. We work around this by
- * opening a headless browser with the saved session, letting MSAL silently
- * refresh the tokens, then saving the updated session state.
- * 
- * This is seamless to the user - the browser is invisible.
+ * Teams uses SPA OAuth2 which restricts refresh tokens to browser-based CORS
+ * requests. We open a headless browser with saved session state, let MSAL
+ * silently refresh tokens, then save the updated state. Seamless to the user.
  */
 
 import { TOKEN_REFRESH_THRESHOLD_MS, MSAL_TOKEN_DELAY_MS } from '../constants.js';
@@ -35,14 +32,8 @@ export interface TokenRefreshResult {
 
 /**
  * Refreshes tokens by opening a headless browser with saved session state.
- * 
- * MSAL automatically refreshes tokens when the Teams page loads, so we:
- * 1. Open a headless browser with the saved session
- * 2. Navigate to Teams
- * 3. Wait for MSAL to refresh tokens in the background
- * 4. Save the updated session state
- * 
- * @returns The refresh result, or an error if refresh fails
+ * MSAL refreshes tokens automatically when Teams loads; we just need to
+ * trigger that and save the updated state.
  */
 export async function refreshTokensViaBrowser(): Promise<Result<TokenRefreshResult>> {
   // Check we have a session to work with
