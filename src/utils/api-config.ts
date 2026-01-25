@@ -92,6 +92,10 @@ export const CHATSVC_API = {
   /** Update consumption horizon (mark as read) for a conversation. */
   updateConsumptionHorizon: (region: Region, conversationId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/properties?name=consumptionhorizon`,
+  
+  /** Activity feed (notifications) messages. */
+  activityFeed: (region: Region) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent('48:notifications')}/messages`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */

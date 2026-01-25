@@ -228,6 +228,7 @@ Session state and token cache files are protected by:
 | `teams_delete_message` | Delete one of your own messages (soft delete) |
 | `teams_get_unread` | Get unread status for favourites (aggregate) or specific conversation |
 | `teams_mark_read` | Mark a conversation as read up to a specific message |
+| `teams_get_activity` | Get activity feed (mentions, reactions, replies, notifications) |
 
 ### Design Philosophy
 
@@ -608,6 +609,37 @@ teams_get_unread conversationId="19:abc@thread.tacv2"
 teams_mark_read conversationId="19:abc@thread.tacv2" messageId="1769276832046"
 ```
 
+### teams_get_activity Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | number | 50 | Maximum number of activity items to return (1-200) |
+
+**Response** includes:
+- `count` - Number of activity items returned
+- `activities[]` - Array of activity items, each with:
+  - `id` - Activity/message ID
+  - `type` - Activity type: `mention`, `reaction`, `reply`, `message`, or `unknown`
+  - `content` - Activity content (HTML stripped)
+  - `contentType` - Raw message type from API
+  - `sender` - Object with `mri` and `displayName`
+  - `timestamp` - ISO timestamp
+  - `conversationId` - Source conversation where activity occurred
+  - `topic` - Conversation/thread topic name (if available)
+  - `activityLink` - Direct link to open the activity in Teams
+- `syncState` - State token for incremental polling (advanced usage)
+
+**Use case:** Check what's happening - who mentioned you, reacted to your messages, or replied to threads you're in. This is the programmatic equivalent of the Activity tab in Teams.
+
+**Example:**
+```
+# Get recent activity
+teams_get_activity
+
+# Get more activity items
+teams_get_activity limit=100
+```
+
 ## Development Commands
 
 ```bash
@@ -656,6 +688,8 @@ npm run test:mcp -- unread                                 # teams_get_unread (a
 npm run test:mcp -- unread --to "conv-id"                  # teams_get_unread (specific)
 npm run test:mcp -- markread --to "conv-id" --message "msg-id"  # teams_mark_read
 npm run test:mcp -- thread --to "conv-id" --markRead       # teams_get_thread with mark read
+npm run test:mcp -- activity                               # teams_get_activity
+npm run test:mcp -- activity --limit 10                    # teams_get_activity with limit
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json
@@ -877,7 +911,6 @@ Based on API research, these tools could be implemented:
 ### Not Yet Feasible
 - **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata
 - **Chat list** - Data loaded at startup, not in separate API
-- **Activity feed** - Exists at `48:notifications` but format unclear
 - **Presence/Status** - Real-time via WebSocket, not HTTP
 - **Calendar** - Outlook APIs exist but need separate research
 

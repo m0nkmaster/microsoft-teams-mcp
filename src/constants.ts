@@ -101,6 +101,19 @@ export const RETRY_MAX_DELAY_MS = 10000;
 /** Self-chat (notes) conversation ID. */
 export const SELF_CHAT_ID = '48:notes';
 
+/** Activity feed (notifications) conversation ID. */
+export const NOTIFICATIONS_ID = '48:notifications';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Activity Feed
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Default limit for activity feed items. */
+export const DEFAULT_ACTIVITY_LIMIT = 50;
+
+/** Maximum limit for activity feed items. */
+export const MAX_ACTIVITY_LIMIT = 200;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Token Refresh
 // ─────────────────────────────────────────────────────────────────────────────
