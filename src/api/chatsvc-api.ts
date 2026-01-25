@@ -11,6 +11,7 @@ import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName, extractMessageAuth } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId } from '../utils/parsers.js';
+import { DEFAULT_ACTIVITY_LIMIT } from '../constants.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -688,5 +689,406 @@ export function getOneOnOneChatId(
     conversationId,
     otherUserId,
     currentUserId,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Consumption Horizon (Read Status) Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Consumption horizon information for a conversation. */
+export interface ConsumptionHorizonInfo {
+  /** The conversation/thread ID. */
+  conversationId: string;
+  /** The version timestamp of the consumption horizon. */
+  version?: string;
+  /** The last read message ID (timestamp). */
+  lastReadMessageId?: string;
+  /** The last read timestamp. */
+  lastReadTimestamp?: number;
+  /** Raw consumption horizons array from API. */
+  consumptionHorizons: Array<{
+    id: string;
+    consumptionHorizon: string;
+  }>;
+}
+
+/** Result of marking a conversation as read. */
+export interface MarkAsReadResult {
+  conversationId: string;
+  markedUpTo: string;
+}
+
+/**
+ * Gets the consumption horizon (read receipts) for a conversation.
+ * 
+ * The consumption horizon tells us where each user has read up to in the conversation.
+ * For the current user, this indicates which messages are "unread".
+ * 
+ * @param conversationId - The conversation/thread ID
+ * @param region - API region (default: 'amer')
+ * @returns Consumption horizon information
+ */
+export async function getConsumptionHorizon(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<Result<ConsumptionHorizonInfo>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.consumptionHorizons(validRegion, conversationId);
+
+  const response = await httpRequest<{
+    id?: string;
+    version?: string;
+    consumptionhorizons?: Array<{
+      id: string;
+      consumptionhorizon: string;
+    }>;
+  }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const data = response.value.data;
+  const horizons = data.consumptionhorizons || [];
+
+  // Find the current user's consumption horizon
+  let lastReadMessageId: string | undefined;
+  let lastReadTimestamp: number | undefined;
+
+  for (const h of horizons) {
+    if (h.id === auth.userMri || h.id.includes(auth.userMri)) {
+      // Consumption horizon format: "{timestamp};{timestamp};{messageId}"
+      const parts = h.consumptionhorizon.split(';');
+      if (parts.length >= 3) {
+        lastReadMessageId = parts[2];
+        lastReadTimestamp = parseInt(parts[0], 10);
+      }
+      break;
+    }
+  }
+
+  return ok({
+    conversationId,
+    version: data.version,
+    lastReadMessageId,
+    lastReadTimestamp,
+    consumptionHorizons: horizons.map(h => ({
+      id: h.id,
+      consumptionHorizon: h.consumptionhorizon,
+    })),
+  });
+}
+
+/**
+ * Marks a conversation as read up to a specific message.
+ * 
+ * @param conversationId - The conversation to mark as read
+ * @param messageId - The message ID to mark as read up to
+ * @param region - API region (default: 'amer')
+ * @returns Result indicating success
+ */
+export async function markAsRead(
+  conversationId: string,
+  messageId: string,
+  region: string = 'amer'
+): Promise<Result<MarkAsReadResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.updateConsumptionHorizon(validRegion, conversationId);
+
+  // Consumption horizon format: "{timestamp};{timestamp};{messageId}"
+  // Both timestamps are typically the same (the message timestamp)
+  const timestamp = messageId;
+  const consumptionHorizon = `${timestamp};${timestamp};${messageId}`;
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'PUT',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+      body: JSON.stringify({
+        consumptionhorizon: consumptionHorizon,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    conversationId,
+    markedUpTo: messageId,
+  });
+}
+
+/**
+ * Gets unread count for a conversation by comparing consumption horizon
+ * with recent messages.
+ * 
+ * @param conversationId - The conversation to check
+ * @param region - API region (default: 'amer')
+ * @returns Object with unread count and last read position
+ */
+export async function getUnreadStatus(
+  conversationId: string,
+  region: string = 'amer'
+): Promise<Result<{
+  conversationId: string;
+  unreadCount: number;
+  lastReadMessageId?: string;
+  latestMessageId?: string;
+}>> {
+  // Get consumption horizon
+  const horizonResult = await getConsumptionHorizon(conversationId, region);
+  if (!horizonResult.ok) {
+    return horizonResult;
+  }
+
+  // Get recent messages
+  const messagesResult = await getThreadMessages(conversationId, { limit: 50 }, region);
+  if (!messagesResult.ok) {
+    return messagesResult;
+  }
+
+  const lastReadId = horizonResult.value.lastReadMessageId;
+  const messages = messagesResult.value.messages;
+
+  // Count messages after the last read position
+  let unreadCount = 0;
+  let foundLastRead = false;
+  let latestMessageId: string | undefined;
+
+  // Messages are sorted oldest-first, so reverse to process newest-first
+  const reversedMessages = [...messages].reverse();
+
+  for (const msg of reversedMessages) {
+    if (!latestMessageId && !msg.isFromMe) {
+      latestMessageId = msg.id;
+    }
+
+    if (lastReadId && msg.id === lastReadId) {
+      foundLastRead = true;
+      break;
+    }
+
+    // Count messages not from the current user
+    if (!msg.isFromMe) {
+      unreadCount++;
+    }
+  }
+
+  // If we didn't find the last read message in recent history,
+  // all fetched messages are potentially unread
+  if (!foundLastRead && lastReadId) {
+    // The last read is older than our window - can't determine exact count
+    // Return what we counted as a lower bound
+  }
+
+  return ok({
+    conversationId,
+    unreadCount,
+    lastReadMessageId: lastReadId,
+    latestMessageId,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Activity Feed Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Type of activity item. */
+export type ActivityType = 'mention' | 'reaction' | 'reply' | 'message' | 'unknown';
+
+/** An activity item from the notifications feed. */
+export interface ActivityItem {
+  /** Activity/message ID. */
+  id: string;
+  /** Type of activity (mention, reaction, reply, etc.). */
+  type: ActivityType;
+  /** Activity content (HTML stripped). */
+  content: string;
+  /** Raw content type from API. */
+  contentType: string;
+  /** Sender information. */
+  sender: {
+    mri: string;
+    displayName?: string;
+  };
+  /** When the activity occurred. */
+  timestamp: string;
+  /** The source conversation ID (where the activity happened). */
+  conversationId?: string;
+  /** The conversation/thread topic name. */
+  topic?: string;
+  /** Direct link to the activity in Teams. */
+  activityLink?: string;
+}
+
+/** Result of fetching the activity feed. */
+export interface GetActivityResult {
+  /** Activity items (newest first). */
+  activities: ActivityItem[];
+  /** Sync state for incremental polling. */
+  syncState?: string;
+}
+
+/**
+ * Determines the activity type from message content and properties.
+ */
+function detectActivityType(msg: Record<string, unknown>): ActivityType {
+  const content = msg.content as string || '';
+  const messageType = msg.messagetype as string || '';
+  
+  // Check for @mention
+  if (content.includes('itemtype="http://schema.skype.com/Mention"') ||
+      content.includes('itemscope itemtype="http://schema.skype.com/Mention"')) {
+    return 'mention';
+  }
+  
+  // Check for reaction-related message types
+  if (messageType.includes('Reaction') || messageType.includes('reaction')) {
+    return 'reaction';
+  }
+  
+  // Check for thread/reply indicators
+  if (msg.threadtopic || msg.parentMessageId) {
+    return 'reply';
+  }
+  
+  // Standard message
+  if (messageType.includes('RichText') || messageType.includes('Text')) {
+    return 'message';
+  }
+  
+  return 'unknown';
+}
+
+/**
+ * Gets the activity feed (notifications) for the current user.
+ * 
+ * The activity feed includes mentions, reactions, replies, and other
+ * notifications about activity in the user's Teams conversations.
+ * 
+ * @param options - Optional limit for number of items
+ * @param region - API region (default: 'amer')
+ * @returns Activity items and optional sync state
+ */
+export async function getActivityFeed(
+  options: { limit?: number } = {},
+  region: string = 'amer'
+): Promise<Result<GetActivityResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const limit = options.limit ?? DEFAULT_ACTIVITY_LIMIT;
+
+  let url = CHATSVC_API.activityFeed(validRegion);
+  url += `?view=msnp24Equivalent&pageSize=${limit}`;
+
+  const response = await httpRequest<{ messages?: unknown[]; syncState?: string }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const rawMessages = response.value.data.messages;
+  const syncState = response.value.data.syncState;
+  
+  if (!Array.isArray(rawMessages)) {
+    return ok({
+      activities: [],
+      syncState,
+    });
+  }
+
+  const activities: ActivityItem[] = [];
+
+  for (const raw of rawMessages) {
+    const msg = raw as Record<string, unknown>;
+
+    // Skip control/system messages that aren't relevant
+    const messageType = msg.messagetype as string;
+    if (!messageType || 
+        messageType.startsWith('Control/') || 
+        messageType === 'ThreadActivity/AddMember' ||
+        messageType === 'ThreadActivity/DeleteMember') {
+      continue;
+    }
+
+    const id = msg.id as string || msg.originalarrivaltime as string;
+    if (!id) continue;
+
+    const content = msg.content as string || '';
+    const contentType = msg.messagetype as string || 'Text';
+
+    const fromMri = msg.from as string || '';
+    const displayName = msg.imdisplayname as string || msg.displayName as string;
+
+    const timestamp = msg.originalarrivaltime as string ||
+      msg.composetime as string ||
+      new Date(parseInt(id, 10)).toISOString();
+
+    const conversationId = msg.conversationid as string || msg.conversationId as string;
+    const topic = msg.threadtopic as string || msg.topic as string;
+
+    // Build activity link if we have the conversation context
+    let activityLink: string | undefined;
+    if (conversationId && /^\d+$/.test(id)) {
+      activityLink = buildMessageLink(conversationId, id);
+    }
+
+    const activityType = detectActivityType(msg);
+
+    activities.push({
+      id,
+      type: activityType,
+      content: stripHtml(content),
+      contentType,
+      sender: {
+        mri: fromMri,
+        displayName,
+      },
+      timestamp,
+      conversationId,
+      topic,
+      activityLink,
+    });
+  }
+
+  // Sort by timestamp (newest first for activity feed)
+  activities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return ok({
+    activities,
+    syncState,
   });
 }
