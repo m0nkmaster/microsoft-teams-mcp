@@ -32,15 +32,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout PR head
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_SHA_DIRECT: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$PR_SHA_DIRECT" ]; then
+            git checkout $PR_SHA_DIRECT
+          else
+            PR_NUMBER=${{ github.event.issue.number }}
+            PR_SHA=$(gh pr view $PR_NUMBER --json headRefOid -q '.headRefOid')
+            git checkout $PR_SHA
+          fi
+
       - name: Install Cursor CLI
         run: |
           curl https://cursor.com/install -fsS | bash
           echo "$HOME/.cursor/bin" >> $GITHUB_PATH
-
-      - name: Configure git identity
-        run: |
-          git config user.name "Zaphod Reviewbot"
-          git config user.email "dont-panic@cursor.sh"
 
       - name: Get PR diff
         if: github.event_name == 'pull_request'
@@ -97,7 +105,8 @@ jobs:
           
           RULES:
           - 'path' must match exactly a file path from the diff (e.g., 'src/api/chatsvc-api.ts')
-          - 'line' must be a line number that exists in the NEW version of the file (right side of diff, lines with + or unchanged)
+          - 'line' MUST be a line number VISIBLE in the diff output - either a changed line (with + prefix) or context line (with space prefix). GitHub rejects comments on lines not shown in the diff!
+          - Look at the actual line numbers shown after @@ in the diff hunks. Only use those lines.
           - Use 'verdict': 'approve' if code is good, 'request_changes' for blocking issues, 'comment' for suggestions
           - comments array can be empty if no inline feedback needed
           - Be constructive and specific. Focus on meaningful improvements, not style nitpicks.
@@ -123,12 +132,61 @@ jobs:
             exit 0
           fi
           
+          # Extract lines that are actually in the diff (GitHub rejects comments on lines not in diff)
+          # Parse diff to extract valid file:line combinations
+          echo "Extracting valid diff lines..."
+          awk '
+            /^diff --git/ { 
+              # Extract filename from "diff --git a/path b/path"
+              match($0, /b\/(.+)$/, arr)
+              current_file = arr[1]
+            }
+            /^@@ / {
+              # Extract starting line and count from "@@ -old,count +new,count @@"
+              match($0, /\+([0-9]+)(,([0-9]+))?/, arr)
+              start_line = arr[1]
+              count = arr[3] ? arr[3] : 1
+              line_num = start_line
+            }
+            /^[+ ]/ && current_file && line_num {
+              # Lines starting with + or space are in the new file
+              print current_file ":" line_num
+              line_num++
+            }
+            /^-/ {
+              # Deleted lines dont increment new file line counter
+            }
+          ' pr-diff.txt | sort -u > valid-diff-lines.txt
+          
+          echo "Found $(wc -l < valid-diff-lines.txt) valid diff lines"
+          
+          # Build list of valid and invalid comments
+          VALID_COMMENTS="[]"
+          INVALID_COMMENTS=""
+          
+          while IFS= read -r comment_json; do
+            path=$(echo "$comment_json" | jq -r '.path')
+            line=$(echo "$comment_json" | jq -r '.line')
+            body=$(echo "$comment_json" | jq -r '.body')
+            
+            if grep -qF "${path}:${line}" valid-diff-lines.txt 2>/dev/null; then
+              # Line is in diff, add to valid comments
+              VALID_COMMENTS=$(echo "$VALID_COMMENTS" | jq --arg p "$path" --argjson l "$line" --arg b "$body" \
+                '. + [{path: $p, line: $l, body: $b, side: "RIGHT"}]')
+            else
+              # Line not in diff, collect for summary
+              echo "Note: Comment on ${path}:${line} not in diff, moving to summary"
+              INVALID_COMMENTS="${INVALID_COMMENTS}
+
+          **${path}:${line}**
+          ${body}"
+            fi
+          done < <(jq -c '.comments[]' review-output.json 2>/dev/null || echo "")
+          
           # Extract fields
           SUMMARY=$(jq -r '.summary // "No summary provided"' review-output.json)
           VERDICT=$(jq -r '.verdict // "comment"' review-output.json | tr '[:lower:]' '[:upper:]')
           
-          # GitHub Actions cannot APPROVE or REQUEST_CHANGES on PRs by default
-          # So we always use COMMENT event but show the verdict in the body
           EVENT="COMMENT"
           
           # Add verdict emoji to the summary
@@ -138,37 +196,48 @@ jobs:
             *) VERDICT_PREFIX="🤔 **A few thoughts from the Guide...**" ;;
           esac
           
-          # Build the review payload
+          # Build the review body, including any comments that couldn't be posted inline
           REVIEW_BODY="${VERDICT_PREFIX}
 
-          ${SUMMARY}
+          ${SUMMARY}"
+          
+          if [ -n "$INVALID_COMMENTS" ]; then
+            REVIEW_BODY="${REVIEW_BODY}
+
+          ---
+          **Additional notes** (on lines outside the diff):
+          ${INVALID_COMMENTS}"
+          fi
+          
+          REVIEW_BODY="${REVIEW_BODY}
 
           <!-- pr-reviewer-bot -->"
           
-          # Check if there are inline comments
-          COMMENT_COUNT=$(jq '.comments | length' review-output.json)
+          # Count valid inline comments
+          VALID_COUNT=$(echo "$VALID_COMMENTS" | jq 'length')
           
-          if [ "$COMMENT_COUNT" -gt 0 ]; then
-            # Build review with inline comments
+          if [ "$VALID_COUNT" -gt 0 ]; then
+            # Build review with inline comments (include side: RIGHT for line-based comments)
+            echo "$VALID_COMMENTS" > valid-comments.json
             jq -n \
               --arg body "$REVIEW_BODY" \
               --arg event "$EVENT" \
-              --slurpfile review review-output.json \
+              --slurpfile comments valid-comments.json \
               '{
                 body: $body,
                 event: $event,
-                comments: [$review[0].comments[] | {path: .path, line: .line, body: .body}]
+                comments: $comments[0]
               }' > review-payload.json
             
-            echo "Posting review with $COMMENT_COUNT inline comment(s)..."
+            echo "Posting review with $VALID_COUNT inline comment(s)..."
             gh api \
               --method POST \
               -H "Accept: application/vnd.github+json" \
               "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
               --input review-payload.json
           else
-            # No inline comments, just post the review summary
-            echo "Posting review summary (no inline comments)..."
+            # No valid inline comments, just post the review summary
+            echo "Posting review summary (no valid inline comments)..."
             jq -n \
               --arg body "$REVIEW_BODY" \
               --arg event "$EVENT" \
@@ -180,6 +249,9 @@ jobs:
               "/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" \
               --input review-payload.json
           fi
+          
+          # Clean up temp files
+          rm -f valid-diff-lines.txt valid-comments.json
           
           echo "Review posted successfully"
 
