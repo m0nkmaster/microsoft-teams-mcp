@@ -1053,9 +1053,22 @@ export async function getActivityFeed(
     const fromMri = msg.from as string || '';
     const displayName = msg.imdisplayname as string || msg.displayName as string;
 
-    const timestamp = msg.originalarrivaltime as string ||
-      msg.composetime as string ||
-      new Date(parseInt(id, 10)).toISOString();
+    // Safely determine timestamp - avoid RangeError if id isn't numeric
+    const timestamp = (() => {
+      const arrivalTime = msg.originalarrivaltime as string;
+      const composeTime = msg.composetime as string;
+      if (arrivalTime) return arrivalTime;
+      if (composeTime) return composeTime;
+
+      const numericId = parseInt(id, 10);
+      if (!isNaN(numericId)) {
+        return new Date(numericId).toISOString();
+      }
+      return null;
+    })();
+
+    // Skip items without a valid timestamp
+    if (!timestamp) continue;
 
     const conversationId = msg.conversationid as string || msg.conversationId as string;
     const topic = msg.threadtopic as string || msg.topic as string;
