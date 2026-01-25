@@ -10,7 +10,7 @@ This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, 
 1. Run `teams_login` to open a browser and log in
 2. OAuth tokens are extracted and cached
 3. All operations use cached tokens directly (no browser needed)
-4. When tokens expire (~1 hour), run `teams_login` again
+4. Automatic token refresh (~1 hour)
 
 ## Installation
 
