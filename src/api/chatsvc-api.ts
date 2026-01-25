@@ -10,7 +10,7 @@ import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName, extractMessageAuth } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
-import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId } from '../utils/parsers.js';
+import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp } from '../utils/parsers.js';
 import { DEFAULT_ACTIVITY_LIMIT } from '../constants.js';
 
 /** Result of sending a message. */
@@ -965,7 +965,7 @@ function detectActivityType(msg: Record<string, unknown>): ActivityType {
   }
   
   // Check for reaction-related message types
-  if (messageType.includes('Reaction') || messageType.includes('reaction')) {
+  if (messageType.toLowerCase().includes('reaction')) {
     return 'reaction';
   }
   
@@ -1053,9 +1053,9 @@ export async function getActivityFeed(
     const fromMri = msg.from as string || '';
     const displayName = msg.imdisplayname as string || msg.displayName as string;
 
-    const timestamp = msg.originalarrivaltime as string ||
-      msg.composetime as string ||
-      new Date(parseInt(id, 10)).toISOString();
+    // Safely extract timestamp - returns null if no valid timestamp found
+    const timestamp = extractActivityTimestamp(msg);
+    if (!timestamp) continue;
 
     const conversationId = msg.conversationid as string || msg.conversationId as string;
     const topic = msg.threadtopic as string || msg.topic as string;

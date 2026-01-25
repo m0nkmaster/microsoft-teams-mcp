@@ -19,6 +19,7 @@ import {
   extractObjectId,
   buildOneOnOneConversationId,
   decodeBase64Guid,
+  extractActivityTimestamp,
 } from './parsers.js';
 import {
   searchResultItem,
@@ -477,5 +478,67 @@ describe('buildOneOnOneConversationId', () => {
     expect(buildOneOnOneConversationId('invalid', userId2)).toBeNull();
     expect(buildOneOnOneConversationId(userId1, 'invalid')).toBeNull();
     expect(buildOneOnOneConversationId('', '')).toBeNull();
+  });
+});
+
+describe('extractActivityTimestamp', () => {
+  it('prefers originalarrivaltime when present', () => {
+    const msg = {
+      originalarrivaltime: '2024-01-15T10:30:00.000Z',
+      composetime: '2024-01-15T10:29:00.000Z',
+      id: '1705315800000',
+    };
+    expect(extractActivityTimestamp(msg)).toBe('2024-01-15T10:30:00.000Z');
+  });
+
+  it('falls back to composetime when originalarrivaltime is missing', () => {
+    const msg = {
+      composetime: '2024-01-15T10:29:00.000Z',
+      id: '1705315800000',
+    };
+    expect(extractActivityTimestamp(msg)).toBe('2024-01-15T10:29:00.000Z');
+  });
+
+  it('parses numeric id as timestamp when no time fields present', () => {
+    const msg = {
+      id: '1705315800000', // 2024-01-15T10:30:00.000Z
+    };
+    const result = extractActivityTimestamp(msg);
+    expect(result).toBe(new Date(1705315800000).toISOString());
+  });
+
+  it('returns null for non-numeric id when no time fields present', () => {
+    const msg = {
+      id: 'abc-not-a-number',
+    };
+    expect(extractActivityTimestamp(msg)).toBeNull();
+  });
+
+  it('returns null for empty message object', () => {
+    expect(extractActivityTimestamp({})).toBeNull();
+  });
+
+  it('returns null when id is undefined', () => {
+    const msg = {
+      originalarrivaltime: undefined,
+      composetime: undefined,
+    };
+    expect(extractActivityTimestamp(msg)).toBeNull();
+  });
+
+  it('handles zero id correctly (returns null)', () => {
+    const msg = {
+      id: '0',
+    };
+    // Zero is not a valid timestamp
+    expect(extractActivityTimestamp(msg)).toBeNull();
+  });
+
+  it('handles negative id correctly (returns null)', () => {
+    const msg = {
+      id: '-1705315800000',
+    };
+    // Negative timestamps are invalid
+    expect(extractActivityTimestamp(msg)).toBeNull();
   });
 });
