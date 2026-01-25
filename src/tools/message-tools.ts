@@ -19,7 +19,7 @@ import {
   getActivityFeed,
 } from '../api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from '../api/csa-api.js';
-import { SELF_CHAT_ID } from '../constants.js';
+import { SELF_CHAT_ID, MAX_UNREAD_AGGREGATE_CHECK } from '../constants.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -577,7 +577,7 @@ async function handleGetUnread(
   let errorCount = 0;
 
   // Check unread status for each favourite (limit to prevent timeout)
-  const maxToCheck = 20;
+  const maxToCheck = MAX_UNREAD_AGGREGATE_CHECK;
   for (const fav of favorites.slice(0, maxToCheck)) {
     const unreadResult = await getUnreadStatus(fav.conversationId);
     checkedCount++;
