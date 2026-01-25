@@ -106,13 +106,16 @@ This document captures findings from researching the Microsoft Teams web applica
 |----------|---------|-------------|
 | `from:` | `from:john.smith@company.com` | Messages from a person |
 | `in:` | `in:general` | Messages in a channel |
-| `sent:` | `sent:today`, `sent:lastweek` | By date |
+| `sent:` | `sent:2026-01-20`, `sent:>=2026-01-15` | By date (explicit dates only) |
 | `subject:` | `subject:budget` | In message subject |
 | `hasattachment:true` | - | Has files attached |
 | `"Name"` | `"Smith, John"` | Find @mentions (name in quotes) |
 | `NOT` | `NOT from:user@co.com` | Exclude results |
 
 **Note:** `@me`, `from:me`, `to:me`, and `mentions:me` do NOT work. Use `teams_get_me` to get your actual email/display name, then use those values.
+
+**⚠️ Date Operator Limitations:**
+The `sent:` operator only works with explicit dates (e.g., `sent:2026-01-20` or `sent:>=2026-01-15`). Named shortcuts like `sent:lastweek`, `sent:today`, `sent:thisweek`, `sent:thismonth` do NOT work - they return 0 results. Results are sorted by recency, so date filters are often unnecessary.
 
 **Finding Mentions:**
 To find messages where you were @mentioned, search for your display name in quotes:
@@ -123,7 +126,7 @@ To find messages where you were @mentioned, search for your display name in quot
 
 **Combining Operators:**
 ```
-from:john sent:lastweek # John's messages last week
+from:john sent:>=2026-01-18   # John's messages since Jan 18
 ```
 
 ---
