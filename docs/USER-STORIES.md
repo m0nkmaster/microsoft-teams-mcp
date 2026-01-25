@@ -55,15 +55,16 @@ This document defines user stories and personas to guide development of the Team
 > "Find messages from last week mentioning 'deployment'"
 
 **Flow:**
-1. Search with `sent:lastweek deployment`
-2. Return matching messages
+1. Search with `deployment` (results are sorted by recency, so recent messages appear first)
+2. Or use explicit date: `sent:>=2026-01-18 deployment`
+3. Return matching messages
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_search` | ✅ Implemented (operators work) |
+| `teams_search` | ✅ Implemented (explicit date operators work) |
 
-**Status:** ✅ Works now with search operators
+**Status:** ✅ Works with explicit dates. Note: `sent:lastweek` does NOT work - use `sent:>=YYYY-MM-DD` or omit.
 
 ---
 
@@ -263,7 +264,7 @@ This document defines user stories and personas to guide development of the Team
 
 **Flow:**
 1. Get user's display name via `teams_get_me`
-2. Search for `"Display Name" NOT from:email sent:lastweek`
+2. Search for `"Display Name" NOT from:email` (results sorted by recency, or add `sent:>=YYYY-MM-DD`)
 
 **Required Tools:**
 | Tool | Status |
@@ -376,16 +377,16 @@ Based on user value and API readiness:
 ```
 from:john.smith@company.com    # Messages from person (use actual email)
 in:general                     # Messages in channel
-sent:today                     # Messages from today
-sent:lastweek                  # Messages from last week
+sent:2026-01-20                # Messages from specific date
+sent:>=2026-01-15              # Messages since date
 hasattachment:true             # Messages with files
 "Display Name"                 # Find @mentions (use actual display name)
 NOT from:email                 # Exclude results
 ```
 
-**⚠️ Does NOT work:** `@me`, `from:me`, `to:me`, `mentions:me` - use `teams_get_me` first to get actual email/displayName.
+**⚠️ Does NOT work:** `@me`, `from:me`, `to:me`, `mentions:me` - use `teams_get_me` first to get actual email/displayName. Also `sent:lastweek`, `sent:today`, `sent:thisweek` do NOT work - use explicit dates or omit (results sorted by recency).
 
-Combine operators: `from:sarah@co.com sent:lastweek hasattachment:true`
+Combine operators: `from:sarah@co.com sent:>=2026-01-18 hasattachment:true`
 
 ### Conversation IDs
 - `48:notes` - Self-chat (notes to yourself)

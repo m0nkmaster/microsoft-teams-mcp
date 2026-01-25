@@ -248,11 +248,13 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 | Operator | Example | Description |
 |----------|---------|-------------|
 | `from:` | `from:sarah@company.com` | Messages from a person (use actual email) |
-| `sent:` | `sent:today`, `sent:lastweek` | Messages by date |
+| `sent:` | `sent:2026-01-20`, `sent:>=2026-01-15` | Messages by date (use explicit dates) |
 | `in:` | `in:project-alpha` | Messages in a channel |
 | `"Name"` | `"Rob Smith"` | Find @mentions (display name in quotes) |
 | `NOT` | `NOT from:user@email.com` | Exclude results |
 | `hasattachment:` | `hasattachment:true` | Messages with files |
+
+**Note:** Results are sorted by recency, so date filters are often unnecessary.
 
 **⚠️ Common Mistakes - What Does NOT Work:**
 
@@ -262,6 +264,9 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 | `from:me` | `me` is not recognised | `from:actual.email@company.com` |
 | `to:me` | Not supported | Search for `"Display Name"` to find @mentions |
 | `mentions:me` | Not supported | Search for `"Display Name"` to find @mentions |
+| `sent:lastweek` | Not supported by Teams API | Use `sent:>=2026-01-18` or omit (results sorted by recency) |
+| `sent:today` | Unreliable | Use `sent:2026-01-25` or omit |
+| `sent:thisweek` | Not supported | Use date range like `sent:>=2026-01-20` |
 
 **Common Patterns:**
 

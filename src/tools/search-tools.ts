@@ -44,13 +44,13 @@ export const FindChannelInputSchema = z.object({
 
 const searchToolDefinition: Tool = {
   name: 'teams_search',
-  description: 'Search for messages in Microsoft Teams. Returns matching messages with sender, timestamp, content, conversationId (for replies), and pagination info. Supports search operators: from:email, sent:today/lastweek, in:channel, hasattachment:true, "Name" for @mentions. Combine with NOT to exclude (e.g., NOT from:rob@co.com).',
+  description: 'Search for messages in Microsoft Teams. Returns matching messages with sender, timestamp, content, conversationId (for replies), and pagination info. Supports search operators: from:email, sent:YYYY-MM-DD, in:channel, hasattachment:true, "Name" for @mentions. Combine with NOT to exclude (e.g., NOT from:rob@co.com). Results are sorted by recency.',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'Search query with optional operators. Examples: "budget report", "from:sarah@co.com sent:lastweek", "\"Rob Smith\" NOT from:rob@co.com" (find @mentions of Rob). IMPORTANT: "@me", "from:me", "to:me" do NOT work - use teams_get_me first to get actual email/displayName, then use those values.',
+        description: 'Search query with optional operators. Examples: "budget report", "from:sarah@co.com", "\"Rob Smith\" NOT from:rob@co.com" (find @mentions of Rob). For date filtering use sent:YYYY-MM-DD or sent:>=YYYY-MM-DD (e.g., sent:>=2026-01-20). IMPORTANT: "@me", "from:me", "to:me" do NOT work - use teams_get_me first to get actual email/displayName. Also "sent:lastweek" and "sent:today" do NOT work - use explicit dates or omit (results are sorted by recency).',
       },
       maxResults: {
         type: 'number',

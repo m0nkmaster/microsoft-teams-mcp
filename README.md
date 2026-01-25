@@ -111,17 +111,17 @@ The search supports Teams' native operators:
 
 ```
 from:sarah@company.com     # Messages from person
-sent:today                 # Messages from today
-sent:lastweek              # Messages from last week
+sent:2026-01-20            # Messages from specific date
+sent:>=2026-01-15          # Messages since date
 in:project-alpha           # Messages in channel
 "Rob Smith"                # Find @mentions (name in quotes)
 hasattachment:true         # Messages with files
 NOT from:email@co.com      # Exclude results
 ```
 
-Combine operators: `from:sarah@co.com sent:lastweek hasattachment:true`
+Combine operators: `from:sarah@co.com sent:>=2026-01-18 hasattachment:true`
 
-**Note:** `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your email/displayName, then use those values.
+**Note:** `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your email/displayName. Also `sent:lastweek`, `sent:today`, `sent:thisweek` do NOT work - use explicit dates or omit (results are sorted by recency).
 
 ## MCP Resources
 

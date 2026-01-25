@@ -58,13 +58,13 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 | Operator | Example | Description |
 |----------|---------|-------------|
 | `from:` | `from:user@company.com` | Messages from a person |
-| `sent:` | `sent:today`, `sent:lastweek` | Messages by date |
+| `sent:` | `sent:2026-01-20`, `sent:>=2026-01-15` | Messages by date (explicit dates only) |
 | `in:` | `in:channel-name` | Messages in a channel |
 | `"Name"` | `"John Smith"` | Find @mentions |
 | `NOT` | `NOT from:user@company.com` | Exclude results |
 | `hasattachment:` | `hasattachment:true` | Messages with files |
 
-**Important**: `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your actual email/name.
+**Important**: `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your actual email/name. Also `sent:lastweek`, `sent:today`, `sent:thisweek` do NOT work - use explicit dates (e.g., `sent:>=2026-01-18`) or omit since results are sorted by recency.
 
 ---
 
