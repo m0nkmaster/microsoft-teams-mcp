@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { RegisteredTool, ToolContext, ToolResult } from './index.js';
 import { searchMessages, searchChannels } from '../api/substrate-api.js';
-import { getThreadMessages } from '../api/chatsvc-api.js';
+import { getThreadMessages, getConsumptionHorizon, markAsRead } from '../api/chatsvc-api.js';
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
@@ -30,6 +30,7 @@ export const SearchInputSchema = z.object({
 export const GetThreadInputSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
   limit: z.number().min(1).max(MAX_THREAD_LIMIT).optional().default(DEFAULT_THREAD_LIMIT),
+  markRead: z.boolean().optional().default(false),
 });
 
 export const FindChannelInputSchema = z.object({
@@ -70,7 +71,7 @@ const searchToolDefinition: Tool = {
 
 const getThreadToolDefinition: Tool = {
   name: 'teams_get_thread',
-  description: 'Get messages from a Teams conversation/thread. Use this to see replies to a message, check thread context, or read recent messages in a chat. Requires a conversationId (available from search results).',
+  description: 'Get messages from a Teams conversation/thread. Use this to see replies to a message, check thread context, or read recent messages in a chat. Requires a conversationId (available from search results). Returns unread count and can optionally mark the conversation as read.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -81,6 +82,10 @@ const getThreadToolDefinition: Tool = {
       limit: {
         type: 'number',
         description: 'Maximum number of messages to return (default: 50, max: 200)',
+      },
+      markRead: {
+        type: 'boolean',
+        description: 'If true, marks the conversation as read up to the latest message after fetching (default: false)',
       },
     },
     required: ['conversationId'],
@@ -154,11 +159,52 @@ async function handleGetThread(
     return { success: false, error: result.error };
   }
 
+  // Get unread status
+  let unreadCount: number | undefined;
+  let lastReadMessageId: string | undefined;
+  
+  const horizonResult = await getConsumptionHorizon(input.conversationId);
+  if (horizonResult.ok) {
+    lastReadMessageId = horizonResult.value.lastReadMessageId;
+    
+    // Count messages after last read
+    if (lastReadMessageId) {
+      let foundLastRead = false;
+      unreadCount = 0;
+      for (const msg of result.value.messages) {
+        if (msg.id === lastReadMessageId) {
+          foundLastRead = true;
+          continue;
+        }
+        if (foundLastRead && !msg.isFromMe) {
+          unreadCount++;
+        }
+      }
+    } else {
+      // No consumption horizon means all messages are unread (new conversation)
+      unreadCount = result.value.messages.filter(m => !m.isFromMe).length;
+    }
+  }
+
+  // Mark as read if requested
+  let markedAsRead = false;
+  if (input.markRead && result.value.messages.length > 0) {
+    // Find the latest message
+    const latestMessage = result.value.messages[result.value.messages.length - 1];
+    if (latestMessage) {
+      const markResult = await markAsRead(input.conversationId, latestMessage.id);
+      markedAsRead = markResult.ok;
+    }
+  }
+
   return {
     success: true,
     data: {
       conversationId: result.value.conversationId,
       messageCount: result.value.messages.length,
+      unreadCount,
+      lastReadMessageId,
+      markedAsRead: input.markRead ? markedAsRead : undefined,
       messages: result.value.messages,
     },
   };

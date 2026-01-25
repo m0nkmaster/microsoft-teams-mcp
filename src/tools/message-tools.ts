@@ -14,6 +14,9 @@ import {
   getOneOnOneChatId,
   editMessage,
   deleteMessage,
+  getUnreadStatus,
+  markAsRead,
+  getActivityFeed,
 } from '../api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from '../api/csa-api.js';
 import { SELF_CHAT_ID } from '../constants.js';
@@ -56,6 +59,19 @@ export const EditMessageInputSchema = z.object({
 export const DeleteMessageInputSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
   messageId: z.string().min(1, 'Message ID cannot be empty'),
+});
+
+export const GetUnreadInputSchema = z.object({
+  conversationId: z.string().optional(),
+});
+
+export const MarkAsReadInputSchema = z.object({
+  conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
+  messageId: z.string().min(1, 'Message ID cannot be empty'),
+});
+
+export const GetActivityInputSchema = z.object({
+  limit: z.number().min(1).max(200).optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,6 +255,53 @@ const deleteMessageToolDefinition: Tool = {
       },
     },
     required: ['conversationId', 'messageId'],
+  },
+};
+
+const getUnreadToolDefinition: Tool = {
+  name: 'teams_get_unread',
+  description: 'Get unread message status. Without parameters, returns aggregate unread counts across all favourite/pinned conversations. With a conversationId, returns unread status for that specific conversation.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      conversationId: {
+        type: 'string',
+        description: 'Optional. A specific conversation ID to check. If omitted, checks all favourites.',
+      },
+    },
+  },
+};
+
+const markAsReadToolDefinition: Tool = {
+  name: 'teams_mark_read',
+  description: 'Mark a conversation as read up to a specific message. This updates your read position so messages up to (and including) the specified message are marked as read.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      conversationId: {
+        type: 'string',
+        description: 'The conversation ID to mark as read',
+      },
+      messageId: {
+        type: 'string',
+        description: 'The message ID to mark as read up to (all messages up to this point will be marked read)',
+      },
+    },
+    required: ['conversationId', 'messageId'],
+  },
+};
+
+const getActivityToolDefinition: Tool = {
+  name: 'teams_get_activity',
+  description: 'Get the user\'s activity feed - mentions, reactions, replies, and other notifications. Returns recent activity items with sender, content, and source conversation context.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of activity items to return (default: 50, max: 200)',
+      },
+    },
   },
 };
 
@@ -473,6 +536,123 @@ async function handleDeleteMessage(
   };
 }
 
+async function handleGetUnread(
+  input: z.infer<typeof GetUnreadInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  // If a specific conversation is provided, just check that one
+  if (input.conversationId) {
+    const result = await getUnreadStatus(input.conversationId);
+    if (!result.ok) {
+      return { success: false, error: result.error };
+    }
+
+    return {
+      success: true,
+      data: {
+        conversationId: result.value.conversationId,
+        unreadCount: result.value.unreadCount,
+        lastReadMessageId: result.value.lastReadMessageId,
+        latestMessageId: result.value.latestMessageId,
+      },
+    };
+  }
+
+  // Aggregate mode: check all favourites
+  const favResult = await getFavorites();
+  if (!favResult.ok) {
+    return { success: false, error: favResult.error };
+  }
+
+  const favorites = favResult.value.favorites;
+  const conversations: Array<{
+    conversationId: string;
+    displayName?: string;
+    conversationType?: string;
+    unreadCount: number;
+  }> = [];
+
+  let totalUnread = 0;
+  let checkedCount = 0;
+  let errorCount = 0;
+
+  // Check unread status for each favourite (limit to prevent timeout)
+  const maxToCheck = 20;
+  for (const fav of favorites.slice(0, maxToCheck)) {
+    const unreadResult = await getUnreadStatus(fav.conversationId);
+    checkedCount++;
+
+    if (unreadResult.ok) {
+      if (unreadResult.value.unreadCount > 0) {
+        conversations.push({
+          conversationId: fav.conversationId,
+          displayName: fav.displayName,
+          conversationType: fav.conversationType,
+          unreadCount: unreadResult.value.unreadCount,
+        });
+        totalUnread += unreadResult.value.unreadCount;
+      }
+    } else {
+      errorCount++;
+    }
+  }
+
+  return {
+    success: true,
+    data: {
+      totalUnread,
+      conversationsWithUnread: conversations.length,
+      conversations,
+      checked: checkedCount,
+      totalFavorites: favorites.length,
+      errors: errorCount > 0 ? errorCount : undefined,
+      note: favorites.length > maxToCheck
+        ? `Checked first ${maxToCheck} of ${favorites.length} favourites`
+        : undefined,
+    },
+  };
+}
+
+async function handleMarkAsRead(
+  input: z.infer<typeof MarkAsReadInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await markAsRead(input.conversationId, input.messageId);
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      message: 'Conversation marked as read',
+      conversationId: result.value.conversationId,
+      markedUpTo: result.value.markedUpTo,
+    },
+  };
+}
+
+async function handleGetActivity(
+  input: z.infer<typeof GetActivityInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await getActivityFeed({ limit: input.limit });
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      count: result.value.activities.length,
+      activities: result.value.activities,
+      syncState: result.value.syncState,
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -537,6 +717,24 @@ export const deleteMessageTool: RegisteredTool<typeof DeleteMessageInputSchema> 
   handler: handleDeleteMessage,
 };
 
+export const getUnreadTool: RegisteredTool<typeof GetUnreadInputSchema> = {
+  definition: getUnreadToolDefinition,
+  schema: GetUnreadInputSchema,
+  handler: handleGetUnread,
+};
+
+export const markAsReadTool: RegisteredTool<typeof MarkAsReadInputSchema> = {
+  definition: markAsReadToolDefinition,
+  schema: MarkAsReadInputSchema,
+  handler: handleMarkAsRead,
+};
+
+export const getActivityTool: RegisteredTool<typeof GetActivityInputSchema> = {
+  definition: getActivityToolDefinition,
+  schema: GetActivityInputSchema,
+  handler: handleGetActivity,
+};
+
 /** All message-related tools. */
 export const messageTools = [
   sendMessageTool,
@@ -549,4 +747,7 @@ export const messageTools = [
   getChatTool,
   editMessageTool,
   deleteMessageTool,
+  getUnreadTool,
+  markAsReadTool,
+  getActivityTool,
 ];

@@ -35,6 +35,9 @@ const SHORTCUTS: Record<string, { tool: string; primaryArg?: string }> = {
   contacts: { tool: 'teams_get_frequent_contacts' },
   channel: { tool: 'teams_find_channel', primaryArg: 'query' },
   chat: { tool: 'teams_get_chat', primaryArg: 'userId' },
+  unread: { tool: 'teams_get_unread' },
+  markread: { tool: 'teams_mark_read' },
+  activity: { tool: 'teams_get_activity' },
 };
 
 // Map CLI flags to tool parameter names
@@ -51,6 +54,7 @@ const FLAG_MAPPINGS: Record<string, string> = {
   '--force': 'forceNew',
   '--user': 'userId',
   '--userId': 'userId',
+  '--markRead': 'markRead',
 };
 
 interface ParsedArgs {
@@ -300,6 +304,8 @@ function prettyPrintResponse(response: Record<string, unknown>, toolName: string
     printFavoritesList(response.favorites);
   } else if (response.messages && Array.isArray(response.messages)) {
     printMessagesList(response.messages);
+  } else if (response.activities && Array.isArray(response.activities)) {
+    printActivityList(response.activities);
   } else if (response.contacts && Array.isArray(response.contacts)) {
     printContactsList(response.contacts);
   } else if (response.profile) {
@@ -382,6 +388,33 @@ function printContactsList(contacts: unknown[]): void {
     if (contact.email) log(`   Email: ${contact.email}`);
     if (contact.jobTitle) log(`   Title: ${contact.jobTitle}`);
     if (contact.department) log(`   Dept: ${contact.department}`);
+    log('');
+  }
+}
+
+function printActivityList(activities: unknown[]): void {
+  log(`Found ${activities.length} activity items:\n`);
+  
+  const typeIcons: Record<string, string> = {
+    mention: '📣',
+    reaction: '👍',
+    reply: '💬',
+    message: '📝',
+    unknown: '❓',
+  };
+  
+  for (const a of activities) {
+    const activity = a as Record<string, unknown>;
+    const type = activity.type as string || 'unknown';
+    const icon = typeIcons[type] || '❓';
+    const sender = (activity.sender as Record<string, unknown>)?.displayName || 'Unknown';
+    const time = activity.timestamp ? new Date(activity.timestamp as string).toLocaleString() : '';
+    const topic = activity.topic ? ` in "${activity.topic}"` : '';
+    const preview = String(activity.content ?? '').substring(0, 80).replace(/\n/g, ' ');
+    
+    log(`${icon} [${type}] ${sender}${topic} - ${time}`);
+    log(`   ${preview}${String(activity.content ?? '').length > 80 ? '...' : ''}`);
+    if (activity.conversationId) log(`   ConversationId: ${activity.conversationId}`);
     log('');
   }
 }
