@@ -22,7 +22,6 @@ import { refreshTokensViaBrowser } from '../auth/token-refresh.js';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AUTH_ERROR_MESSAGES = {
-  substrateToken: 'No valid token available. Browser login required.',
   messageAuth: 'No valid authentication. Browser login required.',
   csaToken: 'No valid authentication for favourites. Browser login required.',
 } as const;
@@ -40,18 +39,6 @@ export interface CsaAuthInfo {
 // ─────────────────────────────────────────────────────────────────────────────
 // Guard Functions
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Requires a valid Substrate token.
- * Use for search and people APIs.
- */
-export function requireSubstrateToken(): Result<string, McpError> {
-  const token = getValidSubstrateToken();
-  if (!token) {
-    return err(createError(ErrorCode.AUTH_REQUIRED, AUTH_ERROR_MESSAGES.substrateToken));
-  }
-  return ok(token);
-}
 
 /**
  * Checks if the Substrate token is approaching expiry and needs refresh.

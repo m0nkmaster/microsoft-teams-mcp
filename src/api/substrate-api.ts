@@ -9,7 +9,7 @@ import { SUBSTRATE_API, getBearerHeaders } from '../utils/api-config.js';
 import { ErrorCode } from '../types/errors.js';
 import { type Result, ok } from '../types/result.js';
 import { clearTokenCache } from '../auth/token-extractor.js';
-import { requireSubstrateToken } from '../utils/auth-guards.js';
+import { requireSubstrateTokenAsync } from '../utils/auth-guards.js';
 import {
   parseSearchResults,
   parsePeopleResults,
@@ -40,7 +40,7 @@ export async function searchMessages(
   query: string,
   options: { from?: number; size?: number; maxResults?: number } = {}
 ): Promise<Result<SearchResult>> {
-  const tokenResult = requireSubstrateToken();
+  const tokenResult = await requireSubstrateTokenAsync();
   if (!tokenResult.ok) {
     return tokenResult;
   }
@@ -136,7 +136,7 @@ export async function searchPeople(
   query: string,
   limit: number = 10
 ): Promise<Result<PeopleSearchResult>> {
-  const tokenResult = requireSubstrateToken();
+  const tokenResult = await requireSubstrateTokenAsync();
   if (!tokenResult.ok) {
     return tokenResult;
   }
@@ -199,7 +199,7 @@ export async function searchPeople(
 export async function getFrequentContacts(
   limit: number = 50
 ): Promise<Result<PeopleSearchResult>> {
-  const tokenResult = requireSubstrateToken();
+  const tokenResult = await requireSubstrateTokenAsync();
   if (!tokenResult.ok) {
     return tokenResult;
   }
@@ -276,7 +276,7 @@ export async function searchChannels(
   query: string,
   limit: number = 10
 ): Promise<Result<ChannelSearchResultSet>> {
-  const tokenResult = requireSubstrateToken();
+  const tokenResult = await requireSubstrateTokenAsync();
   if (!tokenResult.ok) {
     return tokenResult;
   }
