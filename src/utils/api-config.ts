@@ -84,6 +84,14 @@ export const CHATSVC_API = {
   /** Delete a specific message URL (soft delete). */
   deleteMessage: (region: Region, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}?behavior=softDelete`,
+  
+  /** Get consumption horizons (read receipts) for a thread. */
+  consumptionHorizons: (region: Region, threadId: string) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/threads/${encodeURIComponent(threadId)}/consumptionhorizons`,
+  
+  /** Update consumption horizon (mark as read) for a conversation. */
+  updateConsumptionHorizon: (region: Region, conversationId: string) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/properties?name=consumptionhorizon`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */

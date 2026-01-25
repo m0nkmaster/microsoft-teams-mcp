@@ -24,10 +24,11 @@ import {
   getUserProfile,
   clearTokenCache,
 } from '../auth/token-extractor.js';
+import { refreshTokensViaBrowser } from '../auth/token-refresh.js';
 import { searchMessages } from '../api/substrate-api.js';
 import { sendMessage, sendNoteToSelf } from '../api/chatsvc-api.js';
 
-type Command = 'status' | 'search' | 'login' | 'send' | 'me' | 'help';
+type Command = 'status' | 'search' | 'login' | 'send' | 'me' | 'refresh' | 'help';
 
 interface CliArgs {
   command: Command;
@@ -83,6 +84,7 @@ Commands:
   me                  Get current user profile (email, name, Teams ID)
   login               Log in to Teams (opens browser)
   login --force       Force new login (clears existing session)
+  refresh             Test OAuth token refresh (shows before/after status)
   help                Show this help message
 
 Options:
@@ -103,19 +105,30 @@ Examples:
   npm run cli -- search "query" --from 25
   npm run cli -- send "Test message to myself"
   npm run cli -- login --force
+  npm run cli -- refresh
 `);
 }
 
 async function commandStatus(flags: Set<string>): Promise<void> {
   const hasSession = hasSessionState();
   const sessionAge = getSessionAge();
-  const tokenStatus = getSubstrateTokenStatus();
+  const substrateStatus = getSubstrateTokenStatus();
+  const messageAuth = extractMessageAuth();
+
+  // Check if refresh will trigger soon (within 10 minutes)
+  const REFRESH_THRESHOLD_MINS = 10;
+  const willRefreshSoon = substrateStatus.minutesRemaining !== undefined && 
+    substrateStatus.minutesRemaining <= REFRESH_THRESHOLD_MINS;
 
   const status = {
-    directApi: {
-      available: tokenStatus.hasToken,
-      expiresAt: tokenStatus.expiresAt,
-      minutesRemaining: tokenStatus.minutesRemaining,
+    search: {
+      available: substrateStatus.hasToken,
+      expiresAt: substrateStatus.expiresAt,
+      minutesRemaining: substrateStatus.minutesRemaining,
+      willAutoRefresh: willRefreshSoon,
+    },
+    messaging: {
+      available: !!messageAuth,
     },
     session: {
       exists: hasSession,
@@ -127,20 +140,44 @@ async function commandStatus(flags: Set<string>): Promise<void> {
   if (flags.has('json')) {
     console.log(JSON.stringify(status, null, 2));
   } else {
-    console.log('\n📊 Status\n');
+    console.log('\n📊 Token Status\n');
 
-    if (status.directApi.available) {
-      console.log(`Direct API: ✅ Available (${status.directApi.minutesRemaining} min remaining)`);
+    // Search token (Substrate)
+    console.log('Search API (Substrate):');
+    if (status.search.available) {
+      console.log(`   Status: ✅ Valid`);
+      console.log(`   Expires: ${status.search.expiresAt}`);
+      console.log(`   Remaining: ${status.search.minutesRemaining} minutes`);
+      if (status.search.willAutoRefresh) {
+        console.log(`   ⚡ Auto-refresh will trigger (< ${REFRESH_THRESHOLD_MINS} min remaining)`);
+      }
     } else {
-      console.log('Direct API: ❌ No valid token (browser login required)');
+      console.log('   Status: ❌ No valid token');
     }
 
-    console.log(`Session exists: ${status.session.exists ? '✅ Yes' : '❌ No'}`);
+    // Messaging token (Skype)
+    console.log('\nMessaging API (Skype):');
+    if (status.messaging.available) {
+      console.log('   Status: ✅ Valid');
+    } else {
+      console.log('   Status: ❌ No valid token');
+    }
+
+    // Session info
+    console.log('\nSession:');
+    console.log(`   Exists: ${status.session.exists ? '✅ Yes' : '❌ No'}`);
     if (status.session.ageHours !== null) {
-      console.log(`Session age: ${status.session.ageHours} hours`);
+      console.log(`   Age: ${status.session.ageHours} hours`);
       if (status.session.likelyExpired) {
-        console.log('⚠️  Session may be expired');
+        console.log('   ⚠️  Session may be expired (>12 hours old)');
       }
+    }
+
+    // Action hint
+    if (!status.search.available || !status.messaging.available) {
+      console.log('\n💡 Run: npm run cli -- login');
+    } else if (status.search.willAutoRefresh) {
+      console.log('\n💡 Run: npm run cli -- refresh (to test auto-refresh)');
     }
   }
 }
@@ -315,6 +352,83 @@ async function commandMe(flags: Set<string>): Promise<void> {
   }
 }
 
+async function commandRefresh(flags: Set<string>): Promise<void> {
+  const asJson = flags.has('json');
+
+  // Show current status
+  const beforeStatus = getSubstrateTokenStatus();
+
+  if (!asJson) {
+    console.log('\n🔄 Token Refresh Test\n');
+    console.log('Before refresh:');
+    if (beforeStatus.hasToken) {
+      console.log(`   Token valid: ✅ Yes`);
+      console.log(`   Expires at: ${beforeStatus.expiresAt}`);
+      console.log(`   Minutes remaining: ${beforeStatus.minutesRemaining}`);
+    } else {
+      console.log(`   Token valid: ❌ No`);
+    }
+
+    console.log('\nOpening headless browser to refresh tokens...');
+  }
+
+  // Attempt refresh via headless browser
+  const result = await refreshTokensViaBrowser();
+
+  if (!result.ok) {
+    if (asJson) {
+      console.log(JSON.stringify({
+        success: false,
+        error: result.error.message,
+        code: result.error.code,
+        before: beforeStatus,
+      }, null, 2));
+    } else {
+      console.log(`\n❌ Refresh failed: ${result.error.message}`);
+      if (result.error.code) {
+        console.log(`   Error code: ${result.error.code}`);
+      }
+      if (result.error.suggestions) {
+        console.log(`   Suggestions: ${result.error.suggestions.join(', ')}`);
+      }
+    }
+    process.exit(1);
+  }
+
+  // Show new status
+  const afterStatus = getSubstrateTokenStatus();
+
+  if (asJson) {
+    console.log(JSON.stringify({
+      success: true,
+      before: beforeStatus,
+      after: afterStatus,
+      refreshResult: {
+        previousExpiry: result.value.previousExpiry.toISOString(),
+        newExpiry: result.value.newExpiry.toISOString(),
+        minutesGained: result.value.minutesGained,
+        refreshNeeded: result.value.refreshNeeded,
+      },
+    }, null, 2));
+  } else {
+    if (result.value.refreshNeeded) {
+      console.log('\n✅ Token refreshed!\n');
+      console.log('After refresh:');
+      console.log(`   Token valid: ✅ Yes`);
+      console.log(`   Expires at: ${afterStatus.expiresAt}`);
+      console.log(`   Minutes remaining: ${afterStatus.minutesRemaining}`);
+      console.log(`   Time gained: +${result.value.minutesGained} minutes`);
+    } else {
+      console.log('\n✅ Token is still valid (no refresh needed)\n');
+      console.log('Current token:');
+      console.log(`   Expires at: ${afterStatus.expiresAt}`);
+      console.log(`   Minutes remaining: ${afterStatus.minutesRemaining}`);
+      console.log('\n   Note: MSAL only refreshes tokens when they\'re close to expiry.');
+      console.log('   Proactive refresh will trigger when <10 minutes remain.');
+    }
+  }
+}
+
 async function commandLogin(flags: Set<string>): Promise<void> {
   const force = flags.has('force');
 
@@ -374,6 +488,10 @@ async function main(): Promise<void> {
 
       case 'me':
         await commandMe(flags);
+        break;
+
+      case 'refresh':
+        await commandRefresh(flags);
         break;
 
       case 'login':

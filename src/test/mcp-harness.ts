@@ -35,6 +35,8 @@ const SHORTCUTS: Record<string, { tool: string; primaryArg?: string }> = {
   contacts: { tool: 'teams_get_frequent_contacts' },
   channel: { tool: 'teams_find_channel', primaryArg: 'query' },
   chat: { tool: 'teams_get_chat', primaryArg: 'userId' },
+  unread: { tool: 'teams_get_unread' },
+  markread: { tool: 'teams_mark_read' },
 };
 
 // Map CLI flags to tool parameter names
@@ -51,6 +53,7 @@ const FLAG_MAPPINGS: Record<string, string> = {
   '--force': 'forceNew',
   '--user': 'userId',
   '--userId': 'userId',
+  '--markRead': 'markRead',
 };
 
 interface ParsedArgs {

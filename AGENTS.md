@@ -43,7 +43,8 @@ src/
 │   ├── index.ts          # Module exports
 │   ├── crypto.ts         # AES-256-GCM encryption for credentials at rest
 │   ├── session-store.ts  # Secure session state storage with encryption
-│   └── token-extractor.ts # Extract tokens from Playwright session state
+│   ├── token-extractor.ts # Extract tokens from Playwright session state
+│   └── token-refresh.ts  # Proactive token refresh via OAuth2 endpoint
 ├── api/                  # API client modules (one per API surface)
 │   ├── index.ts          # Module exports
 │   ├── substrate-api.ts  # Search and people APIs (Substrate v2)
@@ -112,7 +113,22 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 - Tokens are extracted from browser localStorage after login
 - The Substrate search token (`SubstrateSearch-Internal.ReadWrite` scope) is required for search
 - Tokens typically expire after ~1 hour
-- Expired tokens require re-authentication via `teams_login`
+- **Proactive token refresh**: When tokens have less than 10 minutes remaining, the server automatically refreshes them using a headless browser. MSAL handles the token refresh when Teams loads, then we save the updated session state.
+- This is seamless to the user - the browser is invisible
+- If refresh fails, user must re-authenticate via `teams_login`
+
+**How token refresh works:**
+1. `requireSubstrateTokenAsync()` checks if tokens have <10 minutes remaining
+2. If so, `refreshTokensViaBrowser()` opens a headless browser with saved session
+3. Navigates to Teams, triggering MSAL's automatic token refresh
+4. Saves the updated session state with new tokens
+5. Subsequent API calls use the refreshed tokens
+
+**Testing token refresh:**
+```bash
+npm run cli -- refresh
+```
+This tests the refresh mechanism - it will report if tokens were refreshed or if they were still valid (MSAL only refreshes when close to expiry).
 
 ### System Browser Usage
 The server uses the system's installed browser rather than downloading Playwright's bundled Chromium (~180MB savings):
@@ -210,6 +226,8 @@ Session state and token cache files are protected by:
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
 | `teams_edit_message` | Edit one of your own messages |
 | `teams_delete_message` | Delete one of your own messages (soft delete) |
+| `teams_get_unread` | Get unread status for favourites (aggregate) or specific conversation |
+| `teams_mark_read` | Mark a conversation as read up to a specific message |
 
 ### Design Philosophy
 
@@ -420,10 +438,14 @@ Name sources by type:
 |-----------|------|---------|-------------|
 | conversationId | string | required | The conversation ID to get messages from |
 | limit | number | 50 | Maximum number of messages to return (1-200) |
+| markRead | boolean | false | If true, marks the conversation as read up to the latest message after fetching |
 
 **Response** includes:
 - `conversationId` - The conversation ID
 - `messageCount` - Number of messages returned
+- `unreadCount` - Number of unread messages (from others) in the fetched range
+- `lastReadMessageId` - The message ID of your last read position
+- `markedAsRead` - Whether the conversation was marked as read (only present if `markRead` was true)
 - `messages[]` with:
   - `id` - Message ID (numeric string)
   - `content` - Message content (HTML stripped)
@@ -533,6 +555,59 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 teams_delete_message conversationId="19:abc@thread.tacv2" messageId="1769276832046"
 ```
 
+### teams_get_unread Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | optional | Specific conversation to check. If omitted, checks all favourites. |
+
+**Response (single conversation):**
+- `conversationId` - The conversation ID
+- `unreadCount` - Number of unread messages
+- `lastReadMessageId` - Your last read position
+- `latestMessageId` - The most recent message ID
+
+**Response (aggregate mode - no conversationId):**
+- `totalUnread` - Total unread messages across all checked favourites
+- `conversationsWithUnread` - Number of conversations with unread messages
+- `conversations[]` - Array of conversations with unread messages, each with:
+  - `conversationId`
+  - `displayName`
+  - `conversationType`
+  - `unreadCount`
+- `checked` - Number of favourites checked
+- `totalFavorites` - Total number of favourites
+
+**Note:** Aggregate mode checks up to 20 favourites to avoid timeout. Uses the consumption horizon API to determine read position.
+
+**Example:**
+```
+# Check all favourites
+teams_get_unread
+
+# Check specific conversation
+teams_get_unread conversationId="19:abc@thread.tacv2"
+```
+
+### teams_mark_read Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation to mark as read |
+| messageId | string | required | The message ID to mark as read up to |
+
+**Response** includes:
+- `message` - Success confirmation
+- `conversationId` - The conversation ID
+- `markedUpTo` - The message ID marked as read
+
+**Note:** This marks all messages up to and including the specified message as read. Use with the latest message ID to mark the entire conversation as read.
+
+**Example:**
+```
+teams_mark_read conversationId="19:abc@thread.tacv2" messageId="1769276832046"
+```
+
 ## Development Commands
 
 ```bash
@@ -577,6 +652,10 @@ npm run test:mcp -- chat "user-guid-or-mri"          # teams_get_chat
 npm run test:mcp -- thread --to "conv-id"            # teams_get_thread
 npm run test:mcp -- save --to "conv-id" --message "msg-id"
 npm run test:mcp -- unsave --to "conv-id" --message "msg-id"
+npm run test:mcp -- unread                                 # teams_get_unread (aggregate)
+npm run test:mcp -- unread --to "conv-id"                  # teams_get_unread (specific)
+npm run test:mcp -- markread --to "conv-id" --message "msg-id"  # teams_mark_read
+npm run test:mcp -- thread --to "conv-id" --markRead       # teams_get_thread with mark read
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json
@@ -750,6 +829,8 @@ From research, Teams uses these primary APIs:
 | `teams.microsoft.com/api/chatsvc/{region}/v1/threads/{id}/annotations` | Reactions, read status |
 | `teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders` | Favorites/pinned chats |
 | `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/rcmetadata/{mid}` | Save/unsave messages |
+| `teams.microsoft.com/api/chatsvc/{region}/v1/threads/{id}/consumptionhorizons` | Get read receipts |
+| `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/properties?name=consumptionhorizon` | Mark as read |
 
 ### People & Profile
 | Endpoint | Purpose |
