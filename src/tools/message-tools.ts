@@ -19,7 +19,8 @@ import {
   getActivityFeed,
 } from '../api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite } from '../api/csa-api.js';
-import { SELF_CHAT_ID } from '../constants.js';
+import { SELF_CHAT_ID, MAX_UNREAD_AGGREGATE_CHECK } from '../constants.js';
+import { ErrorCode } from '../types/errors.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -577,7 +578,7 @@ async function handleGetUnread(
   let errorCount = 0;
 
   // Check unread status for each favourite (limit to prevent timeout)
-  const maxToCheck = 20;
+  const maxToCheck = MAX_UNREAD_AGGREGATE_CHECK;
   for (const fav of favorites.slice(0, maxToCheck)) {
     const unreadResult = await getUnreadStatus(fav.conversationId);
     checkedCount++;
@@ -595,6 +596,19 @@ async function handleGetUnread(
     } else {
       errorCount++;
     }
+  }
+
+  // If all checks failed, return an error rather than misleading success
+  if (checkedCount > 0 && errorCount === checkedCount) {
+    return {
+      success: false,
+      error: {
+        code: ErrorCode.API_ERROR,
+        message: `Failed to check unread status for all ${checkedCount} favourites`,
+        retryable: true,
+        suggestions: ['Check authentication status with teams_status', 'Try teams_login to refresh session'],
+      },
+    };
   }
 
   return {

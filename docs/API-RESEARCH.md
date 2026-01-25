@@ -877,16 +877,61 @@ from:john sent:lastweek # John's messages last week
 
 ## 7. Notifications & Activity APIs
 
-### 7.1 Notification Messages
+### 7.1 Activity Feed (Notification Messages) ✅ IMPLEMENTED
 
 **Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/48%3Anotifications/messages`
 
 **Query Parameters:**
-- `view=msnp24Equivalent|supportsMessageProperties`
-- `pageSize=200`
-- `syncState={base64State}`
+- `view=msnp24Equivalent` - Response format (same as other message endpoints)
+- `pageSize=50` - Number of activity items to return (max ~200)
+- `syncState={base64State}` - For incremental sync (optional)
 
-**Use Case:** Get activity/notification feed messages.
+**Use Case:** Get the user's activity feed - mentions, reactions, replies, announcements, etc.
+
+**Authentication:** Same as other chatsvc endpoints - requires `skypetoken` and Bearer token.
+
+**Request Headers:**
+```
+Authentication: skypetoken={skypeToken}
+Authorization: Bearer {authToken}
+Content-Type: application/json
+```
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "id": "1769276832046",
+      "originalarrivaltime": "2026-01-24T18:47:12.046Z",
+      "composetime": "2026-01-24T18:47:12.046Z",
+      "messagetype": "RichText/Html",
+      "contenttype": "text",
+      "content": "<p>Activity content here</p>",
+      "from": "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24",
+      "imdisplayname": "Smith, John",
+      "conversationid": "19:meeting_abc123@thread.v2",
+      "threadtopic": "Weekly Standup",
+      "clientmessageid": "12345678901234567890"
+    }
+  ],
+  "syncState": "base64EncodedState..."
+}
+```
+
+**Activity Types (identified via `messagetype` and content patterns):**
+| Type | Identification |
+|------|----------------|
+| @Mention | Content contains `<span itemtype="http://schema.skype.com/Mention">` |
+| Reaction | `messagetype` contains reaction identifier |
+| Reply | Standard message in a thread context |
+| Announcement | Channel announcement formatting |
+
+**Notes:**
+- The conversation ID `48:notifications` is a special feed (like `48:notes` for self-chat)
+- Activity items include context like `conversationid` to navigate to the source
+- The `threadtopic` field contains the conversation/meeting name when available
+- Use `syncState` from response for efficient incremental polling
 
 ---
 
@@ -980,6 +1025,9 @@ Based on discovered APIs, here are the current tool implementation status:
 | `teams_get_thread` | chatsvc messages API | Messages from any conversation |
 | `teams_find_channel` | Teams List + Substrate | Hybrid channel search |
 | `teams_get_chat` | Computed from user IDs | 1:1 conversation ID (no API call) |
+| `teams_get_unread` | chatsvc consumptionhorizons | Unread counts (aggregate or per-conversation) |
+| `teams_mark_read` | chatsvc consumptionhorizon | Mark conversation read up to message |
+| `teams_get_activity` | chatsvc 48:notifications | Activity feed (mentions, reactions, replies) |
 
 ### 🔜 Ready to Implement
 
@@ -994,7 +1042,6 @@ Based on discovered APIs, here are the current tool implementation status:
 |------|-------|
 | `teams_list_chats` | No dedicated API found - may need initial load capture |
 | `teams_get_saved_messages` | No single endpoint - saved flag is per-message in rcMetadata |
-| `teams_activity` | 48:notifications exists but format unclear |
 | `teams_calendar` | Outlook calendar APIs available - need to extract meetings |
 
 ### 📝 Implementation Notes

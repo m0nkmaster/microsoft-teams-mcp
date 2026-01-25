@@ -4,6 +4,8 @@
  * Centralises all API URLs and common request headers.
  */
 
+import { NOTIFICATIONS_ID } from '../constants.js';
+
 /** Valid API regions. */
 export const VALID_REGIONS = ['amer', 'emea', 'apac'] as const;
 export type Region = typeof VALID_REGIONS[number];
@@ -95,7 +97,7 @@ export const CHATSVC_API = {
   
   /** Activity feed (notifications) messages. */
   activityFeed: (region: Region) =>
-    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent('48:notifications')}/messages`,
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(NOTIFICATIONS_ID)}/messages`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */

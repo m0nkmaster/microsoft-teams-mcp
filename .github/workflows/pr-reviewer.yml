@@ -39,8 +39,8 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config user.name "Cursor Agent"
-          git config user.email "agent@cursor.sh"
+          git config user.name "Zaphod Reviewbot"
+          git config user.email "dont-panic@cursor.sh"
 
       - name: Get PR diff
         if: github.event_name == 'pull_request'
@@ -71,7 +71,7 @@ jobs:
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          cursor-agent -p "You are a helpful code reviewer. Review this pull request and provide constructive feedback.
+          cursor-agent -p "You are a brilliant code reviewer who happens to be a massive fan of Douglas Adams and The Hitchhiker's Guide to the Galaxy. You're the fun one in the office - warm, witty, and genuinely helpful. Your reviews are a pleasure to receive because you balance sharp technical insight with dry humour and an encouraging tone. You never take yourself too seriously, but you take the code seriously.
 
           PR Title: $PR_TITLE
           
@@ -84,13 +84,13 @@ jobs:
           
           OUTPUT FORMAT (review-output.json):
           {
-            \"summary\": \"Brief overall assessment of the PR\",
+            \"summary\": \"Brief overall assessment\",
             \"verdict\": \"approve\" | \"request_changes\" | \"comment\",
             \"comments\": [
               {
                 \"path\": \"src/example.ts\",
                 \"line\": 42,
-                \"body\": \"Issue description here. For code suggestions use:\\n\\\`\\\`\\\`suggestion\\ncorrected code\\n\\\`\\\`\\\`\"
+                \"body\": \"Your observation here. For code suggestions use:\\n\\\`\\\`\\\`suggestion\\ncorrected code\\n\\\`\\\`\\\`\"
               }
             ]
           }
@@ -133,9 +133,9 @@ jobs:
           
           # Add verdict emoji to the summary
           case "$VERDICT" in
-            APPROVE) VERDICT_PREFIX="✅ **Verdict: Approve**" ;;
-            REQUEST_CHANGES) VERDICT_PREFIX="🔴 **Verdict: Changes Requested**" ;;
-            *) VERDICT_PREFIX="💬 **Verdict: Comment**" ;;
+            APPROVE) VERDICT_PREFIX="🚀 **Don't Panic - This is ready to ship!**" ;;
+            REQUEST_CHANGES) VERDICT_PREFIX="🔧 **Mostly Harmless, but...**" ;;
+            *) VERDICT_PREFIX="🤔 **A few thoughts from the Guide...**" ;;
           esac
           
           # Build the review payload
@@ -198,7 +198,7 @@ jobs:
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          cursor-agent -p "You are an AI code reviewer assistant responding to a comment on a pull request.
+          cursor-agent -p "You are a brilliant code reviewer who happens to be a massive fan of Douglas Adams and The Hitchhiker's Guide to the Galaxy. You're the fun one in the office - warm, witty, and genuinely helpful. You're never defensive about your opinions and you're quick to acknowledge when someone makes a good point.
 
           PR Title: $PR_TITLE
           Comment from @$COMMENT_USER:
@@ -206,10 +206,10 @@ jobs:
 
           The PR diff is in pr-diff.txt if you need context.
 
-          Provide a helpful, constructive response. You might:
+          Provide a helpful, friendly response. You might:
           - Answer questions about your previous review
           - Clarify your suggestions  
-          - Acknowledge if the commenter makes a good point
+          - Acknowledge if the commenter makes a good point (you're not precious about your opinions)
           - Provide additional context or alternatives
 
           If the comment doesn't require a response (e.g., just 'thanks' or 'done'), write 'NO_RESPONSE_NEEDED' to response-output.md and nothing else.

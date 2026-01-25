@@ -718,3 +718,36 @@ export function buildOneOnOneConversationId(
 
   return `19:${sorted[0]}_${sorted[1]}@unq.gbl.spaces`;
 }
+
+/**
+ * Safely extracts a timestamp from an activity feed message.
+ * 
+ * Tries multiple sources in order of preference:
+ * 1. originalarrivaltime - Primary timestamp field
+ * 2. composetime - When message was composed
+ * 3. id as numeric timestamp - Fallback if ID is a Unix timestamp
+ * 
+ * Returns null if no valid timestamp can be determined, preventing
+ * RangeError from Date operations on invalid values.
+ * 
+ * @param msg - Raw message object from activity feed API
+ * @returns ISO timestamp string, or null if no valid timestamp found
+ */
+export function extractActivityTimestamp(msg: Record<string, unknown>): string | null {
+  const arrivalTime = msg.originalarrivaltime as string;
+  const composeTime = msg.composetime as string;
+  
+  if (arrivalTime) return arrivalTime;
+  if (composeTime) return composeTime;
+
+  // Try parsing the message ID as a numeric timestamp
+  const id = msg.id as string;
+  if (id) {
+    const numericId = parseInt(id, 10);
+    if (!isNaN(numericId) && numericId > 0) {
+      return new Date(numericId).toISOString();
+    }
+  }
+  
+  return null;
+}

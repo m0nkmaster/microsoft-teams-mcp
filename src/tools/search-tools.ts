@@ -180,6 +180,10 @@ async function handleGetThread(
           unreadCount++;
         }
       }
+      // If last read message wasn't found, it's older than our window - all messages are unread
+      if (!foundLastRead) {
+        unreadCount = result.value.messages.filter(m => !m.isFromMe).length;
+      }
     } else {
       // No consumption horizon means all messages are unread (new conversation)
       unreadCount = result.value.messages.filter(m => !m.isFromMe).length;
