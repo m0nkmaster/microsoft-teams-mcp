@@ -5,22 +5,72 @@
  * - Encryption at rest
  * - Restricted file permissions
  * - Automatic migration from plaintext
+ * 
+ * Session files are stored in a user-specific config directory (~/.msteams-mcp/)
+ * to ensure consistency regardless of how the server is invoked (npx, global install, etc.).
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { encrypt, decrypt, isEncrypted } from './crypto.js';
 import { SESSION_EXPIRY_HOURS } from '../constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Gets the user-specific config directory for msteams-mcp.
+ * - Windows: %APPDATA%\msteams-mcp\ (e.g., C:\Users\name\AppData\Roaming\msteams-mcp\)
+ * - macOS/Linux: ~/.msteams-mcp/
+ */
+function getConfigDir(): string {
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'msteams-mcp');
+  }
+  return path.join(os.homedir(), '.msteams-mcp');
+}
+
 export const PROJECT_ROOT = path.resolve(__dirname, '../..');
-export const USER_DATA_DIR = path.join(PROJECT_ROOT, '.user-data');
-export const SESSION_STATE_PATH = path.join(PROJECT_ROOT, 'session-state.json');
-export const TOKEN_CACHE_PATH = path.join(PROJECT_ROOT, 'token-cache.json');
+export const CONFIG_DIR = getConfigDir();
+export const USER_DATA_DIR = path.join(CONFIG_DIR, '.user-data');
+export const SESSION_STATE_PATH = path.join(CONFIG_DIR, 'session-state.json');
+export const TOKEN_CACHE_PATH = path.join(CONFIG_DIR, 'token-cache.json');
+
+// Legacy paths for migration
+const LEGACY_SESSION_PATH = path.join(PROJECT_ROOT, 'session-state.json');
+const LEGACY_TOKEN_CACHE_PATH = path.join(PROJECT_ROOT, 'token-cache.json');
 
 /** File permission mode: owner read/write only. */
 const SECURE_FILE_MODE = 0o600;
+
+/**
+ * Ensures the config directory exists with secure permissions.
+ */
+function ensureConfigDir(): void {
+  if (!fs.existsSync(CONFIG_DIR)) {
+    fs.mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  }
+}
+
+/**
+ * Migrates a file from legacy location to new config directory.
+ * Only migrates if legacy exists and new location doesn't.
+ */
+function migrateIfNeeded(legacyPath: string, newPath: string): void {
+  if (fs.existsSync(legacyPath) && !fs.existsSync(newPath)) {
+    ensureConfigDir();
+    try {
+      fs.copyFileSync(legacyPath, newPath);
+      fs.chmodSync(newPath, SECURE_FILE_MODE);
+      // Remove legacy file after successful copy
+      fs.unlinkSync(legacyPath);
+    } catch {
+      // Ignore migration errors - will just create new session
+    }
+  }
+}
 
 /** Session state as stored by Playwright. */
 export interface SessionState {
@@ -51,6 +101,7 @@ export interface TokenCache {
  * Ensures the user data directory exists.
  */
 export function ensureUserDataDir(): void {
+  ensureConfigDir();
   if (!fs.existsSync(USER_DATA_DIR)) {
     fs.mkdirSync(USER_DATA_DIR, { recursive: true, mode: 0o700 });
   }
@@ -102,6 +153,7 @@ function readSecure<T>(filePath: string): T | null {
  * Checks if session state file exists.
  */
 export function hasSessionState(): boolean {
+  migrateIfNeeded(LEGACY_SESSION_PATH, SESSION_STATE_PATH);
   return fs.existsSync(SESSION_STATE_PATH);
 }
 
@@ -109,6 +161,7 @@ export function hasSessionState(): boolean {
  * Reads the session state.
  */
 export function readSessionState(): SessionState | null {
+  migrateIfNeeded(LEGACY_SESSION_PATH, SESSION_STATE_PATH);
   return readSecure<SessionState>(SESSION_STATE_PATH);
 }
 
@@ -116,6 +169,7 @@ export function readSessionState(): SessionState | null {
  * Writes the session state securely.
  */
 export function writeSessionState(state: SessionState): void {
+  ensureConfigDir();
   writeSecure(SESSION_STATE_PATH, state);
 }
 
@@ -154,6 +208,7 @@ export function isSessionLikelyExpired(): boolean {
  * Reads the token cache.
  */
 export function readTokenCache(): TokenCache | null {
+  migrateIfNeeded(LEGACY_TOKEN_CACHE_PATH, TOKEN_CACHE_PATH);
   return readSecure<TokenCache>(TOKEN_CACHE_PATH);
 }
 
@@ -161,6 +216,7 @@ export function readTokenCache(): TokenCache | null {
  * Writes the token cache securely.
  */
 export function writeTokenCache(cache: TokenCache): void {
+  ensureConfigDir();
   writeSecure(TOKEN_CACHE_PATH, cache);
 }
 

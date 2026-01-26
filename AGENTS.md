@@ -913,13 +913,20 @@ Note: The `conversationId` returned in search results for threaded replies will 
 
 ### File Locations
 
-Session files are created in the working directory where the server runs:
+Session files are stored in a user-specific config directory to ensure consistency regardless of how the server is invoked (npx, global install, local dev, etc.):
 
-- **Session state**: `./session-state.json` (encrypted, gitignored)
-- **Browser profile**: `./.user-data/` (gitignored)
+- **macOS/Linux**: `~/.msteams-mcp/`
+- **Windows**: `%APPDATA%\msteams-mcp\` (e.g., `C:\Users\name\AppData\Roaming\msteams-mcp\`)
+
+Contents:
+- `session-state.json` (encrypted browser session)
+- `token-cache.json` (encrypted OAuth tokens)
+- `.user-data/` (browser profile)
+
+Legacy session files from the project root (`./session-state.json`) are automatically migrated to the new location on first read.
+
+Development-only files (created in project root):
 - **Debug output**: `./debug-output/` (gitignored, screenshots and HTML dumps)
-
-For npm installs, these files are created in the MCP client's working directory (typically the user's home directory or project root).
 
 Development files:
 - **API reference**: `./docs/API-REFERENCE.md`
