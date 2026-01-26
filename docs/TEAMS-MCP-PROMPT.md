@@ -91,6 +91,14 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 2. teams_reply_to_thread content="Reply" conversationId="..." messageId="..."
 ```
 
+### Test reply and delete (for manual testing)
+```
+1. teams_get_me → get your email
+2. teams_search from:your.email@company.com → find your own channel message
+3. teams_reply_to_thread content="Test reply" → reply to your own message
+4. teams_delete_message → delete the test reply to clean up
+```
+
 ### Check unread messages
 ```
 1. teams_get_unread → aggregate unread across favourites
