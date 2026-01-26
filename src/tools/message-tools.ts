@@ -373,7 +373,7 @@ const removeReactionToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID (same format as teams_add_reaction - use serverMessageId from send, not messageId)',
+        description: 'The message ID to remove the reaction from. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
       emoji: {
         type: 'string',
