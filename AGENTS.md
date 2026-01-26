@@ -557,7 +557,7 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 **Constraints:**
 - You can only delete your own messages
 - Channel owners/moderators can delete other users' messages in their channels
-- This is a soft delete - the message is flagged, not permanently removed
+- This is a soft delete - the message remains but content becomes empty
 
 **Example:**
 ```
