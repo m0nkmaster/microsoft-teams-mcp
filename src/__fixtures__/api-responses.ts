@@ -1,7 +1,7 @@
 /**
  * API response fixtures for testing.
  * 
- * These are based on real API response structures documented in docs/API-RESEARCH.md.
+ * These are based on real API response structures documented in docs/API-REFERENCE.md.
  * They represent the shape of data returned by Teams/Substrate APIs.
  */
 
