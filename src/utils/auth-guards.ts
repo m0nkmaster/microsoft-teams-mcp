@@ -41,16 +41,17 @@ export interface CsaAuthInfo {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Checks if the Substrate token is approaching expiry and needs refresh.
+ * Checks if the Substrate token needs refresh (expired or approaching expiry).
  * 
- * @returns true if token will expire within the refresh threshold
+ * @returns true if token is expired or will expire within the refresh threshold
  */
 function shouldRefreshSubstrateToken(): boolean {
   const substrate = extractSubstrateToken();
   if (!substrate) return false;
 
   const timeRemaining = substrate.expiry.getTime() - Date.now();
-  return timeRemaining > 0 && timeRemaining < TOKEN_REFRESH_THRESHOLD_MS;
+  // Refresh if expired (timeRemaining <= 0) OR approaching expiry
+  return timeRemaining < TOKEN_REFRESH_THRESHOLD_MS;
 }
 
 /**

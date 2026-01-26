@@ -118,11 +118,14 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 - If refresh fails, user must re-authenticate via `teams_login`
 
 **How token refresh works:**
-1. `requireSubstrateTokenAsync()` checks if tokens have <10 minutes remaining
+1. `requireSubstrateTokenAsync()` checks if tokens are expired or have <10 minutes remaining
 2. If so, `refreshTokensViaBrowser()` opens a headless browser with saved session
-3. Navigates to Teams, triggering MSAL's automatic token refresh
-4. Saves the updated session state with new tokens
-5. Subsequent API calls use the refreshed tokens
+3. Navigates to Teams and triggers a search (MSAL only refreshes tokens when an API call requires them)
+4. The search triggers MSAL's `acquireTokenSilent` which refreshes the Substrate token
+5. Saves the updated session state with new tokens
+6. Subsequent API calls use the refreshed tokens
+
+**Important:** MSAL doesn't automatically refresh tokens on page load - it only acquires new tokens when an API call actually needs them. Simply loading Teams isn't enough; we must trigger a search to force token acquisition.
 
 **Testing token refresh:**
 ```bash

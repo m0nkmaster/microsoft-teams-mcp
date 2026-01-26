@@ -70,9 +70,11 @@ const SEARCH_BUTTON_SELECTORS = [
 ];
 
 /**
- * Triggers a search to cause MSAL to acquire the Substrate token.
- * This is necessary because MSAL only acquires tokens for specific scopes
- * when the app actually makes API calls requiring those scopes.
+ * Triggers MSAL to acquire the Substrate token.
+ * 
+ * MSAL only acquires tokens for specific scopes when the app makes API calls
+ * requiring those scopes. The Substrate API is only used for search, so we
+ * perform a minimal search ("is:messages") to trigger token acquisition.
  */
 async function triggerTokenAcquisition(
   page: Page,
@@ -116,26 +118,24 @@ async function triggerTokenAcquisition(
     }
 
     if (searchInput) {
-      // Type a simple search query to trigger the API call
-      await searchInput.fill('test');
+      // Use a filter syntax that looks like a system command
+      await searchInput.fill('is:messages');
       await page.keyboard.press('Enter');
 
       // Wait for the search API call to complete
-      log('Waiting for search API response...');
+      log('Waiting for search API...');
       await page.waitForTimeout(5000);
 
-      // Press Escape to close search and return to normal view
+      // Close search
       await page.keyboard.press('Escape');
       await page.waitForTimeout(1000);
 
       log('Token acquisition complete.');
     } else {
-      // Fallback: just wait and hope MSAL refreshes tokens
-      log('Search UI not found, waiting for background token refresh...');
+      log('Search UI not found, waiting for background refresh...');
       await page.waitForTimeout(5000);
     }
   } catch (error) {
-    // Non-fatal: tokens might still work from previous session
     log(`Token acquisition warning: ${error instanceof Error ? error.message : String(error)}`);
     await page.waitForTimeout(3000);
   }

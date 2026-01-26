@@ -6,7 +6,7 @@
  * silently refresh tokens, then save the updated state. Seamless to the user.
  */
 
-import { MSAL_TOKEN_DELAY_MS, TOKEN_REFRESH_THRESHOLD_MS } from '../constants.js';
+import { TOKEN_REFRESH_THRESHOLD_MS } from '../constants.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import {
@@ -32,8 +32,8 @@ export interface TokenRefreshResult {
 
 /**
  * Refreshes tokens by opening a headless browser with saved session state.
- * MSAL refreshes tokens automatically when Teams loads; we just need to
- * trigger that and save the updated state.
+ * MSAL only refreshes tokens when an API call requires them, so we trigger
+ * a search via ensureAuthenticated to force token acquisition.
  */
 export async function refreshTokensViaBrowser(): Promise<Result<TokenRefreshResult>> {
   // Check we have a session to work with
@@ -74,17 +74,17 @@ export async function refreshTokensViaBrowser(): Promise<Result<TokenRefreshResu
     // Open headless browser with saved session
     manager = await createBrowserContext({ headless: true });
 
-    // Navigate to Teams - this triggers MSAL to check/refresh tokens
-    await manager.page.goto('https://teams.microsoft.com', {
-      waitUntil: 'domcontentloaded',
+    // Import auth functions
+    const { ensureAuthenticated } = await import('../browser/auth.js');
+
+    // Use the same auth flow that works for login - this triggers token acquisition
+    await ensureAuthenticated(manager.page, manager.context, (msg) => {
+      // Silent logging for headless refresh
+      console.log(`[token-refresh] ${msg}`);
     });
 
-    // Wait for MSAL to refresh tokens in the background
-    // The token storage happens asynchronously after page load
-    await manager.page.waitForTimeout(MSAL_TOKEN_DELAY_MS);
-
-    // Close browser and save session state (this captures the refreshed tokens)
-    await closeBrowser(manager, true);
+    // Close browser (ensureAuthenticated already saved the session)
+    await closeBrowser(manager, false);
     manager = null;
 
     // Clear our token cache to force re-extraction from the new session
