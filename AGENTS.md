@@ -68,7 +68,7 @@ src/
 └── test/                 # Integration test tools (CLI, MCP harness)
 ```
 
-### Key Design Patterns
+### Implementation Patterns
 
 1. **Credential Encryption**: Session state and token cache are encrypted at rest using AES-256-GCM with a machine-specific key derived from hostname and username. Files have restrictive permissions (0o600).
 
@@ -91,7 +91,7 @@ src/
 
 9. **Shared Constants**: Magic numbers are centralised in `constants.ts` for maintainability (page sizes, timeouts, thresholds).
 
-## Key Design Decisions
+### Design Rationale
 
 ### Direct API Approach
 All operations use direct API calls to Teams APIs. The browser is only used for authentication:
