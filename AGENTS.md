@@ -896,30 +896,14 @@ See `docs/API-RESEARCH.md` for full endpoint documentation with request/response
 
 Based on API research, these tools could be implemented:
 
-| Tool | API | Difficulty | Status |
-|------|-----|------------|--------|
-| `teams_get_me` | JWT token extraction | Easy | ✅ Implemented |
-| `teams_send_message` | chatsvc messages API | Medium | ✅ Implemented |
-| `teams_search_people` | Substrate suggestions | Easy | ✅ Implemented |
-| `teams_get_frequent_contacts` | Substrate peoplecache | Easy | ✅ Implemented |
-| `teams_get_favorites` | conversationFolders API | Easy | ✅ Implemented |
-| `teams_add_favorite` | conversationFolders API | Easy | ✅ Implemented |
-| `teams_remove_favorite` | conversationFolders API | Easy | ✅ Implemented |
-| `teams_save_message` | rcmetadata API | Easy | ✅ Implemented |
-| `teams_unsave_message` | rcmetadata API | Easy | ✅ Implemented |
-| `teams_get_thread` | chatsvc messages API | Easy | ✅ Implemented |
-| `teams_find_channel` | Teams List + Substrate suggestions | Easy | ✅ Implemented (hybrid search) |
-| `teams_reply_to_thread` | chatsvc messages API | Easy | ✅ Implemented - simple thread replies |
-| `teams_edit_message` | chatsvc messages API | Easy | ✅ Implemented - edit own messages |
-| `teams_delete_message` | chatsvc messages API | Easy | ✅ Implemented - soft delete own messages |
-| `teams_get_person` | Delve person API | Easy | Pending |
-| `teams_get_channel_posts` | CSA containers API | Medium | Not needed - use `teams_get_thread` with channel ID |
-| `teams_get_files` | AllFiles API | Medium | Pending |
-| `teams_get_chat` | Computed from user IDs | Easy | ✅ Implemented - get conversation ID for 1:1 chat |
+| Tool | API | Difficulty |
+|------|-----|------------|
+| `teams_get_person` | Delve person API | Easy |
+| `teams_get_files` | AllFiles API | Medium |
 
 ### Not Yet Feasible
 - **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata
-- **Chat list** - Data loaded at startup, not in separate API
+- **Chat list** - Partially addressed by `teams_get_favorites` (pinned chats) and `teams_get_frequent_contacts` (common contacts), but no full chat list API
 - **Presence/Status** - Real-time via WebSocket, not HTTP
 - **Calendar** - Outlook APIs exist but need separate research
 
