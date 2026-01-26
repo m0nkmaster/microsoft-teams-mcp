@@ -98,6 +98,10 @@ export const CHATSVC_API = {
   /** Activity feed (notifications) messages. */
   activityFeed: (region: Region) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(NOTIFICATIONS_ID)}/messages`,
+  
+  /** Message emotions (reactions) URL. */
+  messageEmotions: (region: Region, conversationId: string, messageId: string) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}/properties?name=emotions`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */
@@ -109,6 +113,10 @@ export const CSA_API = {
   /** Teams list (all teams/channels user is a member of). */
   teamsList: (region: Region) =>
     `https://teams.microsoft.com/api/csa/${region}/api/v3/teams/users/me?isPrefetch=false&enableMembershipSummary=true`,
+  
+  /** Custom emoji metadata. */
+  customEmojis: (region: Region) =>
+    `https://teams.microsoft.com/api/csa/${region}/api/v1/customemoji/metadata`,
 } as const;
 
 /** Common request headers for Teams API calls. */
