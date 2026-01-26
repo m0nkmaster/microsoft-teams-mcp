@@ -107,7 +107,10 @@ async function captureRequest(request: Request): Promise<void> {
   if (captured.postData) {
     try {
       const parsed = JSON.parse(captured.postData);
-      console.log('   Body:', JSON.stringify(parsed, null, 2).substring(0, 500));
+      // Show full body for message sends (to see mention format)
+      const isMessageSend = url.includes('/messages') && request.method() === 'POST';
+      const limit = isMessageSend ? 10000 : 500;
+      console.log('   Body:', JSON.stringify(parsed, null, 2).substring(0, limit));
     } catch {
       console.log('   Body:', captured.postData.substring(0, 200));
     }

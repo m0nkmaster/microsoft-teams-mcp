@@ -318,9 +318,19 @@ The `messageLink` is a direct URL to open the message in Teams (format: `https:/
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| content | string | required | Message content (HTML supported) |
+| content | string | required | Message content. Supports inline @mentions using `@[Name](mri)` syntax. |
 | conversationId | string | `48:notes` | Conversation to send to. Default is self-chat (notes). |
 | replyToMessageId | string | - | For channel thread replies: the message ID of the thread root. |
+
+**@Mentions:**
+
+Use inline `@[DisplayName](mri)` syntax in the content. Get MRI from `teams_search_people` or `teams_get_frequent_contacts`.
+
+```
+teams_send_message content="Hey @[John Smith](8:orgid:abc...), can you review this?"
+```
+
+The display name can be any text (e.g., first name only). The MRI determines who gets notified.
 
 **Thread Reply Semantics:**
 
@@ -366,7 +376,7 @@ teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| content | string | required | The reply content to send. |
+| content | string | required | The reply content. Supports inline @mentions using `@[Name](mri)` syntax. |
 | conversationId | string | required | The channel conversation ID (from search results). |
 | messageId | string | required | The message ID to reply to (from search results). |
 

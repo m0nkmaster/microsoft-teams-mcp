@@ -48,6 +48,14 @@ export interface SaveMessageResult {
   saved: boolean;
 }
 
+/** A mention to include in a message (internal). */
+interface Mention {
+  /** The user's MRI (e.g., '8:orgid:uuid'). */
+  mri: string;
+  /** Display name to show for the mention. */
+  displayName: string;
+}
+
 /** Options for sending a message. */
 export interface SendMessageOptions {
   /** Region for the API call (default: 'amer'). */
@@ -93,16 +101,40 @@ export async function sendMessage(
   // Generate unique message ID
   const clientMessageId = Date.now().toString();
 
-  // Wrap content in paragraph if not already HTML
-  const htmlContent = content.startsWith('<') ? content : `<p>${escapeHtml(content)}</p>`;
+  // Check for inline mentions @[Name](mri) syntax
+  let processedContent: string;
+  let mentionsToSend: Mention[] = [];
 
-  const body = {
+  if (hasInlineMentions(content)) {
+    // Parse inline mentions from content
+    const parsed = parseInlineMentions(content);
+    processedContent = parsed.html;
+    mentionsToSend = parsed.mentions;
+  } else {
+    // No inline mentions - just escape the content
+    processedContent = content.startsWith('<') ? content : escapeHtml(content);
+  }
+
+  // Wrap content in paragraph if not already HTML
+  const htmlContent = processedContent.startsWith('<') 
+    ? processedContent 
+    : `<p>${processedContent}</p>`;
+
+  // Build the message body
+  const body: Record<string, unknown> = {
     content: htmlContent,
     messagetype: 'RichText/Html',
     contenttype: 'text',
     imdisplayname: displayName,
     clientmessageid: clientMessageId,
   };
+
+  // Add mentions property if mentions were found
+  if (mentionsToSend.length > 0) {
+    body.properties = {
+      mentions: buildMentionsProperty(mentionsToSend),
+    };
+  }
 
   const url = CHATSVC_API.messages(validRegion, conversationId, replyToMessageId);
 
@@ -145,6 +177,8 @@ export interface ReplyToThreadResult extends SendMessageResult {
  * 
  * Uses the provided messageId as the thread root. For search results,
  * this is typically the original message that started the thread.
+ * 
+ * Supports inline @mentions using @[DisplayName](mri) syntax in the content.
  */
 export async function replyToThread(
   conversationId: string,
@@ -612,6 +646,72 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+/**
+ * Builds the HTML for a single mention.
+ */
+function buildMentionHtml(displayName: string, itemId: number): string {
+  return `<readonly class="skipProofing" itemtype="http://schema.skype.com/Mention" contenteditable="false" spellcheck="false"><span itemtype="http://schema.skype.com/Mention" itemscope itemid="${itemId}">${escapeHtml(displayName)}</span></readonly>`;
+}
+
+/**
+ * Builds the mentions property array for the API request.
+ */
+function buildMentionsProperty(mentions: Mention[]): string {
+  const mentionObjects = mentions.map((mention, index) => ({
+    '@type': 'http://schema.skype.com/Mention',
+    'itemid': String(index),
+    'mri': mention.mri,
+    'mentionType': 'person',
+    'displayName': mention.displayName,
+  }));
+  return JSON.stringify(mentionObjects);
+}
+
+/**
+ * Parses inline mentions from content using @[DisplayName](mri) syntax.
+ * Returns the processed HTML content and the extracted mentions array.
+ */
+function parseInlineMentions(content: string): { html: string; mentions: Mention[] } {
+  // Pattern matches @[DisplayName](mri)
+  const inlineMentionPattern = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  
+  const mentions: Mention[] = [];
+  let lastIndex = 0;
+  let result = '';
+  let match;
+  let itemId = 0;
+  
+  while ((match = inlineMentionPattern.exec(content)) !== null) {
+    // Escape and add the text before this mention
+    const textBefore = content.substring(lastIndex, match.index);
+    result += escapeHtml(textBefore);
+    
+    const displayName = match[1];
+    const mri = match[2];
+    
+    // Add to mentions array
+    mentions.push({ mri, displayName });
+    
+    // Add the mention HTML
+    result += buildMentionHtml(displayName, itemId);
+    itemId++;
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add any remaining text after the last mention
+  result += escapeHtml(content.substring(lastIndex));
+  
+  return { html: result, mentions };
+}
+
+/**
+ * Checks if content contains inline mention syntax.
+ */
+function hasInlineMentions(content: string): boolean {
+  return /@\[[^\]]+\]\([^)]+\)/.test(content);
 }
 
 /** Result of getting a 1:1 conversation. */
