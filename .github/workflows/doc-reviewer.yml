@@ -1,0 +1,339 @@
+name: Documentation Reviewer
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_pr:
+        description: 'Create a PR with fixes (otherwise just report)'
+        type: boolean
+        default: false
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/tools/**'
+      - '*.md'
+      - 'docs/**'
+
+# Debounce: only run once per 2 hours on main
+concurrency:
+  group: doc-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  review-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check debounce (skip if run within 2 hours)
+        if: github.event_name == 'push'
+        id: debounce
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get the last successful run time for this workflow
+          LAST_RUN=$(gh api \
+            "/repos/${{ github.repository }}/actions/workflows/doc-reviewer.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].created_at' 2>/dev/null || echo "")
+          
+          if [ -n "$LAST_RUN" ]; then
+            LAST_RUN_TS=$(date -d "$LAST_RUN" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$LAST_RUN" +%s 2>/dev/null || echo "0")
+            NOW_TS=$(date +%s)
+            DIFF=$((NOW_TS - LAST_RUN_TS))
+            TWO_HOURS=$((2 * 60 * 60))
+            
+            if [ "$DIFF" -lt "$TWO_HOURS" ]; then
+              echo "Last run was $(($DIFF / 60)) minutes ago. Skipping (debounce: 2 hours)."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+          
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Generate App Token
+        if: steps.debounce.outputs.skip != 'true'
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PR_REVIEWER_APP_ID }}
+          private-key: ${{ secrets.PR_REVIEWER_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        if: steps.debounce.outputs.skip != 'true'
+        uses: actions/checkout@v4
+
+      - name: Install Cursor CLI
+        if: steps.debounce.outputs.skip != 'true'
+        run: |
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> $GITHUB_PATH
+
+      - name: Collect tool definitions from code
+        if: steps.debounce.outputs.skip != 'true'
+        run: |
+          # Extract tool names and descriptions from the registry and tool files
+          echo "=== TOOL REGISTRY ===" > tool-inventory.txt
+          cat src/tools/registry.ts >> tool-inventory.txt
+          echo "" >> tool-inventory.txt
+          
+          echo "=== AUTH TOOLS ===" >> tool-inventory.txt
+          cat src/tools/auth-tools.ts >> tool-inventory.txt
+          echo "" >> tool-inventory.txt
+          
+          echo "=== MESSAGE TOOLS ===" >> tool-inventory.txt
+          cat src/tools/message-tools.ts >> tool-inventory.txt
+          echo "" >> tool-inventory.txt
+          
+          echo "=== PEOPLE TOOLS ===" >> tool-inventory.txt
+          cat src/tools/people-tools.ts >> tool-inventory.txt
+          echo "" >> tool-inventory.txt
+          
+          echo "=== SEARCH TOOLS ===" >> tool-inventory.txt
+          cat src/tools/search-tools.ts >> tool-inventory.txt
+
+      - name: Collect markdown files
+        if: steps.debounce.outputs.skip != 'true'
+        run: |
+          echo "=== README.md ===" > all-docs.txt
+          cat README.md >> all-docs.txt
+          echo "" >> all-docs.txt
+          
+          echo "=== AGENTS.md ===" >> all-docs.txt
+          cat AGENTS.md >> all-docs.txt
+          echo "" >> all-docs.txt
+          
+          echo "=== ROADMAP.md ===" >> all-docs.txt
+          cat ROADMAP.md >> all-docs.txt
+          echo "" >> all-docs.txt
+          
+          # Include docs folder
+          for doc in docs/*.md; do
+            if [ -f "$doc" ]; then
+              echo "=== $doc ===" >> all-docs.txt
+              cat "$doc" >> all-docs.txt
+              echo "" >> all-docs.txt
+            fi
+          done
+
+      - name: Review documentation
+        if: steps.debounce.outputs.skip != 'true'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          cursor-agent -p "You are a technical documentation reviewer. Your job is to ensure documentation is accurate, clean, and useful for both humans and AI agents.
+
+          You have two files to work with:
+          - tool-inventory.txt: The actual tool implementations from the codebase
+          - all-docs.txt: The current documentation (README.md, AGENTS.md, ROADMAP.md)
+
+          ## Your Review Tasks
+
+          ### 1. README.md Accuracy
+          - Check the 'Available Tools' table matches the actual tools in the code
+          - Verify tool descriptions are accurate
+          - Ensure search operators documented actually work
+          - Check installation instructions are current
+          - Flag any outdated or incorrect information
+
+          ### 2. AGENTS.md Focus & Quality
+          This file is for AI agents. It should be:
+          - **Focused**: Not a novel. Remove redundant or overly verbose sections.
+          - **Practical**: Emphasise gotchas, common mistakes, and non-obvious behaviour.
+          - **Accurate**: All tool parameters and responses must match the code.
+          - **Clean**: Good structure, no duplication, consistent formatting.
+          
+          Specific checks:
+          - MCP Tools table matches actual tools
+          - Tool parameter tables are accurate
+          - Common mistakes/gotchas are documented
+          - No unnecessary prose or filler
+          - Authentication patterns are current
+
+          ### 3. Tool Documentation Completeness
+          For each tool in the code, verify:
+          - It's listed in both README.md and AGENTS.md
+          - Parameters are documented correctly
+          - Response format is documented (in AGENTS.md)
+          - Any special behaviour or gotchas are noted
+
+          ### 4. ROADMAP.md
+          - Check if completed items should be moved/removed
+          - Verify planned items are still relevant
+
+          ## Output Format
+
+          Write your findings to review-output.json:
+          {
+            \"summary\": \"Brief overall assessment of documentation health\",
+            \"score\": \"good\" | \"needs_attention\" | \"critical\",
+            \"issues\": [
+              {
+                \"file\": \"README.md\",
+                \"severity\": \"error\" | \"warning\" | \"suggestion\",
+                \"issue\": \"Description of the problem\",
+                \"suggestion\": \"How to fix it\"
+              }
+            ],
+            \"recommended_changes\": [
+              {
+                \"file\": \"AGENTS.md\",
+                \"description\": \"What should be changed\",
+                \"priority\": \"high\" | \"medium\" | \"low\"
+              }
+            ]
+          }
+
+          ## Guidelines
+          - Be specific about what's wrong and how to fix it
+          - Focus on accuracy and utility, not style preferences
+          - Flag missing tools as 'error' severity
+          - Flag outdated information as 'warning'
+          - Suggest trimming verbose sections as 'suggestion'
+          - AGENTS.md sections longer than necessary should be flagged for trimming
+
+          Write valid JSON to review-output.json using the file write tool."
+
+      - name: Process review results
+        if: steps.debounce.outputs.skip != 'true'
+        id: process-review
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if [ ! -s review-output.json ]; then
+            echo "No review output generated"
+            exit 1
+          fi
+          
+          # Validate JSON
+          if ! jq empty review-output.json 2>/dev/null; then
+            echo "Invalid JSON in review-output.json"
+            cat review-output.json
+            exit 1
+          fi
+          
+          SCORE=$(jq -r '.score // "unknown"' review-output.json)
+          SUMMARY=$(jq -r '.summary // "No summary"' review-output.json)
+          ISSUE_COUNT=$(jq '.issues | length' review-output.json)
+          ERROR_COUNT=$(jq '[.issues[] | select(.severity == "error")] | length' review-output.json)
+          
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "issue_count=$ISSUE_COUNT" >> $GITHUB_OUTPUT
+          echo "error_count=$ERROR_COUNT" >> $GITHUB_OUTPUT
+          
+          # Build the report
+          {
+            echo "# Documentation Review Report"
+            echo ""
+            echo "**Status:** $SCORE"
+            echo "**Summary:** $SUMMARY"
+            echo ""
+            echo "## Issues Found: $ISSUE_COUNT"
+            echo ""
+            
+            if [ "$ISSUE_COUNT" -gt 0 ]; then
+              echo "| Severity | File | Issue | Suggestion |"
+              echo "|----------|------|-------|------------|"
+              jq -r '.issues[] | "| \(.severity) | \(.file) | \(.issue) | \(.suggestion) |"' review-output.json
+            else
+              echo "No issues found."
+            fi
+            
+            echo ""
+            echo "## Recommended Changes"
+            echo ""
+            
+            CHANGE_COUNT=$(jq '.recommended_changes | length' review-output.json)
+            if [ "$CHANGE_COUNT" -gt 0 ]; then
+              jq -r '.recommended_changes[] | "### [\(.priority)] \(.file)\n\(.description)\n"' review-output.json
+            else
+              echo "No changes recommended."
+            fi
+            
+            echo ""
+            echo "---"
+            echo "*Generated by Documentation Reviewer workflow*"
+          } > review-report.md
+          
+          cat review-report.md
+
+      - name: Create or update issue
+        if: steps.debounce.outputs.skip != 'true' && steps.process-review.outputs.score != 'good'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Check for existing open issue
+          EXISTING_ISSUE=$(gh issue list --label "documentation" --state open --json number -q '.[0].number' 2>/dev/null || echo "")
+          
+          if [ -n "$EXISTING_ISSUE" ]; then
+            # Update existing issue
+            gh issue comment "$EXISTING_ISSUE" --body-file review-report.md
+            echo "Updated existing issue #$EXISTING_ISSUE"
+          else
+            # Create new issue
+            gh issue create \
+              --title "Documentation Review: ${{ steps.process-review.outputs.issue_count }} issues found" \
+              --body-file review-report.md \
+              --label "documentation"
+            echo "Created new documentation review issue"
+          fi
+
+      - name: Apply fixes and create PR
+        if: steps.debounce.outputs.skip != 'true' && inputs.create_pr && steps.process-review.outputs.error_count > 0
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          # Create a branch for fixes
+          BRANCH="docs/auto-review-fixes-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH"
+          
+          # Have cursor-agent apply the fixes
+          cursor-agent -p "You are a documentation fixer. Read review-output.json which contains issues found in the documentation.
+
+          Your task: Fix the ERROR severity issues by editing the appropriate files.
+
+          Focus on:
+          1. Adding missing tools to README.md and AGENTS.md
+          2. Correcting inaccurate tool descriptions or parameters
+          3. Updating outdated information
+
+          Do NOT:
+          - Make style changes
+          - Rewrite working documentation
+          - Add new sections unless absolutely necessary
+
+          After making changes, write 'CHANGES_APPLIED' to fix-status.txt.
+          If no changes were needed, write 'NO_CHANGES_NEEDED' to fix-status.txt."
+
+          if grep -q "CHANGES_APPLIED" fix-status.txt 2>/dev/null; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "docs: auto-fix documentation issues from review"
+            git push -u origin "$BRANCH"
+            
+            gh pr create \
+              --title "docs: Fix documentation issues from automated review" \
+              --body-file review-report.md \
+              --label "documentation"
+            
+            echo "Created PR with documentation fixes"
+          else
+            echo "No fixes were applied"
+          fi
+
+      - name: Summary
+        if: steps.debounce.outputs.skip != 'true'
+        run: |
+          echo "## Documentation Review Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Score:** ${{ steps.process-review.outputs.score }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Issues:** ${{ steps.process-review.outputs.issue_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Errors:** ${{ steps.process-review.outputs.error_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat review-report.md >> $GITHUB_STEP_SUMMARY
