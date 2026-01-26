@@ -458,7 +458,7 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 - Standard Teams emojis: just the name (e.g., `like`, `heart`, `laugh`, `surprised`, `sad`, `angry`, `elephant`)
 - Custom/animated org emojis: `{name};{storage-id}` (e.g., `octi-search;0-wus-d10-66fac2a3b0cda332435c21a14485efe7`)
 
-**Common Reaction Keys:**
+**Quick Reaction Keys (shown in Teams reaction picker):**
 | Emoji | Key |
 |-------|-----|
 | 👍 | `like` |
@@ -467,6 +467,16 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 | 😮 | `surprised` |
 | 😢 | `sad` |
 | 😠 | `angry` |
+
+**Other Common Emoji Keys:**
+| Category | Keys |
+|----------|------|
+| Expressions | `smile`, `wink`, `cry`, `cwl`, `rofl`, `blush`, `speechless`, `wonder`, `sleepy`, `yawn`, `eyeroll`, `worry`, `puke`, `giggle` |
+| Affection | `kiss`, `inlove`, `hug`, `lips` |
+| Actions | `facepalm`, `sweat`, `dance`, `bow`, `headbang`, `wasntme`, `hungover`, `shivering` |
+| Animals | `penguin`, `cat`, `monkey`, `polarbear` |
+| Objects | `flower`, `sun`, `star`, `xmastree`, `cake`, `gift`, `cash`, `champagne` |
+| Other | `yes`, `cool`, `party`, `hi`, `angel`, `devil`, `holidayspirit`, `lipssealed`, `makeup`, `snowangel`, `tongueout` |
 
 **Notes:**
 - The `value` field is a timestamp in milliseconds
