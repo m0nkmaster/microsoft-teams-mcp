@@ -212,6 +212,7 @@ Development commands:
 ```bash
 npm run dev          # Run MCP server in dev mode
 npm run build        # Compile TypeScript
+npm run lint         # Run ESLint
 npm run research     # Explore Teams APIs (logs network calls)
 npm test             # Run unit tests
 npm run typecheck    # TypeScript type checking
