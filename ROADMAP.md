@@ -3,7 +3,7 @@
 ## P1
 
 ### Improve login/refresh UX
-Show a popup message instructing user to close the browser after authentication completes.
+Show visual feedback when authentication succeeds (e.g. "Logged in, closing browser...") so users know what's happening before the browser auto-closes.
 
 ## P2
 
