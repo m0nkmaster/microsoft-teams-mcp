@@ -103,6 +103,16 @@ Then configure:
 | `teams_get_unread` | Get unread counts (aggregate or per-conversation) |
 | `teams_mark_read` | Mark a conversation as read up to a message |
 
+### Reactions
+
+| Tool | Description |
+|------|-------------|
+| `teams_search_emoji` | Search for emojis by name (standard + custom org emojis) |
+| `teams_add_reaction` | Add an emoji reaction to a message |
+| `teams_remove_reaction` | Remove an emoji reaction from a message |
+
+**Quick reactions:** `like`, `heart`, `laugh`, `surprised`, `sad`, `angry` can be used directly without searching.
+
 ### Session
 
 | Tool | Description |
@@ -176,6 +186,7 @@ npm run test:mcp -- people "john smith"
 npm run test:mcp -- favorites
 npm run test:mcp -- activity              # Get activity feed
 npm run test:mcp -- unread                # Check unread counts
+npm run test:mcp -- teams_search_emoji --query "heart"  # Search emojis
 ```
 
 ## Limitations

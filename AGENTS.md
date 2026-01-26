@@ -422,7 +422,7 @@ No parameters.
   - `conversationType`: One of `Channel`, `Chat`, or `Meeting`
 
 Name sources by type:
-- **Channels**: Channel name from Teams API (e.g., "WeaponX Support")
+- **Channels**: Channel name from Teams API (e.g., "Support")
 - **Meetings**: Meeting title/subject
 - **Chats with topic**: The user-set chat topic
 - **Chats without topic**: Participant names extracted from recent messages (e.g., "Smith, John, Jones, Sarah + 2 more")
@@ -731,8 +731,8 @@ The harness can call **any tool** generically. Unrecognised commands are treated
 npm run test:mcp
 
 # Generic tool call (any tool works)
-npm run test:mcp -- teams_find_channel --query "weaponx"
-npm run test:mcp -- find_channel --query "weaponx"   # auto-prefixes teams_
+npm run test:mcp -- teams_find_channel --query "support"
+npm run test:mcp -- find_channel --query "support"   # auto-prefixes teams_
 
 # Shortcuts for common tools
 npm run test:mcp -- search "your query"              # teams_search
