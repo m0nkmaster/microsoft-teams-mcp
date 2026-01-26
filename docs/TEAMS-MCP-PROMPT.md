@@ -2,6 +2,8 @@
 
 Use this prompt when you want an AI assistant to interact with Microsoft Teams on your behalf.
 
+> **Manual Testing**: This document also serves as a test script before releasing new versions. Ask an AI agent to "run this script to test the MCP" and it will exercise all documented tools, verifying authentication, search, messaging, and management features work correctly.
+
 ---
 
 ## Available Tools
