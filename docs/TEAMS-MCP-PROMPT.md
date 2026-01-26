@@ -118,7 +118,6 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 
 | Limitation | Details |
 |------------|---------|
-| Self-notes (`48:notes`) | Cannot edit/delete messages in self-chat |
 | Save message | Only works on root messages, not thread replies |
 | Unread on channels | May fail ACL check; works reliably for chats/meetings |
 | Token expiry | Tokens last ~1 hour; call `teams_login` to refresh |
