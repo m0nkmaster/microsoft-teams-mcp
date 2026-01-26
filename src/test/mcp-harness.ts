@@ -137,10 +137,14 @@ function parseArgs(): ParsedArgs {
       const key = FLAG_MAPPINGS[arg] || arg.slice(2);  // Use mapping or strip --
       let value: unknown = args[j + 1];
       
-      // Try to parse as number or boolean
+      // Only parse booleans and specific numeric fields
+      // Don't coerce messageId, conversationId etc. - they're strings
+      const numericFields = new Set(['from', 'size', 'limit']);
       if (value === 'true') value = true;
       else if (value === 'false') value = false;
-      else if (/^\d+$/.test(value as string)) value = parseInt(value as string, 10);
+      else if (numericFields.has(key) && /^\d+$/.test(value as string)) {
+        value = parseInt(value as string, 10);
+      }
       
       result.args[key] = value;
       j++;  // Skip the value
