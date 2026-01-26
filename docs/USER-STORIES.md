@@ -93,17 +93,18 @@ This document defines user stories and personas to guide development of the Team
 > "What unread messages do I have?"
 
 **Flow:**
-1. Get list of conversations with unread counts
-2. Fetch unread messages from each
-3. Summarise or list
+1. Get list of conversations with unread counts via `teams_get_unread`
+2. Fetch unread messages from each using `teams_get_thread`
+3. Optionally mark as read with `teams_mark_read` or `teams_get_thread` with `markRead: true`
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_get_unreads` | ❌ Needed |
-| `teams_get_conversation_messages` | ❌ Needed |
+| `teams_get_unread` | ✅ Implemented (aggregate or per-conversation) |
+| `teams_get_thread` | ✅ Implemented (with optional markRead flag) |
+| `teams_mark_read` | ✅ Implemented |
 
-**Gap:** Unread state is client-side in Teams. May need to track read position via `consumptionhorizon` API.
+**Status:** ✅ Works now - can check unread counts across favourites or for specific conversations, then read and mark as read.
 
 ---
 
@@ -247,15 +248,15 @@ This document defines user stories and personas to guide development of the Team
 > "Show me my recent notifications"
 
 **Flow:**
-1. Get activity/notification feed
-2. Display with context
+1. Get activity/notification feed via `teams_get_activity`
+2. Display with context (mentions, reactions, replies)
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_get_activity` | ❌ Needed |
+| `teams_get_activity` | ✅ Implemented |
 
-**Gap:** Activity at `48:notifications` endpoint but format unclear.
+**Status:** ✅ Works now - returns mentions, reactions, replies with direct links to open in Teams.
 
 ---
 
@@ -336,9 +337,10 @@ Based on user value and API readiness:
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
 | 2.1 Unanswered questions | `teams_get_thread` | ✅ Done (AI filters results) |
-| 2.2 Unread messages | Consumption horizon | High (client-side state) |
+| 2.2 Unread messages | `teams_get_unread` + `teams_mark_read` | ✅ Done |
 | 2.4 Check for replies | `teams_get_thread` | ✅ Done |
 | 3.1 Favourites | `teams_get_favorites` | ✅ Done |
+| 5.1 Activity feed | `teams_get_activity` | ✅ Done |
 
 ### Phase 4 - Stretch Goals
 | Story | Tools Needed | Effort |
@@ -364,6 +366,11 @@ Based on user value and API readiness:
 
 ### Remaining
 1. **Implement `teams_get_files`** - List files shared in a conversation (API discovered, implementation pending)
+
+### Recently Completed
+- ~~**Implement `teams_get_unread`**~~ ✅ Done - Check unread counts (aggregate or per-conversation)
+- ~~**Implement `teams_mark_read`**~~ ✅ Done - Mark conversations as read
+- ~~**Implement `teams_get_activity`**~~ ✅ Done - Get activity feed (mentions, reactions, replies)
 
 ### No Longer Needed
 - ~~**`teams_get_channel_posts`**~~ - Channel catchup now works via `teams_find_channel` + `teams_get_thread`
