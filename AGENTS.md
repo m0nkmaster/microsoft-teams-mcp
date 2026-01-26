@@ -884,7 +884,7 @@ Run `npm run research`, perform actions in Teams, and check the terminal output 
 ### Session/Token Expired
 If API calls fail with authentication errors:
 1. Call `teams_login` with `forceNew: true`
-2. Or delete `session-state.json` and run `npm run cli -- login`
+2. Or delete the config directory (`~/.msteams-mcp/` on macOS/Linux, `%APPDATA%\msteams-mcp\` on Windows) and run `npm run cli -- login`
 
 ### Browser Won't Launch (for login)
 - Ensure you have Chrome (macOS/Linux) or Edge (Windows) installed
