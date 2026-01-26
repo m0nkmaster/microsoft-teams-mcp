@@ -839,8 +839,9 @@ GitHub Actions runs on every push and PR:
 - Type checking (`npm run typecheck`)
 - Unit tests (`npm test`)
 - Build (`npm run build`)
+- Documentation review (on main commits, debounced to 2 hours) - checks README/AGENTS.md accuracy against code
 
-See `.github/workflows/ci.yml` for the workflow configuration.
+See `.github/workflows/ci.yml` and `.github/workflows/doc-reviewer.yml` for workflow configurations.
 
 ## Integration Testing
 
