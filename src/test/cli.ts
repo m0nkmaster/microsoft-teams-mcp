@@ -28,7 +28,7 @@ import { refreshTokensViaBrowser } from '../auth/token-refresh.js';
 import { searchMessages } from '../api/substrate-api.js';
 import { sendMessage, sendNoteToSelf } from '../api/chatsvc-api.js';
 
-type Command = 'status' | 'search' | 'login' | 'send' | 'me' | 'refresh' | 'help';
+type Command = 'status' | 'search' | 'login' | 'send' | 'me' | 'refresh' | 'refresh-debug' | 'help';
 
 interface CliArgs {
   command: Command;
@@ -85,6 +85,7 @@ Commands:
   login               Log in to Teams (opens browser)
   login --force       Force new login (clears existing session)
   refresh             Test OAuth token refresh (shows before/after status)
+  refresh-debug       Debug token refresh with visible browser
   help                Show this help message
 
 Options:
@@ -429,6 +430,80 @@ async function commandRefresh(flags: Set<string>): Promise<void> {
   }
 }
 
+async function commandRefreshDebug(flags: Set<string>): Promise<void> {
+  const asJson = flags.has('json');
+  
+  // Show current status
+  const beforeStatus = getSubstrateTokenStatus();
+
+  if (!asJson) {
+    console.log('\n🔍 Token Refresh Debug (Visible Browser)\n');
+    console.log('Before:');
+    console.log(`   Token valid: ${beforeStatus.hasToken ? '✅ Yes' : '❌ No'}`);
+    console.log(`   Expires at: ${beforeStatus.expiresAt}`);
+    console.log(`   Minutes remaining: ${beforeStatus.minutesRemaining}`);
+    console.log('\nOpening VISIBLE browser to debug token refresh...');
+  }
+
+  // Import browser and auth functions
+  const { createBrowserContext, closeBrowser } = await import('../browser/context.js');
+  const { ensureAuthenticated } = await import('../browser/auth.js');
+
+  let manager: Awaited<ReturnType<typeof createBrowserContext>> | null = null;
+
+  try {
+    // Open VISIBLE browser
+    manager = await createBrowserContext({ headless: false });
+
+    // Use the same auth flow that works for login
+    await ensureAuthenticated(manager.page, manager.context, (msg) => {
+      if (!asJson) {
+        console.log(`   ${msg}`);
+      }
+    });
+
+    // Close browser (session already saved by ensureAuthenticated)
+    await closeBrowser(manager, false);
+    manager = null;
+
+    // Clear cache and check new token
+    clearTokenCache();
+    const afterStatus = getSubstrateTokenStatus();
+
+    if (asJson) {
+      console.log(JSON.stringify({
+        before: beforeStatus,
+        after: afterStatus,
+        refreshed: afterStatus.hasToken && afterStatus.expiresAt !== beforeStatus.expiresAt,
+      }, null, 2));
+    } else {
+      console.log('\nAfter:');
+      console.log(`   Token valid: ${afterStatus.hasToken ? '✅ Yes' : '❌ No'}`);
+      console.log(`   Expires at: ${afterStatus.expiresAt}`);
+      console.log(`   Minutes remaining: ${afterStatus.minutesRemaining}`);
+
+      if (afterStatus.hasToken && afterStatus.expiresAt !== beforeStatus.expiresAt) {
+        console.log('\n✅ Token was refreshed!');
+      } else if (afterStatus.hasToken) {
+        console.log('\n⚠️  Token is valid but was not refreshed (same expiry)');
+      } else {
+        console.log('\n❌ Token still invalid after browser session');
+      }
+    }
+
+  } catch (error) {
+    // Clean up browser if still open
+    if (manager) {
+      try {
+        await closeBrowser(manager, false);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    throw error;
+  }
+}
+
 async function commandLogin(flags: Set<string>): Promise<void> {
   const force = flags.has('force');
 
@@ -492,6 +567,10 @@ async function main(): Promise<void> {
 
       case 'refresh':
         await commandRefresh(flags);
+        break;
+
+      case 'refresh-debug':
+        await commandRefreshDebug(flags);
         break;
 
       case 'login':

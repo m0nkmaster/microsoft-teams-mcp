@@ -65,9 +65,6 @@ export const UI_MEDIUM_DELAY_MS = 1000;
 /** Long delay for API responses to settle. */
 export const UI_LONG_DELAY_MS = 2000;
 
-/** Delay for MSAL token storage. */
-export const MSAL_TOKEN_DELAY_MS = 3000;
-
 /** Authentication check interval. */
 export const AUTH_CHECK_INTERVAL_MS = 2000;
 
