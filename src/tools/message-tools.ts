@@ -242,7 +242,7 @@ const editMessageToolDefinition: Tool = {
 
 const deleteMessageToolDefinition: Tool = {
   name: 'teams_delete_message',
-  description: 'Delete one of your own messages (soft delete). You can only delete messages you sent, unless you are a channel owner/moderator. The API will reject unauthorised attempts.',
+  description: 'Delete one of your own messages (soft delete - the message remains but content becomes empty). You can only delete messages you sent, unless you are a channel owner/moderator.',
   inputSchema: {
     type: 'object',
     properties: {
