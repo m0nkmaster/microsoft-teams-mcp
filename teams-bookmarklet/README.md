@@ -2,13 +2,24 @@
 
 Export Microsoft Teams chat messages to Markdown format.
 
+## What's New in v2.0
+
+This version uses knowledge from building the [Teams MCP server](../README.md) to provide:
+
+- **API-first approach**: Uses Teams' internal chatsvc API for fast, reliable export (10x faster than DOM scraping)
+- **Message deep links**: Each message includes a clickable link to open it directly in Teams
+- **Automatic region detection**: Tries amer/emea/apac until one works
+- **Graceful fallback**: Falls back to DOM scraping if API fails
+- **Better date filtering**: Increased default from 2 days to 7 days
+
 ## Features
 
 - Captures sender names and timestamps (using ISO dates for accuracy)
+- **Generates deep links to each message** (click to open in Teams)
 - Preserves links (formatted as markdown links)
 - Captures emoji reactions
 - Detects edited messages
-- **Expands and captures thread replies** (optional, can be disabled)
+- **Detects open threads** and offers to export just the thread
 - Filters out "Replied in thread" preview messages
 - Sorts messages chronologically
 - Filters by configurable date range (days back)
@@ -25,134 +36,129 @@ Due to Teams' strict Content Security Policy, bookmarklets are blocked. Use the 
 3. Open DevTools (F12) → Console tab
 4. Copy the contents of `teams-export.js` and paste into the console
 5. Press Enter
-6. A modal will appear with:
-   - Detected chat/channel name
-   - Days to capture (default: 2)
-   - Checkbox to expand threads (enabled by default)
-7. Click **Export**
-8. Wait for the progress bar - it will:
-   - Scan the main chat
-   - Expand each thread to capture replies (if enabled)
-9. Markdown is copied to your clipboard
-10. Paste wherever you need it
 
-## Options
+### Export Dialog
 
-### Days to Capture
-How many days back to include. Messages older than this are filtered out.
+You'll see a dialog showing:
 
-### Expand Thread Replies
-When enabled, the script will:
-1. Find all messages with thread replies
-2. Click each one to open the thread panel
-3. Extract all reply messages
-4. Include them in the output nested under the parent message
+1. **Chat name** - Detected automatically from the page
+2. **Conversation ID** - If detected, enables API export (much faster)
+3. **Export method** - Shows whether API or DOM scraping will be used
+4. **Days to capture** - How many days back to include (default: 7)
+5. **Include message links** - Toggle to include/exclude deep links
+6. Click **Export**
+7. Wait for the progress bar
+8. Markdown is copied to your clipboard
 
-This is slower but gives you complete thread content. Disable if you only need the main chat messages.
+### If a Thread is Open
+
+If you have a thread panel open when you run the script, you'll see:
+
+- **Export This Thread Only** - Immediately exports just the thread messages
+- **Export Full Chat** - Closes the thread and shows the full chat export options
 
 ## Output Format
 
 ```markdown
 # Project Alpha Team
 
-**Exported:** 15/03/2025
+**Exported:** 26/01/2026
+**Messages:** 47
 
 ---
 
-## Monday 14 March 2025
+## Monday 20 January 2026
 
-**Smith, Jane** (09:15):
+**Smith, Jane** (09:15) [[link](https://teams.microsoft.com/l/message/19:xxx@thread.tacv2/1737363300000)]:
 > Morning all! Quick reminder that the design review is at 2pm today.
 >
 > 🔗 [Meeting link](https://example.com/meeting)
 >
 > 3 Like reactions
->
-> 💬 **Thread (2 replies):**
->
-> > **Chen, David** (09:22):
-> > > Thanks for the reminder! I'll be there.
->
-> > **Williams, Sarah** (09:45):
-> > > Running 5 mins late but on my way
 
-**Chen, David** (10:30) *(edited)*:
-> Just pushed the latest changes to the feature branch. Ready for review when you have a moment.
+**Chen, David** (10:30) *(edited)* [[link](https://teams.microsoft.com/l/message/19:xxx@thread.tacv2/1737367800000)]:
+> Just pushed the latest changes to the feature branch. Ready for review.
 >
 > 🔗 [Pull request](https://github.com/example/repo/pull/123)
 
 ---
 
-## Tuesday 15 March 2025
+## Tuesday 21 January 2026
 
-**Williams, Sarah** (08:45):
+**Williams, Sarah** (08:45) [[link](https://teams.microsoft.com/l/message/19:xxx@thread.tacv2/1737448500000)]:
 > Has anyone seen the updated requirements doc?
->
-> 💬 **Thread (3 replies):**
->
-> > **Smith, Jane** (08:52):
-> > > I uploaded it to the shared drive yesterday
-> > >
-> > > 1 Like reaction
->
-> > **Chen, David** (09:01):
-> > > Found it, thanks!
->
-> > **Williams, Sarah** (09:05):
-> > > Perfect, got it now
 ```
 
 ## How It Works
 
-1. **Scrolling**: Teams uses virtual scrolling (only visible messages are in the DOM). The script scrolls through the chat to load and capture all messages.
+### API Export (Preferred)
 
-2. **ISO Dates**: Uses the `datetime` attribute on timestamp elements for accurate sorting, not the displayed text.
+1. **Conversation ID extraction**: Tries to get the conversation ID from URL params, hash, DOM attributes, or localStorage
+2. **Region auto-detection**: Tries amer, emea, and apac regions until one succeeds
+3. **Paginated fetch**: Fetches up to 2000 messages (200 per page × 10 pages)
+4. **Message parsing**: Strips HTML, extracts timestamps, builds deep links
 
-3. **Thread Detection**: Looks for `replies-summary-authors` elements to identify messages with threads.
+### DOM Export (Fallback)
 
-4. **Thread Expansion**: Clicks thread buttons, waits for the right-rail panel to load, extracts replies, then closes the panel.
+Used when API export fails or conversation ID cannot be detected:
 
-5. **Preview Filtering**: Messages starting with "Replied in thread:" are preview messages, not originals. These are filtered out to avoid duplication.
+1. **Scrolling**: Teams uses virtual scrolling (only visible messages are in DOM). Scrolls to load messages.
+2. **Element extraction**: Parses DOM elements for sender, timestamp, content, reactions.
+3. **Message ID calculation**: Computes message ID from timestamp for deep links.
 
-6. **DOM Creation**: Uses `document.createElement` instead of `innerHTML` to bypass Teams' Content Security Policy.
+## Message Links
+
+Each exported message includes a deep link in the format:
+
+```
+https://teams.microsoft.com/l/message/{conversationId}/{messageTimestamp}
+```
+
+Clicking this link opens Teams and navigates directly to that specific message. This is useful for:
+
+- Referencing specific messages in documentation
+- Jumping back to important conversations
+- Sharing links with colleagues
 
 ## Troubleshooting
 
-### "Chat pane not found"
-Make sure you're viewing an active chat/channel, not the chat list or settings.
+### "API failed, falling back to DOM"
 
-### Not all messages captured
-For very long chats, the scroll might not capture everything. Try:
+This means the API couldn't be reached. Common causes:
+- Session expired (refresh the page and try again)
+- Network issues
+- Unusual conversation type
+
+The script automatically falls back to DOM scraping, so export still works.
+
+### "Could not detect conversation ID"
+
+The script couldn't find the conversation ID. This means:
+- API export won't be attempted
+- DOM scraping will be used (slower but works)
+
+This typically happens with older URLs or unusual navigation paths.
+
+### Not all messages captured (DOM mode)
+
+For very long chats with DOM scraping, the scroll might not capture everything. Try:
 - Running it twice
 - Using a smaller "days to capture" value
 
-### Threads not expanding
-Some threads might not expand if:
-- The message scrolled out of view before clicking
-- Teams' virtual DOM recycled the element
-
-Check the browser console for messages like `Could not find thread:` to see which ones were missed.
-
 ### Clipboard access denied
-Check the browser console (F12 → Console) where the markdown is also logged. Copy it from there.
 
-### TrustedHTML error
-This occurs if you try to use `innerHTML`. The provided script uses `createElement` to avoid this.
+Check the browser console (F12 → Console) where the markdown is also logged.
 
 ## Technical Notes
 
 - Works with Teams web app (teams.microsoft.com)
 - Tested with the new Teams interface (Fluent UI)
-- DOM selectors used:
-  - `chat-pane-list` - Main message container
-  - `chat-pane-item` - Individual message wrapper
-  - `chat-pane-message` - Message content area
-  - `message-author-name` - Sender name
-  - `replies-summary-authors` - Thread indicator
-  - `right-rail-message-pane-body` - Thread panel
+- API endpoint: `/api/chatsvc/{region}/v1/users/ME/conversations/{id}/messages`
+- Regions tried: amer, emea, apac
+- Cookies are automatically included for authentication
 
 ## Files
 
 - `teams-export.js` - The full export script (run in browser console)
-- `README.md` - This documentation
-- `examples/` - Your own exports (gitignored, not committed)
+- `teams-chat-export-bookmarklet.md` - Alternative documentation
+- `README.md` - This file

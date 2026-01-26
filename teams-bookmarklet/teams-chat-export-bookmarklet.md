@@ -1,110 +1,50 @@
-# Teams Chat Export
+# Teams Chat Export v2.0
 
-Export Microsoft Teams chat messages to Markdown format.
+> **Note:** This is an alternative/legacy documentation file. See [README.md](./README.md) for the main documentation.
 
-## Features
+Export Microsoft Teams chat messages to Markdown format using Teams' internal APIs.
 
-- Captures sender names and timestamps (using ISO dates for accuracy)
-- Preserves links (formatted as markdown links)
-- Captures emoji reactions
-- Detects edited messages
-- **Expands and captures thread replies** (optional, can be disabled)
-- **Detects open threads** and offers to export just the thread
-- Filters out "Replied in thread" preview messages
-- Sorts messages chronologically
-- Filters by configurable date range (days back)
-- Groups messages by date with section headers
-
-## Usage
-
-### Console Script (Recommended)
-
-Due to Teams' strict Content Security Policy, bookmarklets are blocked. Use the console script instead:
+## Quick Start
 
 1. Open Teams in your browser (teams.microsoft.com)
 2. Navigate to the chat/channel you want to export
 3. Open DevTools (F12) → Console tab
 4. Copy the contents of `teams-export.js` and paste into the console
 5. Press Enter
+6. Configure options in the dialog
+7. Click **Export**
 
-### If a Thread is Open
+## Key Features
 
-If you have a thread panel open when you run the script, you'll see:
+- **API-first approach** - Uses Teams' chatsvc API for fast, reliable export
+- **Message deep links** - Click to open any message directly in Teams
+- **Automatic fallback** - Falls back to DOM scraping if API fails
+- **Thread detection** - Offers to export just the current thread if one is open
+- **Date filtering** - Configure how many days back to capture
 
-```
-┌─────────────────────────────────────┐
-│ Thread Detected                     │
-│                                     │
-│ ⚠️ A thread is currently open with  │
-│ X messages.                         │
-│                                     │
-│ What would you like to export?      │
-│                                     │
-│ [💬 Export This Thread Only]        │
-│ [📋 Export Full Chat]               │
-│ [Cancel]                            │
-└─────────────────────────────────────┘
-```
+## How the API Export Works
 
-- **Export This Thread Only** - Immediately exports just the thread messages
-- **Export Full Chat** - Closes the thread and shows the full chat export options
+When you have a chat open, the script:
 
-### Normal Export (No Thread Open)
+1. Extracts the conversation ID from the page/URL
+2. Calls `GET /api/chatsvc/{region}/v1/users/ME/conversations/{id}/messages`
+3. Uses cookies automatically (same-origin, credentials included)
+4. Tries amer, emea, apac regions until one works
+5. Paginates to get up to 2000 messages
 
-You'll see the standard export dialog:
+This is the same API the Teams MCP server uses, adapted for browser context.
 
-1. **Chat name** - Detected automatically from the page
-2. **Days to capture** - How many days back to include (default: 2)
-3. **Expand thread replies** - When enabled, clicks each thread to capture replies
-4. Click **Export**
-5. Wait for the progress bar
-6. Markdown is copied to your clipboard
+## Comparison: API vs DOM Scraping
 
-## How It Works
+| Aspect | API Export | DOM Scraping |
+|--------|-----------|--------------|
+| Speed | Fast (~2 seconds) | Slow (~30+ seconds) |
+| Reliability | High | Medium (virtual scrolling can miss messages) |
+| Message Links | ✅ Yes | ✅ Yes (computed from timestamp) |
+| Reactions | ❌ Not in API | ✅ Yes |
+| Auth | Cookies (automatic) | N/A |
 
-1. **Thread Detection**: Checks if `right-rail-message-pane-body` is visible when script starts
+## See Also
 
-2. **Scrolling**: Teams uses virtual scrolling (only visible messages are in the DOM). The script scrolls through the chat to load and capture all messages.
-
-3. **ISO Dates**: Uses the `datetime` attribute on timestamp elements for accurate sorting, not the displayed text.
-
-4. **Thread Expansion**: Clicks thread buttons, waits for the right-rail panel to load, extracts replies, then closes the panel.
-
-5. **Preview Filtering**: Messages starting with "Replied in thread:" are preview messages, not originals. These are filtered out.
-
-6. **DOM Creation**: Uses `document.createElement` instead of `innerHTML` to bypass Teams' Content Security Policy.
-
-## Troubleshooting
-
-### "Chat pane not found"
-Make sure you're viewing an active chat/channel, not the chat list or settings.
-
-### Not all messages captured
-For very long chats, the scroll might not capture everything. Try:
-- Running it twice
-- Using a smaller "days to capture" value
-
-### Threads not expanding
-Some threads might not expand if:
-- The message scrolled out of view before clicking
-- Teams' virtual DOM recycled the element
-
-Check the browser console for messages like `Could not find thread:` to see which ones were missed.
-
-### Clipboard access denied
-Check the browser console (F12 → Console) where the markdown is also logged.
-
-## Supported Scenarios
-
-| Scenario | Status | Notes |
-|----------|--------|-------|
-| Channel chat | ✅ Works | Full support |
-| DM chat | ✅ Works | Same DOM structure |
-| Meeting chat | ✅ Works | Same DOM structure |
-| Thread open | ✅ Works | Offers to export just thread |
-| Group chat | ✅ Works | Same DOM structure |
-
-## Files
-
-- `teams-export.js` - The full export script (run in browser console)
-- `teams-chat-export-bookmarklet.md` - This documentation
+- [README.md](./README.md) - Full documentation
+- [Teams MCP Server](../README.md) - The MCP server this knowledge came from
