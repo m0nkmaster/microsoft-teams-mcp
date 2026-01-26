@@ -34,7 +34,7 @@ Add to your MCP client configuration (e.g., Claude Desktop, Cursor):
   "mcpServers": {
     "teams": {
       "command": "npx",
-      "args": ["-y", "msteams-mcp"]
+      "args": ["-y", "msteams-mcp@latest"]
     }
   }
 }
