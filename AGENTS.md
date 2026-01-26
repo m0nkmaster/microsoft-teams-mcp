@@ -199,7 +199,7 @@ Teams APIs return user IDs in multiple formats. The `extractObjectId()` function
 ```
 19:{userId1}_{userId2}@unq.gbl.spaces
 ```
-The two user object IDs (GUIDs) are sorted lexicographically. This format works for internal users. External/guest users may require a different format (not yet researched).
+The two user object IDs (GUIDs) are sorted lexicographically. This format works for internal users. External/guest users may require a different format (not researched).
 
 ## MCP Tools
 
@@ -948,7 +948,7 @@ Regional identifiers: `amer`, `emea`, `apac`
 
 See `docs/API-REFERENCE.md` for full endpoint documentation with request/response examples.
 
-### Potential Future Tools
+### Possible Tools
 
 Based on API research, these tools could be implemented:
 
@@ -957,7 +957,7 @@ Based on API research, these tools could be implemented:
 | `teams_get_person` | Delve person API | Easy |
 | `teams_get_files` | AllFiles API | Medium |
 
-**Not Yet Feasible:**
+**Known Limitations:**
 - **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata
 - **Chat list** - Partially addressed by `teams_get_favorites` (pinned chats) and `teams_get_frequent_contacts` (common contacts), but no full chat list API
 - **Presence/Status** - Real-time via WebSocket, not HTTP

@@ -31,7 +31,7 @@ export interface EncryptedData {
   content: string;
   /** Authentication tag (hex). */
   tag: string;
-  /** Version marker for future upgrades. */
+  /** Version marker for format compatibility. */
   version: number;
 }
 

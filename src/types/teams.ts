@@ -1,6 +1,5 @@
 /**
  * TypeScript interfaces for Teams data structures.
- * These will be refined based on research findings.
  */
 
 export interface TeamsSearchResult {
