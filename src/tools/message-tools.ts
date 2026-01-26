@@ -7,7 +7,6 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { RegisteredTool, ToolContext, ToolResult } from './index.js';
 import {
   sendMessage,
-  sendNoteToSelf,
   replyToThread,
   saveMessage,
   unsaveMessage,
@@ -99,13 +98,13 @@ export const RemoveReactionInputSchema = z.object({
 
 const sendMessageToolDefinition: Tool = {
   name: 'teams_send_message',
-  description: 'Send a message to a Teams conversation. By default, sends to your own notes (self-chat). For channel thread replies, use teams_reply_to_thread instead (simpler). For chats (1:1, group, meeting), just provide the conversationId.',
+  description: 'Send a message to a Teams conversation. Supports @mentions using @[Name](mri) syntax inline. Example: "Hey @[John Smith](8:orgid:abc...), check this". Get MRI from teams_search_people. Defaults to self-notes (48:notes).',
   inputSchema: {
     type: 'object',
     properties: {
       content: {
         type: 'string',
-        description: 'The message content to send. Can include basic HTML formatting.',
+        description: 'The message content. For @mentions, use @[DisplayName](mri) syntax. Example: "Hey @[John Smith](8:orgid:abc...), can you review this?"',
       },
       conversationId: {
         type: 'string',
@@ -122,13 +121,13 @@ const sendMessageToolDefinition: Tool = {
 
 const replyToThreadToolDefinition: Tool = {
   name: 'teams_reply_to_thread',
-  description: 'Reply to a channel message as a threaded reply. Use the conversationId and messageId from search results, or conversationId and threadReplyId from a previous teams_send_message response.',
+  description: 'Reply to a channel message as a threaded reply. Supports @mentions using @[Name](mri) syntax inline. Use conversationId and messageId from search results.',
   inputSchema: {
     type: 'object',
     properties: {
       content: {
         type: 'string',
-        description: 'The reply content to send.',
+        description: 'The reply content. For @mentions, use @[DisplayName](mri) syntax.',
       },
       conversationId: {
         type: 'string',
@@ -393,11 +392,9 @@ async function handleSendMessage(
   input: z.infer<typeof SendMessageInputSchema>,
   _ctx: ToolContext
 ): Promise<ToolResult> {
-  const result = input.conversationId === SELF_CHAT_ID
-    ? await sendNoteToSelf(input.content)
-    : await sendMessage(input.conversationId, input.content, {
-        replyToMessageId: input.replyToMessageId,
-      });
+  const result = await sendMessage(input.conversationId, input.content, {
+    replyToMessageId: input.replyToMessageId,
+  });
 
   if (!result.ok) {
     return { success: false, error: result.error };

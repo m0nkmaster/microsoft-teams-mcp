@@ -33,9 +33,11 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 ### Sending Messages
 | Tool | Purpose |
 |------|---------|
-| `teams_send_message` | Send a message (defaults to self-notes) |
-| `teams_reply_to_thread` | Reply to a channel message as threaded reply |
+| `teams_send_message` | Send a message with optional @mentions (defaults to self-notes) |
+| `teams_reply_to_thread` | Reply to a channel message as threaded reply (supports @mentions) |
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
+
+**@Mentions**: Use `@[DisplayName](mri)` syntax inline in content. Get MRI from `teams_search_people` or `teams_get_frequent_contacts`. Example: `"Hey @[John](8:orgid:abc...), check this"`
 
 ### Message Management
 | Tool | Purpose |
@@ -84,6 +86,13 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 2. teams_get_chat userId → get conversation ID
 3. teams_send_message content="Hello" conversationId="..."
 ```
+
+### Send a message with @mentions
+```
+1. teams_search_people "person name" → get their MRI (e.g., "8:orgid:abc...")
+2. teams_send_message content="Hey @[Person Name](8:orgid:abc...), can you check this?" conversationId="..."
+```
+Use `@[DisplayName](mri)` syntax inline. The display name can be anything (e.g., first name only).
 
 ### Reply to a channel thread
 ```

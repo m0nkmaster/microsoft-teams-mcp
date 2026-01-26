@@ -144,6 +144,13 @@ function parseArgs(): ParsedArgs {
       else if (value === 'false') value = false;
       else if (numericFields.has(key) && /^\d+$/.test(value as string)) {
         value = parseInt(value as string, 10);
+      } else if (typeof value === 'string' && (value.startsWith('[') || value.startsWith('{'))) {
+        // Try to parse JSON for array or object values
+        try {
+          value = JSON.parse(value);
+        } catch {
+          // Keep as string if not valid JSON
+        }
       }
       
       result.args[key] = value;
