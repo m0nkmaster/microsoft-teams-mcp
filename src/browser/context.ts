@@ -84,7 +84,7 @@ export async function createBrowserContext(
 
   const hasSession = hasSessionState();
   const sessionExpired = isSessionLikelyExpired();
-  const tokensExpired = areTokensExpired();
+  const _tokensExpired = areTokensExpired();
 
   // Restore session if we have one and it's not ancient
   const shouldRestoreSession = hasSession && !sessionExpired;

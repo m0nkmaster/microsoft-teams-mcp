@@ -10,7 +10,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import { encrypt, decrypt, isEncrypted, type EncryptedData } from './crypto.js';
+import { encrypt, decrypt, isEncrypted } from './crypto.js';
 import { SESSION_EXPIRY_HOURS } from '../constants.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

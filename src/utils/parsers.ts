@@ -322,8 +322,8 @@ export function calculateTokenStatus(
  */
 export function parseSearchResults(
   entitySets: unknown[] | undefined,
-  from: number,
-  size: number
+  _from: number,
+  _size: number
 ): { results: TeamsSearchResult[]; total?: number } {
   const results: TeamsSearchResult[] = [];
   let total: number | undefined;
