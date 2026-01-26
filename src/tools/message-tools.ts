@@ -135,7 +135,7 @@ const replyToThreadToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID to reply to. Use messageId from search results, or threadReplyId from a teams_send_message response.',
+        description: 'The message ID to reply to. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
     },
     required: ['content', 'conversationId', 'messageId'],
@@ -193,7 +193,7 @@ const saveMessageToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID to save (numeric string from search results)',
+        description: 'The message ID to save. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
     },
     required: ['conversationId', 'messageId'],
@@ -246,7 +246,7 @@ const editMessageToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID to edit (numeric string from search results or teams_get_thread)',
+        description: 'The message ID to edit. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
       content: {
         type: 'string',
@@ -269,7 +269,7 @@ const deleteMessageToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID to delete (numeric string from search results or teams_get_thread)',
+        description: 'The message ID to delete. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
     },
     required: ['conversationId', 'messageId'],
@@ -350,7 +350,7 @@ const addReactionToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID to react to (numeric string from search results or teams_get_thread)',
+        description: 'The message ID to react to. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search. NOT the messageId from teams_send_message (that is client-generated and will fail).',
       },
       emoji: {
         type: 'string',
@@ -373,7 +373,7 @@ const removeReactionToolDefinition: Tool = {
       },
       messageId: {
         type: 'string',
-        description: 'The message ID to remove the reaction from',
+        description: 'The message ID (same format as teams_add_reaction - use serverMessageId from send, not messageId)',
       },
       emoji: {
         type: 'string',
@@ -400,8 +400,8 @@ async function handleSendMessage(
     return { success: false, error: result.error };
   }
 
-  // The timestamp is what Teams uses for threading - convert to string for use as threadReplyId
-  const threadReplyId = result.value.timestamp ? String(result.value.timestamp) : undefined;
+  // The timestamp is the server-assigned ID - use this for reactions, threading, edits, etc.
+  const serverMessageId = result.value.timestamp ? String(result.value.timestamp) : undefined;
 
   const response: Record<string, unknown> = {
     messageId: result.value.messageId,
@@ -409,16 +409,17 @@ async function handleSendMessage(
     conversationId: input.conversationId,
   };
 
-  // Add threadReplyId for channel messages (needed to reply to this message later)
-  if (threadReplyId && input.conversationId.includes('@thread.tacv2')) {
-    response.threadReplyId = threadReplyId;
-    response.note = 'Use threadReplyId (not messageId) if you want to reply to this message later.';
+  // Always include serverMessageId - this is the ID to use for reactions, edits, etc.
+  if (serverMessageId) {
+    response.serverMessageId = serverMessageId;
   }
 
   // Include replyToMessageId in response if this was a thread reply
   if (input.replyToMessageId) {
     response.replyToMessageId = input.replyToMessageId;
     response.note = 'Message posted as a reply to the thread.';
+  } else if (serverMessageId) {
+    response.note = 'Use serverMessageId (not messageId) for reactions, edits, or threading.';
   }
 
   return { success: true, data: response };
