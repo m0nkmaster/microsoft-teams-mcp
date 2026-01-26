@@ -9,7 +9,7 @@ An MCP (Model Context Protocol) server that enables AI assistants to interact wi
 
 ## How It Works
 
-This server calls Microsoft's internal Teams APIs directly (Substrate, chatsvc, CSA)-the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
+This server calls Microsoft's Teams APIs directly (Substrate, chatsvc, CSA)-the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
 
 **Authentication flow:**
 1. Run `teams_login` to open a browser and log in
