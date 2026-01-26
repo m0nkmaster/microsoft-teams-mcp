@@ -20,6 +20,7 @@ import {
 import {
   hasValidSubstrateToken,
   getSubstrateTokenStatus,
+  getMessageAuthStatus,
   extractMessageAuth,
   getUserProfile,
   clearTokenCache,
@@ -114,7 +115,7 @@ async function commandStatus(flags: Set<string>): Promise<void> {
   const hasSession = hasSessionState();
   const sessionAge = getSessionAge();
   const substrateStatus = getSubstrateTokenStatus();
-  const messageAuth = extractMessageAuth();
+  const messagingStatus = getMessageAuthStatus();
 
   // Check if refresh will trigger soon (within 10 minutes)
   const REFRESH_THRESHOLD_MINS = 10;
@@ -129,7 +130,9 @@ async function commandStatus(flags: Set<string>): Promise<void> {
       willAutoRefresh: willRefreshSoon,
     },
     messaging: {
-      available: !!messageAuth,
+      available: messagingStatus.hasToken,
+      expiresAt: messagingStatus.expiresAt,
+      minutesRemaining: messagingStatus.minutesRemaining,
     },
     session: {
       exists: hasSession,
@@ -160,6 +163,10 @@ async function commandStatus(flags: Set<string>): Promise<void> {
     console.log('\nMessaging API (Skype):');
     if (status.messaging.available) {
       console.log('   Status: ✅ Valid');
+      if (status.messaging.expiresAt) {
+        console.log(`   Expires: ${status.messaging.expiresAt}`);
+        console.log(`   Remaining: ${status.messaging.minutesRemaining} minutes`);
+      }
     } else {
       console.log('   Status: ❌ No valid token');
     }

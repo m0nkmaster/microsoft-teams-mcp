@@ -12,6 +12,7 @@ import {
 } from '../auth/session-store.js';
 import {
   getSubstrateTokenStatus,
+  getMessageAuthStatus,
   extractMessageAuth,
   extractCsaToken,
   clearTokenCache,
@@ -114,6 +115,7 @@ async function handleStatus(
   const sessionExists = hasSessionState();
   const sessionExpired = isSessionLikelyExpired();
   const tokenStatus = getSubstrateTokenStatus();
+  const messageAuthStatus = getMessageAuthStatus();
   const messageAuth = extractMessageAuth();
   const csaToken = extractCsaToken();
 
@@ -132,7 +134,9 @@ async function handleStatus(
         minutesRemaining: tokenStatus.minutesRemaining,
       },
       messaging: {
-        available: messageAuth !== null,
+        available: messageAuthStatus.hasToken,
+        expiresAt: messageAuthStatus.expiresAt,
+        minutesRemaining: messageAuthStatus.minutesRemaining,
       },
       favorites: {
         available: messageAuth !== null && csaToken !== null,

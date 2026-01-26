@@ -302,6 +302,45 @@ export function extractMessageAuth(state?: SessionState): MessageAuthInfo | null
   return { skypeToken, authToken, userMri };
 }
 
+/**
+ * Gets messaging token status for diagnostics.
+ * The skypetoken_asm cookie is a JWT with an exp claim.
+ */
+export function getMessageAuthStatus(): {
+  hasToken: boolean;
+  expiresAt?: string;
+  minutesRemaining?: number;
+} {
+  const sessionState = readSessionState();
+  if (!sessionState) {
+    return { hasToken: false };
+  }
+
+  const cookies = sessionState.cookies ?? [];
+  const skypeToken = cookies.find(
+    c => c.domain?.includes('teams.microsoft.com') && c.name === 'skypetoken_asm'
+  )?.value;
+
+  if (!skypeToken) {
+    return { hasToken: false };
+  }
+
+  const expiry = getJwtExpiry(skypeToken);
+  if (!expiry) {
+    // Token exists but can't parse expiry - assume valid
+    return { hasToken: true };
+  }
+
+  const now = Date.now();
+  const expiryMs = expiry.getTime();
+
+  return {
+    hasToken: expiryMs > now,
+    expiresAt: expiry.toISOString(),
+    minutesRemaining: Math.max(0, Math.round((expiryMs - now) / 1000 / 60)),
+  };
+}
+
 function extractMriFromSkypeToken(token: string): string | null {
   const payload = decodeJwtPayload(token);
   return typeof payload?.skypeid === 'string' ? payload.skypeid : null;
