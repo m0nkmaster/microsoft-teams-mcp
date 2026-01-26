@@ -136,7 +136,7 @@ NOT from:email@co.com      # Exclude results
 
 Combine operators: `from:sarah@co.com sent:>=2026-01-18 hasattachment:true`
 
-**Note:** `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your email/displayName. Also `sent:lastweek`, `sent:today`, `sent:thisweek` do NOT work - use explicit dates or omit (results are sorted by recency).
+**Note:** `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your email/displayName. `sent:today` works, but `sent:lastweek` and `sent:thisweek` do NOT - use explicit dates or omit (results are sorted by recency).
 
 ## MCP Resources
 
