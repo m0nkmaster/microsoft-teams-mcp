@@ -6,7 +6,7 @@ This document captures project knowledge to help AI agents work effectively with
 
 - **npm package**: `msteams-mcp`
 - **Repository**: https://github.com/m0nkmaster/microsoft-teams-mcp
-- **Install**: `npx -y msteams-mcp` or `npm install -g msteams-mcp`
+- **Install**: `npx -y msteams-mcp@latest` or `npm install -g msteams-mcp`
 
 ### Publishing Updates
 
