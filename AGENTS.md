@@ -23,7 +23,7 @@ The `files` field in `package.json` limits the published package to `dist/` and 
 
 ## Project Overview
 
-This is an MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams. Rather than using the complex Microsoft Graph API, it uses Teams' internal APIs (Substrate, chatsvc, CSA) with authentication tokens extracted from a browser session. The browser is only used for initial login - all operations use direct API calls.
+This is an MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams. Rather than using the complex Microsoft Graph API, it uses Teams APIs (Substrate, chatsvc, CSA) with authentication tokens extracted from a browser session. The browser is only used for initial login - all operations use direct API calls.
 
 ## Architecture
 
@@ -68,33 +68,33 @@ src/
 └── test/                 # Integration test tools (CLI, MCP harness)
 ```
 
-### Key Architectural Changes (v0.2.0+)
+### Key Design Patterns
 
-1. **Credential Encryption**: Session state and token cache are now encrypted at rest using AES-256-GCM with a machine-specific key derived from hostname and username. Files have restrictive permissions (0o600).
+1. **Credential Encryption**: Session state and token cache are encrypted at rest using AES-256-GCM with a machine-specific key derived from hostname and username. Files have restrictive permissions (0o600).
 
-2. **Server Class Pattern**: `TeamsServer` class encapsulates all state (browser manager, initialisation flag) to allow multiple server instances and simpler testing.
+2. **Server Class Pattern**: `TeamsServer` class encapsulates all state (browser manager, initialisation flag), allowing multiple server instances and simpler testing.
 
-3. **Error Taxonomy**: All errors now have machine-readable codes (`ErrorCode` enum), `retryable` flags, and `suggestions` arrays to help LLMs understand and recover from failures.
+3. **Error Taxonomy**: Errors use machine-readable codes (`ErrorCode` enum), `retryable` flags, and `suggestions` arrays to help LLMs understand failures and recover appropriately.
 
-4. **Result Types**: API functions return `Result<T, McpError>` instead of `{ success: boolean, error?: string }` for type-safe error handling.
+4. **Result Types**: API functions return `Result<T, McpError>` for type-safe error handling with explicit success/failure discrimination.
 
-5. **HTTP Utilities**: Centralised HTTP client with automatic retry (exponential backoff), request timeouts, and rate limit tracking.
+5. **HTTP Utilities**: Centralised HTTP client (`utils/http.ts`) provides automatic retry with exponential backoff, request timeouts, and rate limit tracking.
 
-6. **MCP Resources**: Added passive resources (`teams://me/profile`, `teams://me/favorites`, `teams://status`) for context discovery without tool calls.
+6. **MCP Resources**: Passive resources (`teams://me/profile`, `teams://me/favorites`, `teams://status`) provide context discovery without tool calls.
 
-7. **Tool Registry Pattern**: Tools are organised into logical groups (`search-tools.ts`, `message-tools.ts`, etc.) with a central registry (`tools/registry.ts`). This replaces the monolithic switch statement in server.ts and enables:
+7. **Tool Registry Pattern**: Tools are organised into logical groups (`search-tools.ts`, `message-tools.ts`, etc.) with a central registry (`tools/registry.ts`). This enables:
    - Better separation of concerns
    - Easier testing of individual tools
    - Simpler addition of new tools
 
-8. **Auth Guards**: Reusable authentication check utilities in `utils/auth-guards.ts` replace duplicated auth patterns across API modules. These return `Result` types for consistent error handling.
+8. **Auth Guards**: Reusable authentication check utilities in `utils/auth-guards.ts` return `Result` types for consistent error handling across API modules.
 
 9. **Shared Constants**: Magic numbers are centralised in `constants.ts` for maintainability (page sizes, timeouts, thresholds).
 
 ## Key Design Decisions
 
 ### Direct API Approach
-All operations use direct API calls to Teams' internal APIs. The browser is only used for authentication:
+All operations use direct API calls to Teams APIs. The browser is only used for authentication:
 
 1. **Login**: Opens visible browser → user authenticates → session state saved → browser closed
 2. **All subsequent operations**: Use cached tokens for direct API calls (no browser)
