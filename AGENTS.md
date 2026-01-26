@@ -27,6 +27,8 @@ This is an MCP (Model Context Protocol) server that enables AI assistants to int
 
 ## Architecture
 
+### Directory Structure
+
 ```
 src/
 ├── index.ts              # Entry point, runs the MCP server
@@ -91,25 +93,27 @@ src/
 
 9. **Shared Constants**: Magic numbers are centralised in `constants.ts` for maintainability (page sizes, timeouts, thresholds).
 
-### Design Rationale
+## How It Works
 
-### Direct API Approach
+### Authentication Flow
+
 All operations use direct API calls to Teams APIs. The browser is only used for authentication:
 
 1. **Login**: Opens visible browser → user authenticates → session state saved → browser closed
 2. **All subsequent operations**: Use cached tokens for direct API calls (no browser)
-3. **Token expiry**: When tokens expire (~1 hour), user must re-authenticate via `teams_login`
+3. **Token expiry**: When tokens expire (~1 hour), proactive refresh is attempted; if that fails, user must re-authenticate via `teams_login`
 
 This approach provides faster, more reliable operations compared to DOM scraping, with structured JSON responses and proper pagination support.
 
-### Direct API Details
-The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) provides:
-- Structured JSON responses with message content, sender info, timestamps
-- Offset-based pagination (`from`/`size` parameters)
-- Total result counts for accurate pagination
-- Hit-highlighted search snippets
+The server uses the system's installed browser rather than downloading Playwright's bundled Chromium (~180MB savings):
+
+- **Windows**: Uses Microsoft Edge (always pre-installed on Windows 10+)
+- **macOS/Linux**: Uses Google Chrome
+
+This is configured via Playwright's `channel` option in `src/browser/context.ts`. If the system browser isn't available, a helpful error message suggests installing Chrome or running `npx playwright install chromium` as a fallback.
 
 ### Token Management
+
 - Tokens are extracted from browser localStorage after login
 - The Substrate search token (`SubstrateSearch-Internal.ReadWrite` scope) is required for search
 - Tokens typically expire after ~1 hour
@@ -131,19 +135,9 @@ The Substrate v2 query API (`substrate.office.com/searchservice/api/v2/query`) p
 ```bash
 npm run cli -- refresh
 ```
-This tests the refresh mechanism - it will report if tokens were refreshed or if they were still valid (MSAL only refreshes when close to expiry).
 
-### System Browser Usage
-The server uses the system's installed browser rather than downloading Playwright's bundled Chromium (~180MB savings):
+### API Authentication
 
-- **Windows**: Uses Microsoft Edge (always pre-installed on Windows 10+)
-- **macOS/Linux**: Uses Google Chrome
-
-This is configured via Playwright's `channel` option in `src/browser/context.ts`. When installed via npm, no browser download is needed as long as Chrome or Edge is available on the system.
-
-If the system browser isn't available, a helpful error message suggests installing Chrome or running `npx playwright install chromium` as a fallback.
-
-### Authentication Patterns
 Different Teams APIs use different authentication mechanisms:
 
 | API | Auth Method | Module | Helper Function |
@@ -155,6 +149,18 @@ Different Teams APIs use different authentication mechanisms:
 | **Threads** (chatsvc) | `skypetoken_asm` cookie | `auth/token-extractor` | `extractMessageAuth()` |
 
 **Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
+
+### Session Persistence
+
+Playwright's `storageState()` is used to save browser session state after login. This includes:
+- Session cookies (for messaging APIs)
+- MSAL tokens in localStorage (for search and people APIs)
+- Tokens are extracted and cached for direct API use
+
+Session state and token cache files are protected by:
+1. **Encryption at rest**: AES-256-GCM encryption using a key derived from machine-specific values (hostname + username)
+2. **File permissions**: Restrictive 0o600 permissions (owner read/write only)
+3. **Automatic migration**: Existing plaintext files are automatically encrypted on first read
 
 ### Conversation Types
 
@@ -195,19 +201,9 @@ Teams APIs return user IDs in multiple formats. The `extractObjectId()` function
 ```
 The two user object IDs (GUIDs) are sorted lexicographically. This format works for internal users. External/guest users may require a different format (not yet researched).
 
-### Session Persistence
-Playwright's `storageState()` is used to save browser session state after login. This includes:
-- Session cookies (for messaging APIs)
-- MSAL tokens in localStorage (for search and people APIs)
-- Tokens are extracted and cached for direct API use
-
-### Credential Security
-Session state and token cache files are protected by:
-1. **Encryption at rest**: AES-256-GCM encryption using a key derived from machine-specific values (hostname + username)
-2. **File permissions**: Restrictive 0o600 permissions (owner read/write only)
-3. **Automatic migration**: Existing plaintext files are automatically encrypted on first read
-
 ## MCP Tools
+
+### Overview
 
 | Tool | Purpose |
 |------|---------|
@@ -237,7 +233,9 @@ Session state and token cache files are protected by:
 
 The toolset follows a **minimal tool philosophy**: fewer, more powerful tools that AI can compose together. Rather than convenience wrappers for common patterns, the AI builds queries using search operators.
 
-### teams_search Parameters
+### Tool Reference
+
+#### teams_search
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -307,7 +305,7 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 The `conversationId` enables replying to search results via `teams_send_message`.
 The `messageLink` is a direct URL to open the message in Teams (format: `https://teams.microsoft.com/l/message/{conversationId}/{timestamp}`).
 
-### teams_send_message Parameters
+#### teams_send_message
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -355,7 +353,7 @@ teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
 
 **Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
 
-### teams_reply_to_thread Parameters
+#### teams_reply_to_thread
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -383,11 +381,11 @@ The tool uses the provided `messageId` directly as the thread root. In Teams cha
 - `threadRootMessageId` - The message ID used for the reply
 - `conversationId` - The channel ID
 
-### teams_get_me Parameters
+#### teams_get_me
 
 No parameters. Returns current user's profile including `id`, `mri`, `email`, `displayName`, and `tenantId`.
 
-### teams_get_frequent_contacts Parameters
+#### teams_get_frequent_contacts
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -399,7 +397,7 @@ No parameters. Returns current user's profile including `id`, `mri`, `email`, `d
 
 **Use case:** When a user refers to someone by first name (e.g., "What's Rob been up to?"), call this tool first to get a ranked list of frequent contacts. Match the name against this list to resolve ambiguity before searching messages.
 
-### teams_search_people Parameters
+#### teams_search_people
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -411,7 +409,7 @@ No parameters. Returns current user's profile including `id`, `mri`, `email`, `d
 
 Use this when searching for a specific person by name or email, rather than getting the user's common contacts.
 
-### teams_get_favorites Parameters
+#### teams_get_favorites
 
 No parameters.
 
@@ -426,13 +424,13 @@ Name sources by type:
 - **Chats with topic**: The user-set chat topic
 - **Chats without topic**: Participant names extracted from recent messages (e.g., "Smith, John, Jones, Sarah + 2 more")
 
-### teams_add_favorite / teams_remove_favorite Parameters
+#### teams_add_favorite / teams_remove_favorite
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | conversationId | string | required | The conversation ID to pin/unpin |
 
-### teams_save_message / teams_unsave_message Parameters
+#### teams_save_message / teams_unsave_message
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -441,7 +439,7 @@ Name sources by type:
 
 **Note:** These tools use the same session cookie authentication as messaging.
 
-### teams_get_thread Parameters
+#### teams_get_thread
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -468,7 +466,7 @@ Name sources by type:
 
 **Note:** Messages are sorted oldest-first. This uses the same session cookie authentication as messaging.
 
-### teams_find_channel Parameters
+#### teams_find_channel
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -499,7 +497,7 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 
 **Note:** The org-wide search uses a typeahead/autocomplete API which may not find all channels, especially with multi-word queries. Your own team channels are searched reliably via client-side filtering.
 
-### teams_get_chat Parameters
+#### teams_get_chat
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -521,7 +519,7 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 
 **Technical note:** The conversation ID format for 1:1 chats is `19:{id1}_{id2}@unq.gbl.spaces` where the two user object IDs are sorted lexicographically. This is a predictable format - Teams creates the conversation implicitly when the first message is sent.
 
-### teams_edit_message Parameters
+#### teams_edit_message
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -542,7 +540,7 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 2. teams_edit_message conversationId="19:abc@thread.tacv2" messageId="1769276832046" content="Updated text"
 ```
 
-### teams_delete_message Parameters
+#### teams_delete_message
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -564,7 +562,7 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 teams_delete_message conversationId="19:abc@thread.tacv2" messageId="1769276832046"
 ```
 
-### teams_get_unread Parameters
+#### teams_get_unread
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -598,7 +596,7 @@ teams_get_unread
 teams_get_unread conversationId="19:abc@thread.tacv2"
 ```
 
-### teams_mark_read Parameters
+#### teams_mark_read
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -617,7 +615,7 @@ teams_get_unread conversationId="19:abc@thread.tacv2"
 teams_mark_read conversationId="19:abc@thread.tacv2" messageId="1769276832046"
 ```
 
-### teams_get_activity Parameters
+#### teams_get_activity
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -648,7 +646,25 @@ teams_get_activity
 teams_get_activity limit=100
 ```
 
-## Development Commands
+#### teams_login
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| forceNew | boolean | false | If true, clears existing session and forces fresh login |
+
+Opens a visible browser window for the user to authenticate with Microsoft. After successful login, the session is saved for subsequent API calls.
+
+#### teams_status
+
+No parameters. Returns authentication status for all APIs:
+- `directApi` - Substrate search token status (available, expiry time, minutes remaining)
+- `messaging` - Whether messaging cookies are available
+- `favorites` - Whether favorites API auth is available
+- `session` - Whether session file exists and if it's likely expired
+
+## Development
+
+### Commands
 
 ```bash
 npm run research      # Explore Teams APIs (visible browser, logs network calls)
@@ -658,11 +674,9 @@ npm run lint          # Run ESLint (also lint:fix to auto-fix)
 npm start             # Run compiled MCP server
 ```
 
-## Testing Tools
+### Testing
 
-Several CLI tools are available for testing and debugging:
-
-### MCP Protocol Test Harness
+#### MCP Protocol Test Harness
 
 Tests the server through the actual MCP protocol using in-memory transports. This verifies the full MCP layer works correctly, not just the underlying functions.
 
@@ -684,7 +698,7 @@ npm run test:mcp -- me                               # teams_get_me
 npm run test:mcp -- login                            # teams_login
 npm run test:mcp -- send "Hello from MCP!"           # teams_send_message
 npm run test:mcp -- send "Message" --to "conv-id"
-npm run test:mcp -- reply "Thanks!" --to "channel-id" --message "msg-id"  # teams_reply_to_thread (simpler)
+npm run test:mcp -- reply "Thanks!" --to "channel-id" --message "msg-id"
 npm run test:mcp -- people "john smith"              # teams_search_people
 npm run test:mcp -- favorites                        # teams_get_favorites
 npm run test:mcp -- contacts                         # teams_get_frequent_contacts
@@ -693,18 +707,18 @@ npm run test:mcp -- chat "user-guid-or-mri"          # teams_get_chat
 npm run test:mcp -- thread --to "conv-id"            # teams_get_thread
 npm run test:mcp -- save --to "conv-id" --message "msg-id"
 npm run test:mcp -- unsave --to "conv-id" --message "msg-id"
-npm run test:mcp -- unread                                 # teams_get_unread (aggregate)
-npm run test:mcp -- unread --to "conv-id"                  # teams_get_unread (specific)
-npm run test:mcp -- markread --to "conv-id" --message "msg-id"  # teams_mark_read
-npm run test:mcp -- thread --to "conv-id" --markRead       # teams_get_thread with mark read
-npm run test:mcp -- activity                               # teams_get_activity
-npm run test:mcp -- activity --limit 10                    # teams_get_activity with limit
+npm run test:mcp -- unread                           # teams_get_unread (aggregate)
+npm run test:mcp -- unread --to "conv-id"            # teams_get_unread (specific)
+npm run test:mcp -- markread --to "conv-id" --message "msg-id"
+npm run test:mcp -- thread --to "conv-id" --markRead
+npm run test:mcp -- activity                         # teams_get_activity
+npm run test:mcp -- activity --limit 10
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json
 ```
 
-### Direct CLI Tools
+#### Direct CLI Tools
 
 ```bash
 # Check session status
@@ -730,7 +744,79 @@ npm run cli -- login
 npm run cli -- login --force  # Clear session and re-login
 ```
 
-## Common Issues and Solutions
+#### Unit Tests
+
+The project uses Vitest for unit testing pure functions. Tests focus on outcomes, not implementations.
+
+```bash
+npm test              # Run all tests once
+npm run test:watch    # Run tests in watch mode
+npm run test:coverage # Run tests with coverage report
+npm run typecheck     # TypeScript type checking only
+```
+
+**Test Structure:**
+- **`src/utils/parsers.ts`**: Pure parsing functions extracted for testability
+- **`src/utils/parsers.test.ts`**: Unit tests for all parsing functions
+- **`src/__fixtures__/api-responses.ts`**: Mock API response data based on real API structures
+
+**What's Tested:**
+- HTML stripping and entity decoding (`stripHtml`)
+- Teams deep link generation (`buildMessageLink`)
+- Message timestamp extraction (`extractMessageTimestamp`)
+- Person suggestion parsing (`parsePersonSuggestion`)
+- Search result parsing (`parseV2Result`, `parseSearchResults`)
+- JWT profile extraction (`parseJwtProfile`)
+- Token expiry calculations (`calculateTokenStatus`)
+- People results parsing (`parsePeopleResults`)
+- Base64 GUID decoding (`decodeBase64Guid`)
+- User ID extraction from various formats (`extractObjectId`)
+
+#### Integration Testing
+
+For testing against the live Teams APIs:
+- Use `npm run test:mcp -- search "query"` to test via the full MCP protocol layer
+- Use `npm run cli -- search "query"` for quick testing of underlying functions
+- Use `npm run research` to explore new API patterns (logs all network traffic)
+
+The MCP test harness (`test:mcp`) uses the SDK's `InMemoryTransport` to connect a test client to the server in-process, verifying that tool definitions, input validation, and response formatting all work correctly through the protocol layer.
+
+#### CI/CD
+
+GitHub Actions runs on every push and PR:
+- Linting (`npm run lint`)
+- Type checking (`npm run typecheck`)
+- Unit tests (`npm test`)
+- Build (`npm run build`)
+- Documentation review (on main commits, debounced to 2 hours) - checks README/AGENTS.md accuracy against code
+
+See `.github/workflows/ci.yml` and `.github/workflows/doc-reviewer.yml` for workflow configurations.
+
+### Extending the MCP
+
+#### Adding New Tools
+
+1. Choose the appropriate tool file in `src/tools/` (or create a new one for a new category)
+2. Define the input schema with Zod
+3. Define the tool definition (MCP Tool interface)
+4. Implement the handler function returning `ToolResult`
+5. Export the registered tool and add it to the module's `*Tools` array
+6. Add the new array to `src/tools/registry.ts` if creating a new category
+7. Use `Result<T, McpError>` return types in underlying API modules
+8. Add shared constants to `src/constants.ts` if needed
+
+#### Adding New API Endpoints
+
+1. Add endpoint URL to `src/utils/api-config.ts`
+2. Create a function in the appropriate `src/api/*.ts` module
+3. Use `httpRequest()` from `src/utils/http.ts` for automatic retry and timeout handling
+4. Return `Result<T, McpError>` for type-safe error handling
+
+#### Capturing New API Endpoints
+
+Run `npm run research`, perform actions in Teams, and check the terminal output for captured requests.
+
+## Troubleshooting
 
 ### Session/Token Expired
 If API calls fail with authentication errors:
@@ -760,7 +846,9 @@ The link format is: `https://teams.microsoft.com/l/message/{threadId}/{messageTi
 
 Note: The `conversationId` returned in search results for threaded replies will be the thread ID (e.g., `19:0df465dd...@thread.tacv2`) not the channel ID (e.g., `19:-eGaQP4gB...@thread.tacv2`).
 
-## File Locations
+## Reference
+
+### File Locations
 
 Session files are created in the working directory where the server runs:
 
@@ -773,92 +861,11 @@ For npm installs, these files are created in the MCP client's working directory 
 Development files:
 - **API research docs**: `./docs/API-RESEARCH.md`
 
-## Extending the MCP
-
-### Adding New Tools
-1. Choose the appropriate tool file in `src/tools/` (or create a new one for a new category)
-2. Define the input schema with Zod
-3. Define the tool definition (MCP Tool interface)
-4. Implement the handler function returning `ToolResult`
-5. Export the registered tool and add it to the module's `*Tools` array
-6. Add the new array to `src/tools/registry.ts` if creating a new category
-7. Use `Result<T, McpError>` return types in underlying API modules
-8. Add shared constants to `src/constants.ts` if needed
-
-### Adding New API Endpoints
-1. Add endpoint URL to `src/utils/api-config.ts`
-2. Create a function in the appropriate `src/api/*.ts` module
-3. Use `httpRequest()` from `src/utils/http.ts` for automatic retry and timeout handling
-4. Return `Result<T, McpError>` for type-safe error handling
-
-### Capturing New API Endpoints
-Run `npm run research`, perform actions in Teams, and check the terminal output for captured requests.
-
-## Unit Testing
-
-The project uses Vitest for unit testing pure functions. Tests focus on outcomes, not implementations.
-
-### Running Tests
-
-```bash
-npm test              # Run all tests once
-npm run test:watch    # Run tests in watch mode
-npm run test:coverage # Run tests with coverage report
-npm run typecheck     # TypeScript type checking only
-```
-
-### Test Structure
-
-- **`src/utils/parsers.ts`**: Pure parsing functions extracted for testability
-- **`src/utils/parsers.test.ts`**: Unit tests for all parsing functions
-- **`src/__fixtures__/api-responses.ts`**: Mock API response data based on real API structures
-
-### What's Tested
-
-The unit tests cover:
-- HTML stripping and entity decoding (`stripHtml`)
-- Teams deep link generation (`buildMessageLink`)
-- Message timestamp extraction (`extractMessageTimestamp`)
-- Person suggestion parsing (`parsePersonSuggestion`)
-- Search result parsing (`parseV2Result`, `parseSearchResults`)
-- JWT profile extraction (`parseJwtProfile`)
-- Token expiry calculations (`calculateTokenStatus`)
-- People results parsing (`parsePeopleResults`)
-- Base64 GUID decoding (`decodeBase64Guid`)
-- User ID extraction from various formats (`extractObjectId`)
-
-### Adding New Tests
-
-When adding new parsing logic:
-1. Add the pure function to `src/utils/parsers.ts`
-2. Add fixture data to `src/__fixtures__/api-responses.ts` based on real API responses
-3. Write tests in `src/utils/parsers.test.ts` that verify expected outputs
-
-### CI/CD
-
-GitHub Actions runs on every push and PR:
-- Linting (`npm run lint`)
-- Type checking (`npm run typecheck`)
-- Unit tests (`npm test`)
-- Build (`npm run build`)
-- Documentation review (on main commits, debounced to 2 hours) - checks README/AGENTS.md accuracy against code
-
-See `.github/workflows/ci.yml` and `.github/workflows/doc-reviewer.yml` for workflow configurations.
-
-## Integration Testing
-
-For testing against the live Teams APIs:
-- Use `npm run test:mcp -- search "query"` to test via the full MCP protocol layer
-- Use `npm run cli -- search "query"` for quick testing of underlying functions
-- Use `npm run research` to explore new API patterns (logs all network traffic)
-
-The MCP test harness (`test:mcp`) uses the SDK's `InMemoryTransport` to connect a test client to the server in-process, verifying that tool definitions, input validation, and response formatting all work correctly through the protocol layer.
-
-## Key API Endpoints Discovered
+### API Endpoints
 
 From research, Teams uses these primary APIs:
 
-### Search & Query
+#### Search & Query
 | Endpoint | Purpose |
 |----------|---------|
 | `substrate.office.com/searchservice/api/v2/query` | Full message search with pagination |
@@ -866,7 +873,7 @@ From research, Teams uses these primary APIs:
 | `substrate.office.com/search/api/v1/suggestions?scenario=peoplecache` | Frequent contacts list |
 | `substrate.office.com/search/api/v1/suggestions?domain=TeamsChannel` | Organisation-wide channel search |
 
-### Messages
+#### Messages
 | Endpoint | Purpose |
 |----------|---------|
 | `teams.microsoft.com/api/csa/{region}/api/v1/containers/{id}/posts` | Channel messages |
@@ -877,7 +884,7 @@ From research, Teams uses these primary APIs:
 | `teams.microsoft.com/api/chatsvc/{region}/v1/threads/{id}/consumptionhorizons` | Get read receipts |
 | `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/properties?name=consumptionhorizon` | Mark as read |
 
-### People & Profile
+#### People & Profile
 | Endpoint | Purpose |
 |----------|---------|
 | `nam.loki.delve.office.com/api/v2/person` | Detailed person profile |
@@ -885,7 +892,7 @@ From research, Teams uses these primary APIs:
 | `nam.loki.delve.office.com/api/v1/oofstatus` | Out of office status |
 | `teams.microsoft.com/api/mt/part/{region}/beta/users/fetch` | Batch user lookup |
 
-### Files & Attachments
+#### Files & Attachments
 | Endpoint | Purpose |
 |----------|---------|
 | `substrate.office.com/AllFiles/api/users(...)/AllShared` | Files shared in conversation |
@@ -894,7 +901,7 @@ Regional identifiers: `amer`, `emea`, `apac`
 
 See `docs/API-RESEARCH.md` for full endpoint documentation with request/response examples.
 
-## Potential Future Tools
+### Potential Future Tools
 
 Based on API research, these tools could be implemented:
 
@@ -903,7 +910,7 @@ Based on API research, these tools could be implemented:
 | `teams_get_person` | Delve person API | Easy |
 | `teams_get_files` | AllFiles API | Medium |
 
-### Not Yet Feasible
+**Not Yet Feasible:**
 - **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata
 - **Chat list** - Partially addressed by `teams_get_favorites` (pinned chats) and `teams_get_frequent_contacts` (common contacts), but no full chat list API
 - **Presence/Status** - Real-time via WebSocket, not HTTP
