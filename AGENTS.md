@@ -906,7 +906,7 @@ Session files are created in the working directory where the server runs:
 For npm installs, these files are created in the MCP client's working directory (typically the user's home directory or project root).
 
 Development files:
-- **API research docs**: `./docs/API-RESEARCH.md`
+- **API reference**: `./docs/API-REFERENCE.md`
 
 ### API Endpoints
 
@@ -946,7 +946,7 @@ From research, Teams uses these primary APIs:
 
 Regional identifiers: `amer`, `emea`, `apac`
 
-See `docs/API-RESEARCH.md` for full endpoint documentation with request/response examples.
+See `docs/API-REFERENCE.md` for full endpoint documentation with request/response examples.
 
 ### Potential Future Tools
 
