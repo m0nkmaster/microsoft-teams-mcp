@@ -363,12 +363,12 @@ teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
 
 | Field | Description |
 |-------|-------------|
-| `messageId` | Client-generated ID (not used for threading) |
+| `messageId` | Client-generated ID (not useful for subsequent operations) |
 | `timestamp` | Server timestamp in milliseconds |
-| `threadReplyId` | Use this to reply to this message later (only for channel messages) |
+| `serverMessageId` | **Use this for reactions, edits, threading, etc.** (timestamp as string) |
 | `conversationId` | The conversation the message was sent to |
 
-**Important:** When replying to a newly-sent message (not from search), use `threadReplyId` from the send response - not `messageId`. The `threadReplyId` is the timestamp-based ID that Teams uses for threading.
+**Important:** When performing operations on a newly-sent message (reactions, edits, threading), use `serverMessageId` - not `messageId`. The `messageId` is client-generated and won't work with Teams APIs. The `serverMessageId` is the server-assigned timestamp-based ID.
 
 **Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
 
@@ -688,22 +688,29 @@ teams_get_activity limit=100
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | conversationId | string | required | The conversation containing the message |
-| messageId | string | required | The message ID to react to |
+| messageId | string | required | The server-assigned message ID (numeric timestamp string) |
 | emoji | string | required | The emoji key (e.g., "like", "heart") |
 
 **Response** includes confirmation of the reaction added.
+
+**Where to get the messageId:**
+- From `teams_send_message`: Use the `serverMessageId` field (NOT `messageId`)
+- From `teams_get_thread`: Use the `id` field from the message
+- From `teams_search`: Use the `messageId` field (already the correct format)
 
 **Example:**
 ```
 teams_add_reaction conversationId="19:abc@thread.tacv2" messageId="1769276832046" emoji="like"
 ```
 
+**Common mistake:** Using the `messageId` from `teams_send_message` will fail - that's a client-generated ID. Always use `serverMessageId` instead.
+
 #### teams_remove_reaction
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | conversationId | string | required | The conversation containing the message |
-| messageId | string | required | The message ID to remove the reaction from |
+| messageId | string | required | The server-assigned message ID (same as `teams_add_reaction`) |
 | emoji | string | required | The emoji key to remove |
 
 #### teams_login
