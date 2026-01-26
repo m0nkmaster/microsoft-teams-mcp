@@ -20,16 +20,38 @@ import { SESSION_EXPIRY_HOURS } from '../constants.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
+ * Gets the user's home directory with fallback.
+ * os.homedir() can throw in rare edge cases (missing env vars, broken passwd).
+ */
+function getHomeDirSafe(): string | null {
+  try {
+    return os.homedir();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Gets the user-specific config directory for msteams-mcp.
  * - Windows: %APPDATA%\msteams-mcp\ (e.g., C:\Users\name\AppData\Roaming\msteams-mcp\)
  * - macOS/Linux: ~/.msteams-mcp/
+ * - Fallback: ./msteams-mcp-data/ relative to package (legacy behaviour)
  */
 function getConfigDir(): string {
+  const homeDir = getHomeDirSafe();
+  
   if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'msteams-mcp');
+    const appData = process.env.APPDATA || (homeDir ? path.join(homeDir, 'AppData', 'Roaming') : null);
+    if (appData) {
+      return path.join(appData, 'msteams-mcp');
+    }
+  } else if (homeDir) {
+    return path.join(homeDir, '.msteams-mcp');
   }
-  return path.join(os.homedir(), '.msteams-mcp');
+  
+  // Fallback to package-relative directory if home directory unavailable
+  const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  return path.join(projectRoot, 'msteams-mcp-data');
 }
 
 export const PROJECT_ROOT = path.resolve(__dirname, '../..');
@@ -66,8 +88,12 @@ function migrateIfNeeded(legacyPath: string, newPath: string): void {
       fs.chmodSync(newPath, SECURE_FILE_MODE);
       // Remove legacy file after successful copy
       fs.unlinkSync(legacyPath);
-    } catch {
-      // Ignore migration errors - will just create new session
+    } catch (error) {
+      // Log migration errors for debugging, but continue - will just create new session
+      console.error(
+        `Failed to migrate ${path.basename(legacyPath)}:`,
+        error instanceof Error ? error.message : error
+      );
     }
   }
 }
