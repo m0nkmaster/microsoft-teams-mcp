@@ -251,12 +251,15 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 
 | Operator | Example | Description |
 |----------|---------|-------------|
-| `from:` | `from:sarah@company.com` | Messages from a person (use actual email) |
+| `from:` | `from:sarah@company.com` | Messages from a person (email or name) |
+| `to:` | `to:rob macdonald` | Messages to a person (use spaces, not dots/email) |
 | `sent:` | `sent:2026-01-20`, `sent:>=2026-01-15` | Messages by date (use explicit dates) |
-| `in:` | `in:project-alpha` | Messages in a channel |
+| `in:` | `budget in:EEC Leads` | Channel filter - only works reliably WITH content terms (no quotes!) |
+| `sent:today` | `sent:today` | Messages from today |
 | `"Name"` | `"Rob Smith"` | Find @mentions (display name in quotes) |
 | `NOT` | `NOT from:user@email.com` | Exclude results |
 | `hasattachment:` | `hasattachment:true` | Messages with files |
+| `is:` | `is:Messages`, `is:Meetings`, `is:Channels`, `is:Chats` | Filter by type (case-sensitive, plural) |
 
 **Note:** Results are sorted by recency, so date filters are often unnecessary.
 
@@ -266,11 +269,14 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 |---------|-----|-------------|
 | `@me` | Not a valid Teams operator | Use `teams_get_me` to get email/name, then search with those |
 | `from:me` | `me` is not recognised | `from:actual.email@company.com` |
-| `to:me` | Not supported | Search for `"Display Name"` to find @mentions |
-| `mentions:me` | Not supported | Search for `"Display Name"` to find @mentions |
+| `to:rob.macdonald` | Email format falls back to text search | Use `to:rob macdonald` (spaces, not dots) |
+| `mentions:` | Not a valid operator | Search for `"Display Name"` to find @mentions |
+| `is:meeting` | Must be plural with capital | Use `is:Meetings` (case-sensitive) |
+| `is:Group Chats` | Spaces break it | Use `is:Chats` (no "Group" variant exists) |
 | `sent:lastweek` | Not supported by Teams API | Use `sent:>=2026-01-18` or omit (results sorted by recency) |
-| `sent:today` | Unreliable | Use `sent:2026-01-25` or omit |
+| `in:EEC Leads` alone | Unreliable without content | Use `content in:EEC Leads` or `teams_get_thread` |
 | `sent:thisweek` | Not supported | Use date range like `sent:>=2026-01-20` |
+| `in:"EEC Leads"` | Quotes break the operator | `in:EEC Leads` (no quotes, full channel name) |
 
 **Common Patterns:**
 
