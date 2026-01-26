@@ -654,6 +654,7 @@ teams_get_activity limit=100
 npm run research      # Explore Teams APIs (visible browser, logs network calls)
 npm run dev           # Run MCP server in development mode
 npm run build         # Compile TypeScript
+npm run lint          # Run ESLint (also lint:fix to auto-fix)
 npm start             # Run compiled MCP server
 ```
 
@@ -836,6 +837,7 @@ When adding new parsing logic:
 ### CI/CD
 
 GitHub Actions runs on every push and PR:
+- Linting (`npm run lint`)
 - Type checking (`npm run typecheck`)
 - Unit tests (`npm test`)
 - Build (`npm run build`)
