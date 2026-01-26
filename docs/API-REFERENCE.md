@@ -1,6 +1,6 @@
 # Microsoft Teams API Reference
 
-Quick reference for the internal Teams APIs used by this MCP server. For detailed research notes, see [API-RESEARCH.md](./API-RESEARCH.md).
+Quick reference for the Teams APIs used by this MCP server. For detailed research notes, see [API-RESEARCH.md](./API-RESEARCH.md).
 
 ## Authentication
 
@@ -326,6 +326,6 @@ The two user object IDs (GUIDs) are sorted lexicographically. No API call needed
 
 3. **Thread replies** — The `;messageid=` URL suffix is required for channel thread replies. Chats don't have threading.
 
-4. **Token expiry** — MSAL tokens last ~1 hour. Proactive refresh triggers via API call, not page load.
+4. **Token expiry** — MSAL tokens last ~1 hour. Proactive refresh triggers via Substrate API call, not page load.
 
 5. **CSA vs chatsvc** — Different APIs need different auth. CSA needs the CSA token; chatsvc uses skypetoken.
