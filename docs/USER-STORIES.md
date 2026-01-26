@@ -146,6 +146,44 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
+#### 2.5 Morning catch-up routine
+> "What do I need to know this morning?"
+
+**Flow:**
+1. Check activity feed for mentions, reactions, replies via `teams_get_activity`
+2. Check unread counts across favourites via `teams_get_unread`
+3. Optionally summarise key threads using `teams_get_thread`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_activity` | ✅ Implemented |
+| `teams_get_unread` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+
+**Status:** ✅ Works now - AI can combine activity feed + unread status to provide a comprehensive morning summary.
+
+---
+
+#### 2.6 Cross-channel summary
+> "What's happening across all my project channels?"
+
+**Flow:**
+1. Get favourites or find multiple channels via `teams_find_channel`
+2. Get recent messages from each using `teams_get_thread`
+3. AI summarises activity across all channels
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_find_channel` | ✅ Implemented |
+| `teams_get_favorites` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+
+**Status:** ✅ Works now - requires multiple API calls but AI can orchestrate.
+
+---
+
 ### 3. Favourites & Navigation
 
 #### 3.1 List favourite channels
@@ -277,9 +315,134 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
-### 6. Files & Attachments
+### 6. Reactions & Engagement
 
-#### 6.1 Find shared files
+#### 6.1 React to a message
+> "Give a thumbs up to Sarah's message about the release"
+
+**Flow:**
+1. Search for the message to get `conversationId` and `messageId`
+2. Add reaction using `teams_add_reaction` with emoji key
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+| `teams_add_reaction` | ✅ Implemented |
+
+**Status:** ✅ Works now - supports standard reactions (`like`, `heart`, `laugh`, `surprised`, `sad`, `angry`) plus any emoji by key.
+
+---
+
+#### 6.2 Remove a reaction
+> "Remove my like from that message"
+
+**Flow:**
+1. Find the message via search
+2. Remove reaction using `teams_remove_reaction`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+| `teams_remove_reaction` | ✅ Implemented |
+
+**Status:** ✅ Works now.
+
+---
+
+#### 6.3 Find custom emojis
+> "What custom emojis does our org have?"
+
+**Flow:**
+1. Search for emojis by keyword using `teams_search_emoji`
+2. Returns both standard and organisation-specific custom emojis
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search_emoji` | ✅ Implemented |
+
+**Status:** ✅ Works now - searches standard Teams emojis and org-specific custom emojis.
+
+---
+
+### 7. Message Management
+
+#### 7.1 Edit a message
+> "Fix the typo in my last message - change 'teh' to 'the'"
+
+**Flow:**
+1. Get recent messages from the conversation via `teams_get_thread`
+2. Find your message that needs editing
+3. Edit using `teams_edit_message` with corrected content
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_thread` | ✅ Implemented |
+| `teams_edit_message` | ✅ Implemented |
+
+**Status:** ✅ Works now - can only edit your own messages.
+
+---
+
+#### 7.2 Delete a message
+> "Delete that message I just sent"
+
+**Flow:**
+1. Get recent messages from the conversation via `teams_get_thread`
+2. Find your message
+3. Delete using `teams_delete_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_thread` | ✅ Implemented |
+| `teams_delete_message` | ✅ Implemented |
+
+**Status:** ✅ Works now - can only delete your own messages (soft delete).
+
+---
+
+#### 7.3 Send a note to yourself
+> "Make a note to myself about the Friday deadline"
+
+**Flow:**
+1. Send message using `teams_send_message` with default `conversationId` (48:notes)
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_send_message` | ✅ Implemented |
+
+**Status:** ✅ Works now - defaults to self-chat when no `conversationId` provided.
+
+---
+
+#### 7.4 Save a message for later
+> "Bookmark that important message about the API changes"
+
+**Flow:**
+1. Search for the message to get `conversationId` and `messageId`
+2. Save using `teams_save_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+| `teams_save_message` | ✅ Implemented |
+| `teams_unsave_message` | ✅ Implemented |
+
+**Status:** ✅ Works now.
+
+**Note:** There's no single API endpoint to retrieve all saved messages - the saved flag is per-message in rcMetadata.
+
+---
+
+### 8. Files & Attachments
+
+#### 8.1 Find shared files
 > "Find the Excel file Sarah shared last week"
 
 **Flow:**
@@ -296,9 +459,27 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
-### 7. Calendar & Meetings (Stretch Goal)
+#### 8.2 Find messages with attachments
+> "Find messages where someone shared a file about the project"
 
-#### 7.1 Check upcoming meetings
+**Flow:**
+1. Search using `hasattachment:true` operator combined with keywords
+2. Results show messages that have files attached
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+
+**Status:** ✅ Works now - use `hasattachment:true` operator to filter.
+
+**Example:** `hasattachment:true from:sarah project proposal`
+
+---
+
+### 9. Calendar & Meetings (Stretch Goal)
+
+#### 9.1 Check upcoming meetings
 > "What meetings do I have today?"
 
 **Flow:**
@@ -314,67 +495,235 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
+#### 9.2 Get meeting chat context
+> "What was discussed in yesterday's standup meeting chat?"
+
+**Flow:**
+1. Search for the meeting by name: `in:"Daily Standup"`
+2. Get the conversation thread using `teams_get_thread`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+
+**Status:** ✅ Works now - meeting chats are searchable and readable like any other conversation.
+
+---
+
+### 10. Advanced AI Workflows
+
+These patterns combine multiple tools for sophisticated interactions.
+
+#### 10.1 Forward a message to someone
+> "Forward John's budget update to Sarah"
+
+**Flow:**
+1. Search for John's message about budget
+2. Find Sarah using `teams_search_people`
+3. Get chat ID using `teams_get_chat`
+4. Send message with quoted content using `teams_send_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+| `teams_search_people` | ✅ Implemented |
+| `teams_get_chat` | ✅ Implemented |
+| `teams_send_message` | ✅ Implemented |
+
+**Status:** ✅ Works now - AI composes the forward by quoting original message content.
+
+---
+
+#### 10.2 Draft and send a message
+> "Help me write a message to the team about the delayed release"
+
+**Flow:**
+1. AI drafts message content based on user's intent
+2. User reviews and approves
+3. Find channel/chat using `teams_find_channel` or `teams_get_chat`
+4. Send using `teams_send_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_find_channel` | ✅ Implemented |
+| `teams_get_chat` | ✅ Implemented |
+| `teams_send_message` | ✅ Implemented |
+
+**Status:** ✅ Works now - AI can draft, user confirms, then send.
+
+---
+
+#### 10.3 Respond to all pending questions
+> "Reply to all questions I haven't answered today"
+
+**Flow:**
+1. Get user info via `teams_get_me`
+2. Search for mentions with questions: `"Display Name" ? NOT from:email`
+3. For each result, check thread via `teams_get_thread` for your reply
+4. Draft and send replies to unanswered questions
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_me` | ✅ Implemented |
+| `teams_search` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+| `teams_reply_to_thread` | ✅ Implemented |
+
+**Status:** ✅ Works now - AI orchestrates the full workflow.
+
+---
+
+#### 10.4 Check in on a person's activity
+> "What's Sarah been up to lately?"
+
+**Flow:**
+1. Find Sarah's email via `teams_search_people`
+2. Search for messages from her: `from:sarah@company.com`
+3. Optionally check frequent contacts to see if you interact often
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search_people` | ✅ Implemented |
+| `teams_search` | ✅ Implemented |
+| `teams_get_frequent_contacts` | ✅ Implemented |
+
+**Status:** ✅ Works now.
+
+---
+
+#### 10.5 Pin important conversation after finding it
+> "Find the project-alpha channel and pin it to my favourites"
+
+**Flow:**
+1. Find channel via `teams_find_channel`
+2. Add to favourites using `teams_add_favorite`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_find_channel` | ✅ Implemented |
+| `teams_add_favorite` | ✅ Implemented |
+
+**Status:** ✅ Works now.
+
+---
+
+#### 10.6 Acknowledge messages quickly
+> "React with thumbs up to the last 3 messages in the support channel"
+
+**Flow:**
+1. Find channel via `teams_find_channel`
+2. Get recent messages via `teams_get_thread`
+3. Add reactions to each using `teams_add_reaction`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_find_channel` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+| `teams_add_reaction` | ✅ Implemented |
+
+**Status:** ✅ Works now.
+
+---
+
 ## Implementation Priority
 
 Based on user value and API readiness:
 
-### Phase 1 - Quick Wins (APIs ready)
-| Story | Tools Needed | Effort |
-|-------|-------------|--------|
-| 1.2 Search with filters | None | ✅ Done |
+### Phase 1 - Core Messaging ✅ Complete
+| Story | Tools | Status |
+|-------|-------|--------|
+| 1.1 Find & reply | `teams_search`, `teams_reply_to_thread` | ✅ Done |
+| 1.2 Search with filters | `teams_search` operators | ✅ Done |
+| 4.1 Find and message someone | `teams_search_people`, `teams_get_chat`, `teams_send_message` | ✅ Done |
 | 4.3 Get my profile | `teams_get_me` | ✅ Done |
-| 5.2 Find @mentions | `teams_get_me` + search operators | ✅ Done |
-| 1.1 Find & reply | `conversationId` in search results | ✅ Done |
+| 7.3 Send notes to yourself | `teams_send_message` default | ✅ Done |
 
-### Phase 2 - Core Functionality
-| Story | Tools Needed | Effort |
-|-------|-------------|--------|
-| 4.1 Find person | `teams_search_people` + `teams_get_chat` | ✅ Done |
-| 2.3 Channel catchup | `teams_find_channel` + `teams_get_thread` | ✅ Done |
-| 6.1 Find files | Files API | Medium |
-
-### Phase 3 - Advanced Features
-| Story | Tools Needed | Effort |
-|-------|-------------|--------|
-| 2.1 Unanswered questions | `teams_get_thread` | ✅ Done (AI filters results) |
-| 2.2 Unread messages | `teams_get_unread` + `teams_mark_read` | ✅ Done |
+### Phase 2 - Catch-Up & Context ✅ Complete
+| Story | Tools | Status |
+|-------|-------|--------|
+| 2.1 Review questions asked of me | `teams_search`, `teams_get_thread` | ✅ Done |
+| 2.2 Catch up on unread | `teams_get_unread`, `teams_mark_read` | ✅ Done |
+| 2.3 Channel catchup | `teams_find_channel`, `teams_get_thread` | ✅ Done |
 | 2.4 Check for replies | `teams_get_thread` | ✅ Done |
-| 3.1 Favourites | `teams_get_favorites` | ✅ Done |
+| 2.5 Morning catch-up | `teams_get_activity`, `teams_get_unread` | ✅ Done |
 | 5.1 Activity feed | `teams_get_activity` | ✅ Done |
+| 5.2 Find @mentions | Search operators | ✅ Done |
 
-### Phase 4 - Stretch Goals
+### Phase 3 - Organisation & Engagement ✅ Complete
+| Story | Tools | Status |
+|-------|-------|--------|
+| 3.1 Favourites | `teams_get_favorites`, `teams_add_favorite`, `teams_remove_favorite` | ✅ Done |
+| 6.1 React to messages | `teams_add_reaction`, `teams_remove_reaction` | ✅ Done |
+| 6.3 Search emojis | `teams_search_emoji` | ✅ Done |
+| 7.1 Edit messages | `teams_edit_message` | ✅ Done |
+| 7.2 Delete messages | `teams_delete_message` | ✅ Done |
+| 7.4 Save messages | `teams_save_message`, `teams_unsave_message` | ✅ Done |
+
+### Phase 4 - Remaining Gaps
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
-| 4.2 Presence | WebSocket | Very High |
-| 7.1 Calendar | Outlook APIs | High |
+| 3.2 Recent chats list | No dedicated API | Blocked |
+| 4.2 Presence/availability | WebSocket (not HTTP) | Very High |
+| 8.1 Find shared files | AllFiles API | Medium |
+| 9.1 Calendar | Outlook APIs | High |
 
 ---
 
-## Next Steps
+## Implementation Status
 
-### Completed
-- ~~**Implement `teams_get_me`**~~ ✅ Done
-- ~~**Add conversationId extraction**~~ ✅ Done - search results include `conversationId`
-- ~~**Implement `teams_search_people`**~~ ✅ Done - enables "message X person" flows
-- ~~**Implement `teams_get_frequent_contacts`**~~ ✅ Done - resolves ambiguous names
-- ~~**Implement favourites tools**~~ ✅ Done - `teams_get_favorites`, `teams_add_favorite`, `teams_remove_favorite`
-- ~~**Implement save/unsave message**~~ ✅ Done - `teams_save_message`, `teams_unsave_message`
-- ~~**Implement `teams_get_thread`**~~ ✅ Done - Get replies to a specific message
-- ~~**Implement `teams_find_channel`**~~ ✅ Done - Find channels across the organisation
-- ~~**Implement `teams_get_chat`**~~ ✅ Done - Get conversation ID for 1:1 chats (enables messaging new contacts)
-- ~~**Implement thread replies**~~ ✅ Done - `teams_reply_to_thread` for simple replies, `teams_send_message` with `replyToMessageId` for manual control
+### All Core Features Complete ✅
 
-### Remaining
-1. **Implement `teams_get_files`** - List files shared in a conversation (API discovered, implementation pending)
+The following tools are fully implemented and working:
 
-### Recently Completed
-- ~~**Implement `teams_get_unread`**~~ ✅ Done - Check unread counts (aggregate or per-conversation)
-- ~~**Implement `teams_mark_read`**~~ ✅ Done - Mark conversations as read
-- ~~**Implement `teams_get_activity`**~~ ✅ Done - Get activity feed (mentions, reactions, replies)
+**Search & Discovery:**
+- `teams_search` - Full-text search with operators
+- `teams_find_channel` - Find channels by name
+- `teams_search_people` - Find people by name/email
+- `teams_get_frequent_contacts` - Ranked frequent contacts
 
-### No Longer Needed
-- ~~**`teams_get_channel_posts`**~~ - Channel catchup now works via `teams_find_channel` + `teams_get_thread`
-- ~~**`teams_get_or_create_chat`**~~ - Implemented as `teams_get_chat` (conversation ID is predictable, no creation needed)
+**Messaging:**
+- `teams_send_message` - Send messages (chats, channels, self-notes)
+- `teams_reply_to_thread` - Reply to channel threads
+- `teams_get_thread` - Read conversation messages
+- `teams_edit_message` - Edit your own messages
+- `teams_delete_message` - Delete your own messages
+
+**Reactions:**
+- `teams_add_reaction` - React to messages
+- `teams_remove_reaction` - Remove reactions
+- `teams_search_emoji` - Find emoji keys
+
+**Organisation:**
+- `teams_get_favorites` / `teams_add_favorite` / `teams_remove_favorite`
+- `teams_save_message` / `teams_unsave_message`
+- `teams_get_unread` / `teams_mark_read`
+
+**Profile & Status:**
+- `teams_get_me` - Current user profile
+- `teams_get_activity` - Activity feed
+- `teams_status` - Auth status check
+- `teams_login` - Manual login
+
+**Chat Management:**
+- `teams_get_chat` - Get 1:1 conversation ID
+
+### Remaining Gaps
+
+| Feature | Blocker | Notes |
+|---------|---------|-------|
+| `teams_get_files` | Medium effort | AllFiles API discovered, implementation pending |
+| Recent chats list | No dedicated API | Use `teams_get_favorites` + `teams_get_frequent_contacts` as workaround |
+| Presence/availability | WebSocket only | Real-time presence not available via HTTP |
+| Calendar integration | Separate auth | Requires Outlook APIs |
+| Get all saved messages | No single endpoint | Saved flag is per-message in rcMetadata |
 
 ---
 
