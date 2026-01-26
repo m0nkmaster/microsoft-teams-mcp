@@ -290,7 +290,7 @@ async function callTool(
 /**
  * Pretty-prints a tool response based on common patterns
  */
-function prettyPrintResponse(response: Record<string, unknown>, toolName: string): void {
+function prettyPrintResponse(response: Record<string, unknown>, _toolName: string): void {
   // Check for error
   if (response.success === false) {
     log(`❌ Failed: ${response.error || 'Unknown error'}`);

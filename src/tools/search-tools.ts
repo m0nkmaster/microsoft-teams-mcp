@@ -50,7 +50,7 @@ const searchToolDefinition: Tool = {
     properties: {
       query: {
         type: 'string',
-        description: 'Search query with optional operators. Examples: "budget report", "from:sarah@co.com", "\"Rob Smith\" NOT from:rob@co.com" (find @mentions of Rob). For date filtering use sent:YYYY-MM-DD or sent:>=YYYY-MM-DD (e.g., sent:>=2026-01-20). IMPORTANT: "@me", "from:me", "to:me" do NOT work - use teams_get_me first to get actual email/displayName. Also "sent:lastweek" and "sent:today" do NOT work - use explicit dates or omit (results are sorted by recency).',
+        description: 'Search query with optional operators. Examples: "budget report", "from:sarah@co.com", \'"Rob Smith" NOT from:rob@co.com\' (find @mentions of Rob). For date filtering use sent:YYYY-MM-DD or sent:>=YYYY-MM-DD (e.g., sent:>=2026-01-20). IMPORTANT: "@me", "from:me", "to:me" do NOT work - use teams_get_me first to get actual email/displayName. Also "sent:lastweek" and "sent:today" do NOT work - use explicit dates or omit (results are sorted by recency).',
       },
       maxResults: {
         type: 'number',

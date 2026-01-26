@@ -8,7 +8,7 @@ import { httpRequest } from '../utils/http.js';
 import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
-import { getUserDisplayName, extractMessageAuth } from '../auth/token-extractor.js';
+import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp } from '../utils/parsers.js';
 import { DEFAULT_ACTIVITY_LIMIT } from '../constants.js';
@@ -837,7 +837,6 @@ export async function getUnreadStatus(
 
   // Count messages after the last read position
   let unreadCount = 0;
-  let foundLastRead = false;
   let latestMessageId: string | undefined;
 
   // Messages are sorted oldest-first, so reverse to process newest-first
@@ -849,7 +848,6 @@ export async function getUnreadStatus(
     }
 
     if (lastReadId && msg.id === lastReadId) {
-      foundLastRead = true;
       break;
     }
 
