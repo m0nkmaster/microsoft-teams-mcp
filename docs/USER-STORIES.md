@@ -47,7 +47,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_send_message` | ✅ Implemented - with replyToMessageId for manual control |
 | `teams_get_thread` | ✅ Implemented - get surrounding messages |
 
-**Status:** ✅ Fully working - search returns `conversationId` and `messageId`, use `teams_reply_to_thread` to reply to channel threads (it finds the thread root automatically), or `teams_get_thread` for context first.
+**Status:** ✅ Implemented - search returns `conversationId` and `messageId`, use `teams_reply_to_thread` to reply to channel threads (it finds the thread root automatically), or `teams_get_thread` for context first.
 
 ---
 
@@ -64,7 +64,7 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_search` | ✅ Implemented (explicit date operators work) |
 
-**Status:** ✅ Works with explicit dates. Note: `sent:lastweek` does NOT work - use `sent:>=YYYY-MM-DD` or omit.
+**Status:** ✅ Implemented. Explicit dates only. Note: `sent:lastweek` does NOT work - use `sent:>=YYYY-MM-DD` or omit.
 
 ---
 
@@ -85,7 +85,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_me` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented - check if I replied |
 
-**Status:** ✅ Now possible - search for mentions with "?", then use `teams_get_thread` on each result to check if you've replied. AI can filter to show only unanswered.
+**Status:** ✅ Implemented - search for mentions with "?", then use `teams_get_thread` on each result to check if you've replied. AI can filter to show only unanswered.
 
 ---
 
@@ -104,7 +104,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_thread` | ✅ Implemented (with optional markRead flag) |
 | `teams_mark_read` | ✅ Implemented |
 
-**Status:** ✅ Works now - can check unread counts across favourites or for specific conversations, then read and mark as read.
+**Status:** ✅ Implemented - can check unread counts across favourites or for specific conversations, then read and mark as read.
 
 ---
 
@@ -122,7 +122,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_find_channel` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented (works with channel IDs) |
 
-**Status:** ✅ Works now - use `teams_find_channel` to discover channels by name, then `teams_get_thread` with the returned `channelId` to get messages.
+**Status:** ✅ Implemented - use `teams_find_channel` to discover channels by name, then `teams_get_thread` with the returned `channelId` to get messages.
 
 ---
 
@@ -140,7 +140,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_search` | ✅ Implemented (returns conversationId) |
 | `teams_get_thread` | ✅ Implemented |
 
-**Status:** ✅ Works now - search returns `conversationId`, then `teams_get_thread` retrieves all messages in that thread.
+**Status:** ✅ Implemented - search returns `conversationId`, then `teams_get_thread` retrieves all messages in that thread.
 
 **Note:** Reactions (👍) are still not surfaced by this API. Only actual message replies are returned.
 
@@ -161,7 +161,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_unread` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented |
 
-**Status:** ✅ Works now - AI can combine activity feed + unread status to provide a comprehensive morning summary.
+**Status:** ✅ Implemented - AI can combine activity feed + unread status to provide a comprehensive morning summary.
 
 ---
 
@@ -180,7 +180,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_favorites` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented |
 
-**Status:** ✅ Works now - requires multiple API calls but AI can orchestrate.
+**Status:** ✅ Implemented - requires multiple API calls but AI can orchestrate.
 
 ---
 
@@ -200,7 +200,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_add_favorite` | ✅ Implemented |
 | `teams_remove_favorite` | ✅ Implemented |
 
-**Status:** ✅ Works now - can list, add, and remove favourites via the conversationFolders API.
+**Status:** ✅ Implemented - can list, add, and remove favourites via the conversationFolders API.
 
 ---
 
@@ -242,7 +242,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_chat` | ✅ Implemented |
 | `teams_send_message` | ✅ Implemented |
 
-**Status:** ✅ Fully working - can find anyone and start a new 1:1 chat with them.
+**Status:** ✅ Implemented - can find anyone and start a new 1:1 chat with them.
 
 **Technical Note:** The conversation ID for 1:1 chats follows a predictable format: `19:{id1}_{id2}@unq.gbl.spaces` where the two user object IDs are sorted lexicographically. The `teams_get_chat` tool computes this ID from the user's object ID (from people search). The conversation is created implicitly when the first message is sent.
 
@@ -276,7 +276,7 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_get_me` | ✅ Implemented |
 
-**Status:** ✅ Works now - returns `id`, `mri`, `email`, `displayName`, `tenantId`.
+**Status:** ✅ Implemented - returns `id`, `mri`, `email`, `displayName`, `tenantId`.
 
 ---
 
@@ -294,7 +294,7 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_get_activity` | ✅ Implemented |
 
-**Status:** ✅ Works now - returns mentions, reactions, replies with direct links to open in Teams.
+**Status:** ✅ Implemented - returns mentions, reactions, replies with direct links to open in Teams.
 
 ---
 
@@ -311,7 +311,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_search` | ✅ Implemented |
 | `teams_get_me` | ✅ Implemented |
 
-**Status:** ✅ Works now using search operators with user's display name.
+**Status:** ✅ Implemented using search operators with user's display name.
 
 ---
 
@@ -330,7 +330,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_search` | ✅ Implemented |
 | `teams_add_reaction` | ✅ Implemented |
 
-**Status:** ✅ Works now - supports standard reactions (`like`, `heart`, `laugh`, `surprised`, `sad`, `angry`) plus any emoji by key.
+**Status:** ✅ Implemented - supports standard reactions (`like`, `heart`, `laugh`, `surprised`, `sad`, `angry`) plus any emoji by key.
 
 ---
 
@@ -347,7 +347,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_search` | ✅ Implemented |
 | `teams_remove_reaction` | ✅ Implemented |
 
-**Status:** ✅ Works now.
+**Status:** ✅ Implemented.
 
 ---
 
@@ -363,7 +363,7 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_search_emoji` | ✅ Implemented |
 
-**Status:** ✅ Works now - searches standard Teams emojis and org-specific custom emojis.
+**Status:** ✅ Implemented - searches standard Teams emojis and org-specific custom emojis.
 
 ---
 
@@ -383,7 +383,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_thread` | ✅ Implemented |
 | `teams_edit_message` | ✅ Implemented |
 
-**Status:** ✅ Works now - can only edit your own messages.
+**Status:** ✅ Implemented - can only edit your own messages.
 
 ---
 
@@ -401,7 +401,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_get_thread` | ✅ Implemented |
 | `teams_delete_message` | ✅ Implemented |
 
-**Status:** ✅ Works now - can only delete your own messages (soft delete).
+**Status:** ✅ Implemented - can only delete your own messages (soft delete).
 
 ---
 
@@ -416,7 +416,7 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_send_message` | ✅ Implemented |
 
-**Status:** ✅ Works now - defaults to self-chat when no `conversationId` provided.
+**Status:** ✅ Implemented - defaults to self-chat when no `conversationId` provided.
 
 ---
 
@@ -434,7 +434,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_save_message` | ✅ Implemented |
 | `teams_unsave_message` | ✅ Implemented |
 
-**Status:** ✅ Works now.
+**Status:** ✅ Implemented.
 
 **Note:** There's no single API endpoint to retrieve all saved messages - the saved flag is per-message in rcMetadata.
 
@@ -471,7 +471,7 @@ This document defines user stories and personas to guide development of the Team
 |------|--------|
 | `teams_search` | ✅ Implemented |
 
-**Status:** ✅ Works now - use `hasattachment:true` operator to filter.
+**Status:** ✅ Implemented - use `hasattachment:true` operator to filter.
 
 **Example:** `hasattachment:true from:sarah project proposal`
 
@@ -508,7 +508,7 @@ This document defines user stories and personas to guide development of the Team
 | `teams_search` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented |
 
-**Status:** ✅ Works now - meeting chats are searchable and readable like any other conversation.
+**Status:** ✅ Implemented - meeting chats are searchable and readable like any other conversation.
 
 ---
 
@@ -533,7 +533,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_get_chat` | ✅ Implemented |
 | `teams_send_message` | ✅ Implemented |
 
-**Status:** ✅ Works now - AI composes the forward by quoting original message content.
+**Status:** ✅ Implemented - AI composes the forward by quoting original message content.
 
 ---
 
@@ -553,7 +553,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_get_chat` | ✅ Implemented |
 | `teams_send_message` | ✅ Implemented |
 
-**Status:** ✅ Works now - AI can draft, user confirms, then send.
+**Status:** ✅ Implemented - AI can draft, user confirms, then send.
 
 ---
 
@@ -574,7 +574,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_get_thread` | ✅ Implemented |
 | `teams_reply_to_thread` | ✅ Implemented |
 
-**Status:** ✅ Works now - AI orchestrates the full workflow.
+**Status:** ✅ Implemented - AI orchestrates the full workflow.
 
 ---
 
@@ -593,7 +593,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_search` | ✅ Implemented |
 | `teams_get_frequent_contacts` | ✅ Implemented |
 
-**Status:** ✅ Works now.
+**Status:** ✅ Implemented.
 
 ---
 
@@ -610,7 +610,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_find_channel` | ✅ Implemented |
 | `teams_add_favorite` | ✅ Implemented |
 
-**Status:** ✅ Works now.
+**Status:** ✅ Implemented.
 
 ---
 
@@ -629,7 +629,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_get_thread` | ✅ Implemented |
 | `teams_add_reaction` | ✅ Implemented |
 
-**Status:** ✅ Works now.
+**Status:** ✅ Implemented.
 
 ---
 
@@ -681,7 +681,7 @@ Based on user value and API readiness:
 
 ### All Core Features Complete ✅
 
-The following tools are fully implemented and working:
+The following tools are implemented:
 
 **Search & Discovery:**
 - `teams_search` - Full-text search with operators
@@ -729,7 +729,7 @@ The following tools are fully implemented and working:
 
 ## Notes
 
-### Search Operators (Already Working)
+### Search Operators (Supported)
 ```
 from:john.smith@company.com    # Messages from person (use actual email)
 in:general                     # Messages in channel
