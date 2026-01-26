@@ -417,7 +417,7 @@ async function handleSendMessage(
   // Include replyToMessageId in response if this was a thread reply
   if (input.replyToMessageId) {
     response.replyToMessageId = input.replyToMessageId;
-    response.note = 'Message posted as a reply to the thread.';
+    response.note = 'Message posted as a reply to the thread. Use serverMessageId (not messageId) for reactions, edits, or threading.';
   } else if (serverMessageId) {
     response.note = 'Use serverMessageId (not messageId) for reactions, edits, or threading.';
   }
