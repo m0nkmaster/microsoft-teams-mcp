@@ -1,16 +1,16 @@
 /**
- * Teams Chat Export Script
+ * Teams Chat Export Script v2.0
  * 
  * Exports Microsoft Teams chat messages to Markdown format.
  * Run this in the browser console while viewing a Teams chat.
  * 
  * Features:
+ * - **API-first approach**: Uses Teams' internal chatsvc API for fast, reliable export
+ * - Falls back to DOM scraping if API fails
  * - Captures sender, timestamp, content
- * - Preserves links and reactions
+ * - Generates deep links to each message
+ * - Preserves reactions (via DOM fallback)
  * - Detects edited messages
- * - Expands and captures thread replies
- * - Filters out "Replied in thread" preview messages
- * - Sorts chronologically using ISO dates
  * - Filters by configurable date range
  * - Detects open threads and offers to export just the thread
  * 
@@ -19,23 +19,217 @@
  * 2. Navigate to the chat/channel to export
  * 3. Open DevTools (F12) → Console tab
  * 4. Paste this entire script and press Enter
- * 5. Configure days to capture and thread expansion
+ * 5. Configure days to capture
  * 6. Click Export
  */
 (async () => {
-  const chatTitle = document.querySelector('h2')?.textContent || 'Teams Chat';
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Configuration
+  // ─────────────────────────────────────────────────────────────────────────────
   
-  // Check if a thread is already open
-  const rightRail = document.querySelector('[data-tid="right-rail-message-pane-body"]');
-  const threadIsOpen = rightRail && rightRail.offsetParent !== null;
+  const REGIONS = ['amer', 'emea', 'apac'];
+  const API_PAGE_SIZE = 200; // Messages per API request
+  const MAX_API_PAGES = 10; // Max pages to fetch (2000 messages)
   
-  // Helper to extract messages from a pane
-  const extractFromPane = (pane) => {
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Utility Functions
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  /** Strips HTML tags and decodes entities. */
+  const stripHtml = (html) => {
+    if (!html) return '';
+    return html
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+  
+  /** Builds a deep link to a Teams message. */
+  const buildMessageLink = (conversationId, messageId) => {
+    if (!conversationId || !messageId) return null;
+    return `https://teams.microsoft.com/l/message/${encodeURIComponent(conversationId)}/${messageId}`;
+  };
+  
+  /** Extracts conversation ID from the current URL. */
+  const getConversationIdFromUrl = () => {
+    const url = new URL(window.location.href);
+    
+    // Try various URL parameter formats
+    let convId = url.searchParams.get('ctx')?.match(/ctx=([^&]+)/)?.[1];
+    if (!convId) convId = url.searchParams.get('conversationId');
+    if (!convId) convId = url.searchParams.get('threadId');
+    
+    // Try to extract from hash fragment
+    if (!convId && url.hash) {
+      const hashMatch = url.hash.match(/conversationId=([^&]+)/);
+      if (hashMatch) convId = decodeURIComponent(hashMatch[1]);
+    }
+    
+    // Try to find in page state (React component data)
+    if (!convId) {
+      const stateEl = document.querySelector('[data-tid="message-pane-node"]');
+      const convAttr = stateEl?.getAttribute('data-convid') || 
+                       stateEl?.closest('[data-convid]')?.getAttribute('data-convid');
+      if (convAttr) convId = convAttr;
+    }
+    
+    // Extract from localStorage Teams state
+    if (!convId) {
+      try {
+        const teamsState = localStorage.getItem('ts.teams');
+        if (teamsState) {
+          const parsed = JSON.parse(teamsState);
+          convId = parsed?.selectedConversation?.id;
+        }
+      } catch (e) { /* ignore */ }
+    }
+    
+    return convId;
+  };
+  
+  /** Gets the chat title from the page. */
+  const getChatTitle = () => {
+    return document.querySelector('h2')?.textContent || 
+           document.querySelector('[data-tid="chat-header-title"]')?.textContent ||
+           'Teams Chat';
+  };
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // API Functions
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  /** Tries to fetch messages via the chatsvc API. Returns null if it fails. */
+  const fetchMessagesViaApi = async (conversationId, options = {}) => {
+    const { limit = API_PAGE_SIZE, cutoffDate, onProgress } = options;
+    
+    // Try each region until one works
+    for (const region of REGIONS) {
+      try {
+        const allMessages = [];
+        let hasMore = true;
+        let startTime = undefined;
+        let pageCount = 0;
+        
+        while (hasMore && pageCount < MAX_API_PAGES) {
+          const url = new URL(
+            `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages`
+          );
+          url.searchParams.set('view', 'msnp24Equivalent');
+          url.searchParams.set('pageSize', String(limit));
+          if (startTime) {
+            url.searchParams.set('startTime', String(startTime));
+          }
+          
+          const response = await fetch(url.toString(), {
+            method: 'GET',
+            credentials: 'include', // Include cookies
+            headers: {
+              'Accept': 'application/json',
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          
+          const data = await response.json();
+          const messages = data.messages || [];
+          
+          if (messages.length === 0) {
+            hasMore = false;
+            break;
+          }
+          
+          // Parse messages
+          for (const msg of messages) {
+            const messageType = msg.messagetype;
+            
+            // Skip control/system messages
+            if (!messageType || messageType.startsWith('Control/') || 
+                messageType === 'ThreadActivity/AddMember' ||
+                messageType === 'ThreadActivity/DeleteMember') {
+              continue;
+            }
+            
+            const id = msg.id || msg.originalarrivaltime;
+            if (!id) continue;
+            
+            const timestamp = msg.originalarrivaltime || msg.composetime;
+            const date = timestamp ? new Date(timestamp) : null;
+            
+            // Stop if we've gone past the cutoff date
+            if (cutoffDate && date && date < cutoffDate) {
+              hasMore = false;
+              break;
+            }
+            
+            const content = stripHtml(msg.content || '');
+            if (!content) continue;
+            
+            const isSystem = messageType.includes('ThreadActivity') || 
+                            messageType.includes('Control');
+            
+            allMessages.push({
+              id,
+              content,
+              sender: isSystem ? '[System]' : (msg.imdisplayname || msg.displayName || 'Unknown'),
+              senderMri: msg.from,
+              timestamp: date?.toISOString() || '',
+              isoDate: date?.toISOString() || '',
+              edited: msg.skypeeditedid ? true : false,
+              messageLink: buildMessageLink(conversationId, id),
+              conversationId,
+              isSystem,
+            });
+          }
+          
+          // Update progress
+          if (onProgress) {
+            onProgress(`Fetched ${allMessages.length} messages via API (${region})...`);
+          }
+          
+          // Get the oldest message for pagination
+          const oldestTime = messages[messages.length - 1]?.originalarrivaltime;
+          if (oldestTime && messages.length === limit) {
+            startTime = new Date(oldestTime).getTime();
+            pageCount++;
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        console.log(`[API] Fetched ${allMessages.length} messages from ${region}`);
+        return { messages: allMessages, region, source: 'api' };
+        
+      } catch (e) {
+        console.log(`[API] Region ${region} failed:`, e.message);
+        continue;
+      }
+    }
+    
+    console.log('[API] All regions failed, falling back to DOM scraping');
+    return null;
+  };
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // DOM Scraping Functions (Fallback)
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  /** Extracts messages from a DOM pane (fallback method). */
+  const extractFromPane = (pane, conversationId) => {
     const msgs = [];
     pane.querySelectorAll('[data-tid="chat-pane-item"]').forEach(item => {
       const msg = item.querySelector('[data-tid="chat-pane-message"]');
       const ctrl = item.querySelector('[data-tid="control-message-renderer"]');
       let sender = '', isoDate = '', content = '', edited = false, links = [], reactions = [];
+      let messageId = null;
       
       if (ctrl) {
         sender = '[System]';
@@ -47,25 +241,187 @@
         isoDate = timeEl?.getAttribute('datetime') || '';
         content = msg.querySelector('[id^="content-"]:not([id^="content-control"])')?.textContent?.trim() || '';
         edited = !!item.querySelector('[id^="edited-"]');
+        
+        // Extract message ID from timestamp (epoch ms)
+        if (isoDate) {
+          try {
+            messageId = String(new Date(isoDate).getTime());
+          } catch (e) { /* ignore */ }
+        }
+        
         links = [...msg.querySelectorAll('a[href]')]
           .map(a => ({ text: a.textContent?.substring(0, 80), url: a.href }))
           .filter(l => l.url && !l.url.includes('statics.teams') && !l.url.startsWith('javascript'));
         reactions = [...msg.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')]
           .map(r => r.textContent?.trim()).filter(Boolean);
       }
+      
       if (content) {
         msgs.push({
-          sender, isoDate, content, edited,
+          id: messageId,
+          sender,
+          isoDate,
+          content,
+          edited,
           links: links.length ? links : null,
-          reactions: reactions.length ? reactions : null
+          reactions: reactions.length ? reactions : null,
+          messageLink: messageId && conversationId ? buildMessageLink(conversationId, messageId) : null,
+          conversationId,
         });
       }
     });
     return msgs;
   };
+  
+  /** Scrolls through chat and extracts messages via DOM (fallback). */
+  const extractMessagesViaDom = async (conversationId, options = {}) => {
+    const { cutoffDate, onProgress, expandThreads = false } = options;
+    
+    const messages = new Map();
+    const chatPane = document.getElementById('chat-pane-list');
+    if (!chatPane) {
+      throw new Error('No chat pane found. Make sure a chat is open.');
+    }
+    
+    const viewport = chatPane.parentElement;
+    
+    // Extract messages from main chat pane
+    const extract = () => {
+      chatPane.querySelectorAll('[data-tid="chat-pane-item"]').forEach(item => {
+        const msg = item.querySelector('[data-tid="chat-pane-message"]');
+        const ctrl = item.querySelector('[data-tid="control-message-renderer"]');
+        let sender = '', timeDisplay = '', isoDate = '', content = '';
+        let edited = false, links = [], reactions = [], threadInfo = null;
+        let isThreadPreview = false, isSentToChannel = false;
+        let messageId = null;
+        
+        if (ctrl) {
+          sender = '[System]';
+          content = ctrl.textContent?.trim() || '';
+          isoDate = item.querySelector('time')?.getAttribute('datetime') || '';
+        } else if (msg) {
+          sender = item.querySelector('[data-tid="message-author-name"]')?.textContent?.trim() || '';
+          const timeEl = item.querySelector('[id^="timestamp-"]') || item.querySelector('time');
+          timeDisplay = timeEl?.textContent?.trim() || '';
+          isoDate = timeEl?.getAttribute('datetime') || '';
+          content = msg.querySelector('[id^="content-"]:not([id^="content-control"])')?.textContent?.trim() || '';
+          
+          // Extract message ID
+          if (isoDate) {
+            try {
+              messageId = String(new Date(isoDate).getTime());
+            } catch (e) { /* ignore */ }
+          }
+          
+          // Track "Also sent to channel" messages
+          if (content.match(/^Also sent to channel\s*/i)) {
+            isSentToChannel = true;
+            content = content.replace(/^Also sent to channel\s*/i, '');
+          }
+          edited = !!item.querySelector('[id^="edited-"]');
+          
+          links = [...msg.querySelectorAll('a[href]')]
+            .map(a => ({ text: a.textContent?.substring(0, 80), url: a.href }))
+            .filter(l => l.url && !l.url.includes('statics.teams') && !l.url.startsWith('javascript'));
+          
+          reactions = [...msg.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')]
+            .map(r => r.textContent?.trim()).filter(Boolean);
+          
+          // Check if this is a "Replied in thread" preview
+          if (content.startsWith('Replied in thread:')) {
+            isThreadPreview = true;
+            content = content.replace(/^Replied in thread:\s*/, '');
+          }
+          
+          // Check for thread replies
+          const replySummary = item.querySelector('[data-tid="replies-summary-authors"]');
+          if (replySummary && !isThreadPreview) {
+            const summaryParent = replySummary.closest('[class*="repl"]') || replySummary.parentElement?.parentElement;
+            const summaryText = summaryParent?.textContent || '';
+            
+            const replyMatch = summaryText.match(/\b(\d+)\s*repl(?:y|ies)/i);
+            if (replyMatch) {
+              const lastReplyMatch = summaryText.match(/Last reply\s+([^F]+?)(?:Follow|$)/i);
+              threadInfo = {
+                replyCount: parseInt(replyMatch[1]),
+                lastReply: lastReplyMatch ? lastReplyMatch[1].trim() : null,
+                replies: []
+              };
+            }
+          }
+        }
+        
+        if (content) {
+          const key = `${sender}-${isoDate || timeDisplay}-${content.substring(0, 40)}`;
+          if (!messages.has(key)) {
+            messages.set(key, {
+              id: messageId,
+              sender,
+              timeDisplay,
+              isoDate,
+              content,
+              edited,
+              links: links.length ? links : null,
+              reactions: reactions.length ? reactions : null,
+              threadInfo,
+              isThreadPreview,
+              isSentToChannel,
+              contentSnippet: content.substring(0, 50),
+              messageLink: messageId && conversationId ? buildMessageLink(conversationId, messageId) : null,
+              conversationId,
+            });
+          }
+        }
+      });
+    };
 
-  // Generate markdown from messages array
-  const generateMarkdown = (messages, title, isThread = false) => {
+    // Scroll through chat and collect messages
+    viewport.scrollTop = viewport.scrollHeight;
+    await new Promise(r => setTimeout(r, 500));
+    
+    let pos = viewport.scrollHeight;
+    let done = false;
+    
+    while (pos > 0 && !done) {
+      viewport.scrollTop = pos;
+      await new Promise(r => setTimeout(r, 150));
+      extract();
+      
+      if (onProgress) {
+        onProgress(`Scanning via DOM... ${messages.size} messages`);
+      }
+      
+      for (const m of messages.values()) {
+        if (m.isoDate && cutoffDate && new Date(m.isoDate) < cutoffDate) {
+          done = true;
+          break;
+        }
+      }
+      pos -= 300;
+    }
+    extract();
+    
+    // Filter and return
+    const result = [...messages.values()]
+      .filter(m => !m.isThreadPreview)
+      .filter(m => !expandThreads || !m.isSentToChannel)
+      .filter(m => {
+        if (m.isoDate && cutoffDate) return new Date(m.isoDate) >= cutoffDate;
+        return true;
+      });
+    
+    console.log(`[DOM] Extracted ${result.length} messages`);
+    return { messages: result, source: 'dom' };
+  };
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Markdown Generation
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  /** Generates markdown from messages array. */
+  const generateMarkdown = (messages, title, options = {}) => {
+    const { isThread = false, includeLinks = true } = options;
+    
     // Sort chronologically
     messages.sort((a, b) => {
       const da = a.isoDate ? new Date(a.isoDate).getTime() : 0;
@@ -74,7 +430,8 @@
     });
 
     let md = '# ' + title + (isThread ? ' (Thread)' : '') + '\n\n';
-    md += '**Exported:** ' + new Date().toLocaleDateString('en-GB') + '\n\n---\n\n';
+    md += '**Exported:** ' + new Date().toLocaleDateString('en-GB') + '\n';
+    md += '**Messages:** ' + messages.length + '\n\n---\n\n';
     
     let lastDate = '';
     
@@ -99,21 +456,24 @@
         lastDate = dateStr;
       }
       
-      // Message header
+      // Message header with optional link
       md += '**' + m.sender + '**';
       if (timeStr) md += ' (' + timeStr + ')';
       if (m.edited) md += ' *(edited)*';
+      if (includeLinks && m.messageLink) {
+        md += ' [[link](' + m.messageLink + ')]';
+      }
       md += ':\n';
       
       // Content
       md += m.content.split('\n').map(l => '> ' + l).join('\n') + '\n';
       
-      // Links
+      // Links (from DOM scraping)
       if (m.links) {
         md += '>\n> 🔗 ' + m.links.map(l => '[' + l.text + '](' + l.url + ')').join(' | ') + '\n';
       }
       
-      // Reactions
+      // Reactions (from DOM scraping)
       if (m.reactions) {
         md += '>\n> ' + m.reactions.join(' | ') + '\n';
       }
@@ -150,7 +510,18 @@
     
     return md;
   };
-
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // UI Creation
+  // ─────────────────────────────────────────────────────────────────────────────
+  
+  const chatTitle = getChatTitle();
+  const conversationId = getConversationIdFromUrl();
+  
+  // Check if a thread is already open
+  const rightRail = document.querySelector('[data-tid="right-rail-message-pane-body"]');
+  const threadIsOpen = rightRail && rightRail.offsetParent !== null;
+  
   // Create overlay
   const overlay = document.createElement('div');
   Object.assign(overlay.style, {
@@ -164,7 +535,7 @@
     position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
     background: '#fff', padding: '24px', borderRadius: '12px',
     boxShadow: '0 8px 32px rgba(0,0,0,0.3)', zIndex: '999999',
-    fontFamily: 'system-ui', minWidth: '400px'
+    fontFamily: 'system-ui', minWidth: '450px', maxWidth: '90vw'
   });
   
   const close = () => { overlay.remove(); modal.remove(); };
@@ -181,6 +552,14 @@
           const isoDate = timeEl?.getAttribute('datetime') || '';
           const content = msg.querySelector('[id^="content-"]:not([id^="content-control"])')?.textContent?.trim() || '';
           const edited = !!item.querySelector('[id^="edited-"]');
+          
+          let messageId = null;
+          if (isoDate) {
+            try {
+              messageId = String(new Date(isoDate).getTime());
+            } catch (e) { /* ignore */ }
+          }
+          
           const links = [...msg.querySelectorAll('a[href]')]
             .map(a => ({ text: a.textContent?.substring(0, 80), url: a.href }))
             .filter(l => l.url && !l.url.includes('statics.teams') && !l.url.startsWith('javascript'));
@@ -191,9 +570,14 @@
             const key = `${sender}-${isoDate}-${content.substring(0, 40)}`;
             if (!msgs.has(key)) {
               msgs.set(key, {
-                sender, isoDate, content, edited,
+                id: messageId,
+                sender,
+                isoDate,
+                content,
+                edited,
                 links: links.length ? links : null,
-                reactions: reactions.length ? reactions : null
+                reactions: reactions.length ? reactions : null,
+                messageLink: messageId && conversationId ? buildMessageLink(conversationId, messageId) : null,
               });
             }
           }
@@ -201,7 +585,7 @@
       });
     };
     
-    // Find the scrollable container - walk up the DOM looking for scrollable element
+    // Find the scrollable container
     let scrollContainer = pane;
     let el = pane;
     while (el && el !== document.body) {
@@ -211,15 +595,13 @@
       }
       el = el.parentElement;
     }
-    console.log('Thread scroll container:', scrollContainer.className, 'scrollHeight:', scrollContainer.scrollHeight, 'clientHeight:', scrollContainer.clientHeight);
     
-    // Scroll to BOTTOM first (threads show newest at bottom, we need to scroll UP to get older)
+    // Scroll to bottom first, then up
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
     await new Promise(r => setTimeout(r, 300));
     extract();
-    console.log('After initial extract:', msgs.size, 'messages');
     
-    // Scroll UP through thread to load older messages
+    // Scroll up through thread to load older messages
     let scrollAttempts = 0;
     const maxScrollAttempts = 50;
     while (scrollAttempts < maxScrollAttempts) {
@@ -230,16 +612,12 @@
       await new Promise(r => setTimeout(r, 200));
       extract();
       
-      // Stop if we've hit the top and no new messages
       if (msgs.size === prevCount && (scrollContainer.scrollTop === prevScroll || scrollContainer.scrollTop === 0)) {
         break;
       }
       scrollAttempts++;
     }
     
-    console.log(`Thread extraction: ${msgs.size} messages (scrolled ${scrollAttempts}x)`);
-    
-    // Sort by timestamp
     return [...msgs.values()].sort((a, b) => {
       const da = a.isoDate ? new Date(a.isoDate).getTime() : 0;
       const db = b.isoDate ? new Date(b.isoDate).getTime() : 0;
@@ -249,7 +627,6 @@
   
   // If thread is open, show thread export option
   if (threadIsOpen) {
-    // Get initial count (visible messages only, for display)
     const visibleCount = rightRail.querySelectorAll('[data-tid="chat-pane-item"]').length;
 
     const title = document.createElement('h2');
@@ -308,7 +685,6 @@
     overlay.onclick = close;
     cancelBtn.onclick = close;
     
-    // Export just the thread
     threadBtn.onclick = async () => {
       buttonArea.style.display = 'none';
       question.style.display = 'none';
@@ -318,7 +694,7 @@
       
       const threadMessages = await extractAllFromThread(rightRail);
       
-      const md = generateMarkdown(threadMessages, chatTitle, true);
+      const md = generateMarkdown(threadMessages, chatTitle, { isThread: true });
       try {
         await navigator.clipboard.writeText(md);
         info.style.background = '#d4edda';
@@ -331,15 +707,12 @@
       }
     };
     
-    // Close thread and show full chat export UI
     fullChatBtn.onclick = async () => {
-      // Close the thread panel
       const toggleBtn = document.querySelector('[data-tid="thread-list-pane-toggle-button"]');
       if (toggleBtn) {
         toggleBtn.click();
         await new Promise(r => setTimeout(r, 500));
       }
-      // Remove current modal and show full chat UI
       modal.remove();
       showFullChatUI();
     };
@@ -351,7 +724,6 @@
   }
   
   function showFullChatUI() {
-    // Clear modal content (using DOM methods to avoid Trusted Types violation)
     while (modal.firstChild) {
       modal.removeChild(modal.firstChild);
     }
@@ -361,11 +733,31 @@
     Object.assign(title.style, { margin: '0 0 16px', color: '#242424' });
     
     const info = document.createElement('div');
-    info.textContent = 'Chat: ' + chatTitle;
     Object.assign(info.style, {
       background: '#f5f5f5', padding: '12px', borderRadius: '6px', marginBottom: '16px',
-      color: '#242424'
+      color: '#242424', fontSize: '13px'
     });
+    
+    const chatInfo = document.createElement('div');
+    chatInfo.innerHTML = `<strong>Chat:</strong> ${chatTitle}`;
+    info.appendChild(chatInfo);
+    
+    if (conversationId) {
+      const convInfo = document.createElement('div');
+      convInfo.innerHTML = `<strong>Conversation ID:</strong> <code style="font-size: 11px; background: #e0e0e0; padding: 2px 4px; border-radius: 3px;">${conversationId.substring(0, 40)}${conversationId.length > 40 ? '...' : ''}</code>`;
+      convInfo.style.marginTop = '8px';
+      info.appendChild(convInfo);
+      
+      const methodInfo = document.createElement('div');
+      methodInfo.innerHTML = '<strong>Method:</strong> <span style="color: #0078d4;">API (fast)</span> with DOM fallback';
+      methodInfo.style.marginTop = '8px';
+      info.appendChild(methodInfo);
+    } else {
+      const methodInfo = document.createElement('div');
+      methodInfo.innerHTML = '<strong>Method:</strong> <span style="color: #856404;">DOM scraping</span> (could not detect conversation ID)';
+      methodInfo.style.marginTop = '8px';
+      info.appendChild(methodInfo);
+    }
     
     const label = document.createElement('label');
     label.textContent = 'Days to capture: ';
@@ -373,9 +765,9 @@
     
     const input = document.createElement('input');
     input.type = 'number';
-    input.value = '2';
+    input.value = '7';
     input.min = '1';
-    input.max = '30';
+    input.max = '365';
     Object.assign(input.style, {
       width: '100%', padding: '8px', border: '1px solid #ddd',
       borderRadius: '6px', marginTop: '4px', boxSizing: 'border-box',
@@ -383,17 +775,17 @@
     });
     label.appendChild(input);
     
-    // Thread expansion checkbox
-    const threadLabel = document.createElement('label');
-    Object.assign(threadLabel.style, {
+    // Include links checkbox
+    const linksLabel = document.createElement('label');
+    Object.assign(linksLabel.style, {
       display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', cursor: 'pointer',
       color: '#242424'
     });
-    const threadCheck = document.createElement('input');
-    threadCheck.type = 'checkbox';
-    threadCheck.checked = true;
-    threadLabel.appendChild(threadCheck);
-    threadLabel.appendChild(document.createTextNode('Expand and capture thread replies (slower)'));
+    const linksCheck = document.createElement('input');
+    linksCheck.type = 'checkbox';
+    linksCheck.checked = true;
+    linksLabel.appendChild(linksCheck);
+    linksLabel.appendChild(document.createTextNode('Include message links (click to open in Teams)'));
     
     const progressArea = document.createElement('div');
     progressArea.style.display = 'none';
@@ -442,7 +834,7 @@
     modal.appendChild(title);
     modal.appendChild(info);
     modal.appendChild(label);
-    modal.appendChild(threadLabel);
+    modal.appendChild(linksLabel);
     modal.appendChild(progressArea);
     modal.appendChild(buttonArea);
     
@@ -453,297 +845,60 @@
     cancelBtn.onclick = close;
     overlay.onclick = close;
 
-    // Find a message's thread button by matching content
-    const findThreadButton = (chatPane, contentSnippet, isoDate) => {
-      const items = chatPane.querySelectorAll('[data-tid="chat-pane-item"]');
-      for (const item of items) {
-        const msgContent = item.querySelector('[id^="content-"]:not([id^="content-control"])')?.textContent?.trim() || '';
-        const msgTime = item.querySelector('time')?.getAttribute('datetime') || '';
-        
-        if (msgContent.startsWith(contentSnippet.substring(0, 30))) {
-          if (!isoDate || msgTime === isoDate) {
-            const replySummary = item.querySelector('[data-tid="replies-summary-authors"]');
-            if (replySummary) {
-              return replySummary.closest('button');
-            }
-          }
-        }
-      }
-      return null;
-    };
-
     exportBtn.onclick = async () => {
-      const days = parseInt(input.value) || 2;
-      const expandThreads = threadCheck.checked;
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - days);
-      cutoff.setHours(0, 0, 0, 0);
+      const days = parseInt(input.value) || 7;
+      const includeLinks = linksCheck.checked;
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      cutoffDate.setHours(0, 0, 0, 0);
       
       buttonArea.style.display = 'none';
       progressArea.style.display = 'block';
-
-      const messages = new Map();
-      const chatPane = document.getElementById('chat-pane-list');
-      if (!chatPane) {
-        progressText.textContent = 'Error: No chat pane found. Make sure a chat is open.';
-        return;
-      }
       
-      const viewport = chatPane.parentElement;
-
-      // Extract messages from main chat pane
-      const extract = () => {
-        chatPane.querySelectorAll('[data-tid="chat-pane-item"]').forEach(item => {
-          const msg = item.querySelector('[data-tid="chat-pane-message"]');
-          const ctrl = item.querySelector('[data-tid="control-message-renderer"]');
-          let sender = '', timeDisplay = '', isoDate = '', content = '';
-          let edited = false, links = [], reactions = [], threadInfo = null;
-          let isThreadPreview = false, isSentToChannel = false;
-          
-          if (ctrl) {
-            sender = '[System]';
-            content = ctrl.textContent?.trim() || '';
-            isoDate = item.querySelector('time')?.getAttribute('datetime') || '';
-          } else if (msg) {
-            sender = item.querySelector('[data-tid="message-author-name"]')?.textContent?.trim() || '';
-            const timeEl = item.querySelector('[id^="timestamp-"]') || item.querySelector('time');
-            timeDisplay = timeEl?.textContent?.trim() || '';
-            isoDate = timeEl?.getAttribute('datetime') || '';
-            content = msg.querySelector('[id^="content-"]:not([id^="content-control"])')?.textContent?.trim() || '';
-            // Track "Also sent to channel" messages - these are duplicates of thread replies
-            if (content.match(/^Also sent to channel\s*/i)) {
-              isSentToChannel = true;
-              content = content.replace(/^Also sent to channel\s*/i, '');
-            }
-            edited = !!item.querySelector('[id^="edited-"]');
-            
-            links = [...msg.querySelectorAll('a[href]')]
-              .map(a => ({ text: a.textContent?.substring(0, 80), url: a.href }))
-              .filter(l => l.url && !l.url.includes('statics.teams') && !l.url.startsWith('javascript'));
-            
-            reactions = [...msg.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')]
-              .map(r => r.textContent?.trim()).filter(Boolean);
-            
-            // Check if this is a "Replied in thread" preview
-            if (content.startsWith('Replied in thread:')) {
-              isThreadPreview = true;
-              content = content.replace(/^Replied in thread:\s*/, '');
-            }
-            
-            // Check for thread replies
-            const replySummary = item.querySelector('[data-tid="replies-summary-authors"]');
-            if (replySummary && !isThreadPreview) {
-              const summaryParent = replySummary.closest('[class*="repl"]') || replySummary.parentElement?.parentElement;
-              const summaryText = summaryParent?.textContent || '';
-              
-              const replyMatch = summaryText.match(/\b(\d+)\s*repl(?:y|ies)/i);
-              if (replyMatch) {
-                const lastReplyMatch = summaryText.match(/Last reply\s+([^F]+?)(?:Follow|$)/i);
-                threadInfo = {
-                  replyCount: parseInt(replyMatch[1]),
-                  lastReply: lastReplyMatch ? lastReplyMatch[1].trim() : null,
-                  replies: []
-                };
-              }
-            }
-          }
-          
-          if (content) {
-            const key = `${sender}-${isoDate || timeDisplay}-${content.substring(0, 40)}`;
-            if (!messages.has(key)) {
-              messages.set(key, {
-                sender, timeDisplay, isoDate, content, edited,
-                links: links.length ? links : null,
-                reactions: reactions.length ? reactions : null,
-                threadInfo,
-                isThreadPreview,
-                isSentToChannel,
-                contentSnippet: content.substring(0, 50)
-              });
-            }
+      let result;
+      
+      // Try API first if we have a conversation ID
+      if (conversationId) {
+        progressText.textContent = 'Fetching messages via API...';
+        progressBar.style.width = '20%';
+        
+        result = await fetchMessagesViaApi(conversationId, {
+          cutoffDate,
+          onProgress: (msg) => {
+            progressText.textContent = msg;
           }
         });
-      };
-
-      // Scroll through chat and collect messages
-      viewport.scrollTop = viewport.scrollHeight;
-      await new Promise(r => setTimeout(r, 500));
-      
-      let pos = viewport.scrollHeight;
-      let done = false;
-      
-      while (pos > 0 && !done) {
-        viewport.scrollTop = pos;
-        await new Promise(r => setTimeout(r, 150));
-        extract();
-        
-        progressBar.style.width = Math.round((1 - pos / viewport.scrollHeight) * 40) + '%';
-        progressText.textContent = 'Scanning main chat... ' + messages.size + ' messages';
-        
-        for (const m of messages.values()) {
-          if (m.isoDate && new Date(m.isoDate) < cutoff) {
-            done = true;
-            break;
-          }
-        }
-        pos -= 300;
       }
-      extract();
-
-      // Expand threads if enabled
-      if (expandThreads) {
-        const withThreads = [...messages.values()].filter(m => m.threadInfo && !m.isThreadPreview);
-        progressText.textContent = `Found ${withThreads.length} threads to expand...`;
+      
+      // Fall back to DOM scraping
+      if (!result) {
+        progressText.textContent = 'Falling back to DOM scraping...';
+        progressBar.style.width = '30%';
         
-        for (let i = 0; i < withThreads.length; i++) {
-          const m = withThreads[i];
-          progressBar.style.width = (40 + (i / withThreads.length) * 50) + '%';
-          progressText.textContent = `Expanding thread ${i + 1}/${withThreads.length}: ${m.sender}...`;
-          
-          try {
-            let threadButton = null;
-            let scrollAttempts = 0;
-            
-            threadButton = findThreadButton(chatPane, m.contentSnippet, m.isoDate);
-            
-            if (!threadButton) {
-              viewport.scrollTop = viewport.scrollHeight;
-              await new Promise(r => setTimeout(r, 200));
-              
-              let searchPos = viewport.scrollHeight;
-              while (!threadButton && searchPos > 0 && scrollAttempts < 20) {
-                viewport.scrollTop = searchPos;
-                await new Promise(r => setTimeout(r, 150));
-                threadButton = findThreadButton(chatPane, m.contentSnippet, m.isoDate);
-                searchPos -= 500;
-                scrollAttempts++;
-              }
+        try {
+          result = await extractMessagesViaDom(conversationId, {
+            cutoffDate,
+            onProgress: (msg) => {
+              progressText.textContent = msg;
             }
-            
-            if (threadButton) {
-              threadButton.scrollIntoView({ block: 'center' });
-              await new Promise(r => setTimeout(r, 200));
-              threadButton.click();
-              await new Promise(r => setTimeout(r, 1000));
-              
-              const threadRail = document.querySelector('[data-tid="right-rail-message-pane-body"]');
-              if (threadRail) {
-                await new Promise(r => setTimeout(r, 500));
-                
-                // Find the scrollable container - walk up DOM
-                let scrollContainer = threadRail;
-                let el = threadRail;
-                while (el && el !== document.body) {
-                  if (el.scrollHeight > el.clientHeight + 10) {
-                    scrollContainer = el;
-                    break;
-                  }
-                  el = el.parentElement;
-                }
-                
-                // Scroll through thread to load all replies (virtual scrolling)
-                const threadMessages = new Map();
-                const extractThreadMessages = () => {
-                  threadRail.querySelectorAll('[data-tid="chat-pane-item"]').forEach(item => {
-                    const msg = item.querySelector('[data-tid="chat-pane-message"]');
-                    if (msg) {
-                      const sender = item.querySelector('[data-tid="message-author-name"]')?.textContent?.trim() || '';
-                      const timeEl = item.querySelector('[id^="timestamp-"]') || item.querySelector('time');
-                      const isoDate = timeEl?.getAttribute('datetime') || '';
-                      const content = msg.querySelector('[id^="content-"]:not([id^="content-control"])')?.textContent?.trim() || '';
-                      const edited = !!item.querySelector('[id^="edited-"]');
-                      const links = [...msg.querySelectorAll('a[href]')]
-                        .map(a => ({ text: a.textContent?.substring(0, 80), url: a.href }))
-                        .filter(l => l.url && !l.url.includes('statics.teams') && !l.url.startsWith('javascript'));
-                      const reactions = [...msg.querySelectorAll('[data-tid="diverse-reaction-pill-button"]')]
-                        .map(r => r.textContent?.trim()).filter(Boolean);
-                      
-                      if (content) {
-                        const key = `${sender}-${isoDate}-${content.substring(0, 40)}`;
-                        if (!threadMessages.has(key)) {
-                          threadMessages.set(key, {
-                            sender, isoDate, content, edited,
-                            links: links.length ? links : null,
-                            reactions: reactions.length ? reactions : null
-                          });
-                        }
-                      }
-                    }
-                  });
-                };
-                
-                // Scroll to BOTTOM first (newest messages), then scroll UP to get older
-                scrollContainer.scrollTop = scrollContainer.scrollHeight;
-                await new Promise(r => setTimeout(r, 300));
-                extractThreadMessages();
-                
-                // Scroll UP through thread to load older messages
-                let scrollAttempts = 0;
-                const maxScrollAttempts = 50;
-                while (scrollAttempts < maxScrollAttempts) {
-                  const prevCount = threadMessages.size;
-                  const prevScroll = scrollContainer.scrollTop;
-                  
-                  scrollContainer.scrollTop -= 400;
-                  await new Promise(r => setTimeout(r, 200));
-                  extractThreadMessages();
-                  
-                  // Stop if we've hit the top and no new messages
-                  if (threadMessages.size === prevCount && (scrollContainer.scrollTop === prevScroll || scrollContainer.scrollTop === 0)) {
-                    break;
-                  }
-                  scrollAttempts++;
-                }
-                
-                // Sort by timestamp and convert to array
-                const replies = [...threadMessages.values()].sort((a, b) => {
-                  const da = a.isoDate ? new Date(a.isoDate).getTime() : 0;
-                  const db = b.isoDate ? new Date(b.isoDate).getTime() : 0;
-                  return da - db;
-                });
-                
-                if (replies.length > 1) {
-                  m.threadInfo.replies = replies.slice(1);
-                } else if (replies.length === 1) {
-                  m.threadInfo.replies = replies;
-                }
-                console.log(`Thread "${m.contentSnippet.substring(0, 30)}...": ${m.threadInfo.replies.length} replies (scrolled ${scrollAttempts}x)`);
-              }
-              
-              const toggleBtn = document.querySelector('[data-tid="thread-list-pane-toggle-button"]');
-              if (toggleBtn) {
-                toggleBtn.click();
-                await new Promise(r => setTimeout(r, 400));
-              }
-            } else {
-              console.log(`Could not find thread: ${m.contentSnippet.substring(0, 40)}...`);
-            }
-          } catch (e) {
-            console.log('Error expanding thread:', e);
-          }
+          });
+        } catch (e) {
+          progressText.textContent = 'Error: ' + e.message;
+          progressText.style.color = 'red';
+          return;
         }
       }
+      
+      progressBar.style.width = '90%';
+      progressText.textContent = `Generating markdown (${result.messages.length} messages via ${result.source})...`;
 
-      // Filter and generate markdown
-      const filtered = [...messages.values()]
-        .filter(m => !m.isThreadPreview)
-        // If expanding threads, skip "sent to channel" copies - they'll appear in the thread
-        .filter(m => !expandThreads || !m.isSentToChannel)
-        .filter(m => {
-          if (m.isoDate) return new Date(m.isoDate) >= cutoff;
-          return true;
-        });
-
-      progressBar.style.width = '95%';
-      progressText.textContent = 'Generating markdown...';
-
-      const md = generateMarkdown(filtered, chatTitle, false);
+      const md = generateMarkdown(result.messages, chatTitle, { includeLinks });
 
       // Copy to clipboard
       try {
         await navigator.clipboard.writeText(md);
         progressBar.style.width = '100%';
-        progressText.textContent = '✓ Copied ' + filtered.length + ' messages to clipboard!';
+        progressText.textContent = `✓ Copied ${result.messages.length} messages to clipboard! (via ${result.source}${result.region ? ' - ' + result.region : ''})`;
         progressText.style.color = 'green';
         progressText.style.fontWeight = 'bold';
         setTimeout(close, 2500);
