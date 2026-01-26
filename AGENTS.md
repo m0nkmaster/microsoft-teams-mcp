@@ -665,7 +665,7 @@ teams_get_activity
 teams_get_activity limit=100
 ```
 
-### teams_search_emoji Parameters
+#### teams_search_emoji
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -683,7 +683,7 @@ teams_get_activity limit=100
 **Quick Reaction Keys (no search needed):**
 - `like` (👍), `heart` (❤️), `laugh` (😂), `surprised` (😮), `sad` (😢), `angry` (😠)
 
-### teams_add_reaction Parameters
+#### teams_add_reaction
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -698,7 +698,7 @@ teams_get_activity limit=100
 teams_add_reaction conversationId="19:abc@thread.tacv2" messageId="1769276832046" emoji="like"
 ```
 
-### teams_remove_reaction Parameters
+#### teams_remove_reaction
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
