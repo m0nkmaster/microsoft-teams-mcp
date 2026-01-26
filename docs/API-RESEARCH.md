@@ -470,12 +470,50 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 
 **Notes:**
 - The `value` field is a timestamp in milliseconds
-- Emoji search is client-side (no server API) - Teams loads a static catalog
+- Standard emoji search is client-side - catalog bundled in JS
 - Authentication uses the same `skypetoken_asm` cookie as messaging
 
 ---
 
-### 2.6 Consumption Horizons (Read Receipts)
+### 2.6 Custom Emoji Metadata
+
+**Endpoint:** `GET https://teams.microsoft.com/api/csa/{region}/api/v1/customemoji/metadata`
+
+**Use Case:** Get the list of custom organisation emojis (not standard Teams emojis).
+
+**Response:**
+```json
+{
+  "continuationToken": "1769429894",
+  "categories": [
+    {
+      "id": "customEmoji",
+      "title": "Custom Emoji",
+      "description": "Custom Emoji",
+      "emoticons": [
+        {
+          "id": "angrysteam;0-wus-d4-2137e02e9efa1e425eeab4373bbe8827",
+          "documentId": "0-wus-d4-2137e02e9efa1e425eeab4373bbe8827",
+          "shortcuts": ["angrysteam"],
+          "description": "angrysteam",
+          "createdOn": 1721360079509,
+          "isDeleted": false
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Notes:**
+- The `id` field is what you use as the reaction key (includes the storage reference)
+- `shortcuts` are the search terms that match this emoji
+- Standard Teams emojis are bundled in JS, not available via API
+- Image URL pattern: `https://statics.teams.cdn.office.net/evergreen-assets/personal-expressions/v2/assets/emoticons/{emoji-id}/default/20_f.png`
+
+---
+
+### 2.7 Consumption Horizons (Read Receipts)
 
 **Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/threads/{threadId}/consumptionhorizons`
 
@@ -492,7 +530,7 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 
 ---
 
-### 2.7 Conversation Folders (Favorites/Pinned)
+### 2.8 Conversation Folders (Favorites/Pinned)
 
 **Endpoint:** `POST https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders`
 
@@ -561,7 +599,7 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 
 ---
 
-### 2.8 Saved Messages (Bookmarks)
+### 2.9 Saved Messages (Bookmarks)
 
 **Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/rcmetadata/{messageId}`
 
