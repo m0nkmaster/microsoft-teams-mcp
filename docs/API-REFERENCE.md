@@ -1033,7 +1033,7 @@ Use `syncState` from response for efficient incremental polling.
 
 To discover new endpoints:
 
-1. Clear session: `rm session-state.json`
+1. Clear session: `rm -rf ~/.msteams-mcp/` (or `%APPDATA%\msteams-mcp\` on Windows)
 2. Run: `npm run research`
 3. Log in to Teams when prompted
 4. Perform actions (click Activity, Calendar, etc.)
