@@ -5,7 +5,7 @@
  */
 
 import { httpRequest } from '../utils/http.js';
-import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, validateRegion } from '../utils/api-config.js';
+import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, getTeamsHeaders, validateRegion } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
@@ -1040,5 +1040,119 @@ export async function getActivityFeed(
   return ok({
     activities,
     syncState,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reaction (Emotions) Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Result of adding/removing a reaction. */
+export interface ReactionResult {
+  conversationId: string;
+  messageId: string;
+  emoji: string;
+}
+
+/**
+ * Adds a reaction (emoji) to a message.
+ * 
+ * @param conversationId - The conversation containing the message
+ * @param messageId - The message ID to react to
+ * @param emojiKey - The emoji key (e.g., 'like', 'heart', 'laugh')
+ * @param region - API region (default: 'amer')
+ */
+export async function addReaction(
+  conversationId: string,
+  messageId: string,
+  emojiKey: string,
+  region: string = 'amer'
+): Promise<Result<ReactionResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.messageEmotions(validRegion, conversationId, messageId);
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'PUT',
+      headers: {
+        ...getTeamsHeaders(),
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+      },
+      body: JSON.stringify({
+        emotions: {
+          key: emojiKey,
+          value: Date.now(),
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    conversationId,
+    messageId,
+    emoji: emojiKey,
+  });
+}
+
+/**
+ * Removes a reaction (emoji) from a message.
+ * 
+ * @param conversationId - The conversation containing the message
+ * @param messageId - The message ID to remove the reaction from
+ * @param emojiKey - The emoji key to remove (e.g., 'like', 'heart')
+ * @param region - API region (default: 'amer')
+ */
+export async function removeReaction(
+  conversationId: string,
+  messageId: string,
+  emojiKey: string,
+  region: string = 'amer'
+): Promise<Result<ReactionResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CHATSVC_API.messageEmotions(validRegion, conversationId, messageId);
+
+  const response = await httpRequest<unknown>(
+    url,
+    {
+      method: 'DELETE',
+      headers: {
+        ...getTeamsHeaders(),
+        'Authentication': `skypetoken=${auth.skypeToken}`,
+        'Authorization': `Bearer ${auth.authToken}`,
+      },
+      body: JSON.stringify({
+        emotions: {
+          key: emojiKey,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  return ok({
+    conversationId,
+    messageId,
+    emoji: emojiKey,
   });
 }

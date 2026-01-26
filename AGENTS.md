@@ -228,6 +228,9 @@ The two user object IDs (GUIDs) are sorted lexicographically. This format works 
 | `teams_get_unread` | Get unread status for favourites (aggregate) or specific conversation |
 | `teams_mark_read` | Mark a conversation as read up to a specific message |
 | `teams_get_activity` | Get activity feed (mentions, reactions, replies, notifications) |
+| `teams_search_emoji` | Search for emojis by name (standard + custom org emojis) |
+| `teams_add_reaction` | Add an emoji reaction to a message |
+| `teams_remove_reaction` | Remove an emoji reaction from a message |
 
 ### Design Philosophy
 
@@ -646,6 +649,47 @@ teams_get_activity
 teams_get_activity limit=100
 ```
 
+### teams_search_emoji Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| query | string | required | Search term (e.g., "thumbs", "heart", "cat") |
+
+**Response** includes:
+- `count` - Number of matching emojis
+- `emojis[]` - Array of matches, each with:
+  - `key` - The emoji key to use with `teams_add_reaction`
+  - `description` - Human-readable description with emoji character
+  - `type` - Either `standard` (built-in Teams emoji) or `custom` (org-specific)
+  - `category` - For standard emojis: reaction, expression, affection, action, animal, object, other
+  - `shortcut` - For custom emojis: the shortcut name
+
+**Quick Reaction Keys (no search needed):**
+- `like` (👍), `heart` (❤️), `laugh` (😂), `surprised` (😮), `sad` (😢), `angry` (😠)
+
+### teams_add_reaction Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation containing the message |
+| messageId | string | required | The message ID to react to |
+| emoji | string | required | The emoji key (e.g., "like", "heart") |
+
+**Response** includes confirmation of the reaction added.
+
+**Example:**
+```
+teams_add_reaction conversationId="19:abc@thread.tacv2" messageId="1769276832046" emoji="like"
+```
+
+### teams_remove_reaction Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| conversationId | string | required | The conversation containing the message |
+| messageId | string | required | The message ID to remove the reaction from |
+| emoji | string | required | The emoji key to remove |
+
 #### teams_login
 
 | Parameter | Type | Default | Description |
@@ -713,6 +757,9 @@ npm run test:mcp -- markread --to "conv-id" --message "msg-id"
 npm run test:mcp -- thread --to "conv-id" --markRead
 npm run test:mcp -- activity                         # teams_get_activity
 npm run test:mcp -- activity --limit 10
+npm run test:mcp -- teams_search_emoji --query "heart"    # teams_search_emoji
+npm run test:mcp -- teams_add_reaction --conversationId "conv-id" --messageId "msg-id" --emoji "like"
+npm run test:mcp -- teams_remove_reaction --conversationId "conv-id" --messageId "msg-id" --emoji "like"
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json

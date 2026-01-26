@@ -228,3 +228,82 @@ export async function getMyTeamsAndChannels(
 
   return ok({ teams });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Custom Emoji Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A custom emoji from the organisation. */
+export interface CustomEmoji {
+  /** The emoji ID (use as reaction key). */
+  id: string;
+  /** Short name/shortcut for the emoji. */
+  shortcut: string;
+  /** Description of the emoji. */
+  description: string;
+  /** When the emoji was created. */
+  createdOn?: number;
+}
+
+/** Response from getting custom emojis. */
+export interface CustomEmojisResult {
+  emojis: CustomEmoji[];
+}
+
+/**
+ * Gets the organisation's custom emojis.
+ */
+export async function getCustomEmojis(
+  region: string = 'amer'
+): Promise<Result<CustomEmojisResult>> {
+  const authResult = requireCsaAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const { auth, csaToken } = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const url = CSA_API.customEmojis(validRegion);
+
+  const response = await httpRequest<Record<string, unknown>>(
+    url,
+    {
+      method: 'GET',
+      headers: getCsaHeaders(auth.skypeToken, csaToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const data = response.value.data;
+  const categories = data.categories as Array<Record<string, unknown>> | undefined;
+  
+  const emojis: CustomEmoji[] = [];
+  
+  if (categories) {
+    for (const category of categories) {
+      const emoticons = category.emoticons as Array<Record<string, unknown>> | undefined;
+      if (emoticons) {
+        for (const emoticon of emoticons) {
+          if (emoticon.isDeleted) continue;
+          
+          const id = emoticon.id as string;
+          const shortcuts = emoticon.shortcuts as string[] | undefined;
+          const description = emoticon.description as string | undefined;
+          const createdOn = emoticon.createdOn as number | undefined;
+          
+          emojis.push({
+            id,
+            shortcut: shortcuts?.[0] || id.split(';')[0],
+            description: description || shortcuts?.[0] || id.split(';')[0],
+            createdOn,
+          });
+        }
+      }
+    }
+  }
+
+  return ok({ emojis });
+}

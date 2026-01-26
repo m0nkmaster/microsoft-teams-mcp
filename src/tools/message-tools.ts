@@ -17,8 +17,10 @@ import {
   getUnreadStatus,
   markAsRead,
   getActivityFeed,
+  addReaction,
+  removeReaction,
 } from '../api/chatsvc-api.js';
-import { getFavorites, addFavorite, removeFavorite } from '../api/csa-api.js';
+import { getFavorites, addFavorite, removeFavorite, getCustomEmojis } from '../api/csa-api.js';
 import { SELF_CHAT_ID, MAX_UNREAD_AGGREGATE_CHECK } from '../constants.js';
 import { ErrorCode } from '../types/errors.js';
 
@@ -73,6 +75,22 @@ export const MarkAsReadInputSchema = z.object({
 
 export const GetActivityInputSchema = z.object({
   limit: z.number().min(1).max(200).optional(),
+});
+
+export const SearchEmojiInputSchema = z.object({
+  query: z.string().min(1, 'Search query cannot be empty'),
+});
+
+export const AddReactionInputSchema = z.object({
+  conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
+  messageId: z.string().min(1, 'Message ID cannot be empty'),
+  emoji: z.string().min(1, 'Emoji key cannot be empty'),
+});
+
+export const RemoveReactionInputSchema = z.object({
+  conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
+  messageId: z.string().min(1, 'Message ID cannot be empty'),
+  emoji: z.string().min(1, 'Emoji key cannot be empty'),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -303,6 +321,67 @@ const getActivityToolDefinition: Tool = {
         description: 'Maximum number of activity items to return (default: 50, max: 200)',
       },
     },
+  },
+};
+
+const searchEmojiToolDefinition: Tool = {
+  name: 'teams_search_emoji',
+  description: 'Search for emojis by name or keyword. Returns both standard Teams emojis and custom organisation emojis, indicating which is which. Use the returned key with teams_add_reaction.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: {
+        type: 'string',
+        description: 'Search term (e.g., "thumbs", "heart", "laugh", "cat")',
+      },
+    },
+    required: ['query'],
+  },
+};
+
+const addReactionToolDefinition: Tool = {
+  name: 'teams_add_reaction',
+  description: 'Add an emoji reaction to a message. Common reactions: like (👍), heart (❤️), laugh (😂), surprised (😮), sad (😢), angry (😠). Use teams_search_emoji to find other emojis.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      conversationId: {
+        type: 'string',
+        description: 'The conversation ID containing the message',
+      },
+      messageId: {
+        type: 'string',
+        description: 'The message ID to react to (numeric string from search results or teams_get_thread)',
+      },
+      emoji: {
+        type: 'string',
+        description: 'The emoji key (e.g., "like", "heart", "laugh"). Get from teams_search_emoji or use common ones directly.',
+      },
+    },
+    required: ['conversationId', 'messageId', 'emoji'],
+  },
+};
+
+const removeReactionToolDefinition: Tool = {
+  name: 'teams_remove_reaction',
+  description: 'Remove an emoji reaction from a message.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      conversationId: {
+        type: 'string',
+        description: 'The conversation ID containing the message',
+      },
+      messageId: {
+        type: 'string',
+        description: 'The message ID to remove the reaction from',
+      },
+      emoji: {
+        type: 'string',
+        description: 'The emoji key to remove (e.g., "like", "heart")',
+      },
+    },
+    required: ['conversationId', 'messageId', 'emoji'],
   },
 };
 
@@ -667,6 +746,179 @@ async function handleGetActivity(
   };
 }
 
+// Standard Teams emoji shortcuts (built-in, no API call needed)
+const STANDARD_EMOJIS = [
+  // Quick reactions (shown in reaction picker)
+  { key: 'like', description: 'Thumbs up 👍', category: 'reaction' },
+  { key: 'heart', description: 'Heart ❤️', category: 'reaction' },
+  { key: 'laugh', description: 'Laughing 😂', category: 'reaction' },
+  { key: 'surprised', description: 'Surprised 😮', category: 'reaction' },
+  { key: 'sad', description: 'Sad 😢', category: 'reaction' },
+  { key: 'angry', description: 'Angry 😠', category: 'reaction' },
+  // Expressions
+  { key: 'smile', description: 'Smiley 😊', category: 'expression' },
+  { key: 'wink', description: 'Winking 😉', category: 'expression' },
+  { key: 'cry', description: 'Crying 😭', category: 'expression' },
+  { key: 'cwl', description: 'Crying with laughter 😂', category: 'expression' },
+  { key: 'rofl', description: 'Rolling on floor laughing 🤣', category: 'expression' },
+  { key: 'blush', description: 'Blushing 😊', category: 'expression' },
+  { key: 'speechless', description: 'Speechless 😶', category: 'expression' },
+  { key: 'wonder', description: 'Wondering 🤔', category: 'expression' },
+  { key: 'sleepy', description: 'Sleepy 😴', category: 'expression' },
+  { key: 'yawn', description: 'Yawning 🥱', category: 'expression' },
+  { key: 'eyeroll', description: 'Eye roll 🙄', category: 'expression' },
+  { key: 'worry', description: 'Worried 😟', category: 'expression' },
+  { key: 'puke', description: 'Puking 🤮', category: 'expression' },
+  { key: 'giggle', description: 'Giggling 🤭', category: 'expression' },
+  { key: 'tongueout', description: 'Tongue out 😛', category: 'expression' },
+  // Affection
+  { key: 'kiss', description: 'Kiss 😘', category: 'affection' },
+  { key: 'inlove', description: 'In love 😍', category: 'affection' },
+  { key: 'hug', description: 'Hug 🤗', category: 'affection' },
+  { key: 'lips', description: 'Kissing lips 💋', category: 'affection' },
+  // Actions
+  { key: 'facepalm', description: 'Facepalm 🤦', category: 'action' },
+  { key: 'sweat', description: 'Sweating 😓', category: 'action' },
+  { key: 'dance', description: 'Dancing 💃', category: 'action' },
+  { key: 'bow', description: 'Bowing 🙇', category: 'action' },
+  { key: 'headbang', description: 'Banging head on wall', category: 'action' },
+  { key: 'wasntme', description: 'It wasn\'t me 🤷', category: 'action' },
+  { key: 'hungover', description: 'Hungover', category: 'action' },
+  { key: 'shivering', description: 'Shivering 🥶', category: 'action' },
+  // Animals
+  { key: 'penguin', description: 'Penguin 🐧', category: 'animal' },
+  { key: 'cat', description: 'Cat 🐱', category: 'animal' },
+  { key: 'monkey', description: 'Monkey 🐵', category: 'animal' },
+  { key: 'polarbear', description: 'Polar bear 🐻‍❄️', category: 'animal' },
+  { key: 'elephant', description: 'Elephant 🐘', category: 'animal' },
+  // Objects
+  { key: 'flower', description: 'Flower 🌸', category: 'object' },
+  { key: 'sun', description: 'Sun ☀️', category: 'object' },
+  { key: 'star', description: 'Star ⭐', category: 'object' },
+  { key: 'xmastree', description: 'Christmas tree 🎄', category: 'object' },
+  { key: 'cake', description: 'Cake 🎂', category: 'object' },
+  { key: 'gift', description: 'Gift 🎁', category: 'object' },
+  { key: 'cash', description: 'Cash 💵', category: 'object' },
+  { key: 'champagne', description: 'Champagne 🍾', category: 'object' },
+  // Other
+  { key: 'yes', description: 'Yes/Thumbs up ✅', category: 'other' },
+  { key: 'cool', description: 'Cool 😎', category: 'other' },
+  { key: 'party', description: 'Party 🎉', category: 'other' },
+  { key: 'hi', description: 'Wave/Hello 👋', category: 'other' },
+  { key: 'angel', description: 'Angel 😇', category: 'other' },
+  { key: 'devil', description: 'Devil 😈', category: 'other' },
+  { key: 'holidayspirit', description: 'Holiday spirit 🎅', category: 'other' },
+  { key: 'lipssealed', description: 'Lips sealed 🤐', category: 'other' },
+  { key: 'makeup', description: 'Make-up 💄', category: 'other' },
+  { key: 'snowangel', description: 'Snow angel', category: 'other' },
+];
+
+async function handleSearchEmoji(
+  input: z.infer<typeof SearchEmojiInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const query = input.query.toLowerCase();
+  
+  // Search standard emojis
+  const standardMatches = STANDARD_EMOJIS.filter(emoji =>
+    emoji.key.toLowerCase().includes(query) ||
+    emoji.description.toLowerCase().includes(query)
+  ).map(emoji => ({
+    key: emoji.key,
+    description: emoji.description,
+    type: 'standard' as const,
+    category: emoji.category,
+  }));
+
+  // Try to get custom emojis
+  let customMatches: Array<{
+    key: string;
+    description: string;
+    type: 'custom';
+    shortcut: string;
+  }> = [];
+
+  const customResult = await getCustomEmojis();
+  if (customResult.ok) {
+    customMatches = customResult.value.emojis
+      .filter(emoji =>
+        emoji.shortcut.toLowerCase().includes(query) ||
+        emoji.description.toLowerCase().includes(query)
+      )
+      .map(emoji => ({
+        key: emoji.id,
+        description: emoji.description,
+        type: 'custom' as const,
+        shortcut: emoji.shortcut,
+      }));
+  }
+
+  // Combine results, standard first
+  const results = [...standardMatches, ...customMatches];
+
+  return {
+    success: true,
+    data: {
+      query: input.query,
+      count: results.length,
+      emojis: results,
+      note: results.length === 0
+        ? 'No emojis found. Try a different search term.'
+        : 'Use the "key" value with teams_add_reaction.',
+    },
+  };
+}
+
+async function handleAddReaction(
+  input: z.infer<typeof AddReactionInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await addReaction(
+    input.conversationId,
+    input.messageId,
+    input.emoji
+  );
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      message: `Added ${input.emoji} reaction`,
+      conversationId: result.value.conversationId,
+      messageId: result.value.messageId,
+      emoji: result.value.emoji,
+    },
+  };
+}
+
+async function handleRemoveReaction(
+  input: z.infer<typeof RemoveReactionInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await removeReaction(
+    input.conversationId,
+    input.messageId,
+    input.emoji
+  );
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      message: `Removed ${input.emoji} reaction`,
+      conversationId: result.value.conversationId,
+      messageId: result.value.messageId,
+      emoji: result.value.emoji,
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -749,6 +1001,24 @@ export const getActivityTool: RegisteredTool<typeof GetActivityInputSchema> = {
   handler: handleGetActivity,
 };
 
+export const searchEmojiTool: RegisteredTool<typeof SearchEmojiInputSchema> = {
+  definition: searchEmojiToolDefinition,
+  schema: SearchEmojiInputSchema,
+  handler: handleSearchEmoji,
+};
+
+export const addReactionTool: RegisteredTool<typeof AddReactionInputSchema> = {
+  definition: addReactionToolDefinition,
+  schema: AddReactionInputSchema,
+  handler: handleAddReaction,
+};
+
+export const removeReactionTool: RegisteredTool<typeof RemoveReactionInputSchema> = {
+  definition: removeReactionToolDefinition,
+  schema: RemoveReactionInputSchema,
+  handler: handleRemoveReaction,
+};
+
 /** All message-related tools. */
 export const messageTools = [
   sendMessageTool,
@@ -764,4 +1034,7 @@ export const messageTools = [
   getUnreadTool,
   markAsReadTool,
   getActivityTool,
+  searchEmojiTool,
+  addReactionTool,
+  removeReactionTool,
 ];
