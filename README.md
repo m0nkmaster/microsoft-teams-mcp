@@ -199,13 +199,14 @@ npm run test:mcp -- teams_search_emoji --query "heart"  # Search emojis
 
 ## Session Files
 
-These files are created locally and gitignored:
+Session files are stored in a user config directory (encrypted):
 
-- `session-state.json` - Encrypted browser session
-- `token-cache.json` - Encrypted OAuth tokens
-- `.user-data/` - Browser profile
+- **macOS/Linux**: `~/.msteams-mcp/`
+- **Windows**: `%APPDATA%\msteams-mcp\`
 
-If your session expires, call `teams_login` or delete these files.
+Contents: `session-state.json`, `token-cache.json`, `.user-data/`
+
+If your session expires, call `teams_login` or delete the config directory.
 
 ## Development
 

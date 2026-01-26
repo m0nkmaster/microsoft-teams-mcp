@@ -74,7 +74,7 @@ const SEARCH_BUTTON_SELECTORS = [
  * 
  * MSAL only acquires tokens for specific scopes when the app makes API calls
  * requiring those scopes. The Substrate API is only used for search, so we
- * perform a minimal search ("is:messages") to trigger token acquisition.
+ * perform a minimal search ("is:Messages") to trigger token acquisition.
  */
 async function triggerTokenAcquisition(
   page: Page,
@@ -119,7 +119,7 @@ async function triggerTokenAcquisition(
 
     if (searchInput) {
       // Use a filter syntax that looks like a system command
-      await searchInput.fill('is:messages');
+      await searchInput.fill('is:Messages');
       await page.keyboard.press('Enter');
 
       // Wait for the search API call to complete
