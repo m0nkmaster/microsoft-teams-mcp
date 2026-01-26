@@ -1,16 +1,22 @@
-# Future plans and bugs to fix
+# Roadmap
 
-## P1. Improve UI for login/token refresh (popup message to close browser)
+## P1
 
-## P2. Find team
+### Improve login/refresh UX
+Show a popup message instructing user to close the browser after authentication completes.
 
-Search/discover teams by name (similar to find channel but returns team-level info).
+## P2
 
-## P2. Emoji responses
+### Find team
+Search/discover teams by name (similar to `teams_find_channel` but returns team-level info).
 
+### Add reactions
+React to messages with emoji (like, heart, etc.).
 
-## P3. meeting related stuff
+## P3
 
-- Get messages from meeting chat threads
-- Calendar integration (upcoming meetings)
-- Find meeting recordings
+### Calendar integration
+Get upcoming meetings from Outlook calendar.
+
+### Find meeting recordings
+Locate and retrieve meeting recordings/transcripts.
