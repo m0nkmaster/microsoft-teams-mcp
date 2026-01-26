@@ -427,7 +427,55 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 
 ---
 
-### 2.5 Consumption Horizons (Read Receipts)
+### 2.5 Message Reactions (Emotions)
+
+**Add Reaction Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/messages/{messageId}/properties?name=emotions`
+
+**Remove Reaction Endpoint:** `DELETE https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/messages/{messageId}/properties?name=emotions`
+
+**Use Case:** Add or remove emoji reactions from messages.
+
+**Add Reaction Request:**
+```json
+{
+  "emotions": {
+    "key": "like",
+    "value": 1769429691997
+  }
+}
+```
+
+**Remove Reaction Request:**
+```json
+{
+  "emotions": {
+    "key": "like"
+  }
+}
+```
+
+**Key Format:**
+- Standard Teams emojis: just the name (e.g., `like`, `heart`, `laugh`, `surprised`, `sad`, `angry`, `elephant`)
+- Custom/animated org emojis: `{name};{storage-id}` (e.g., `octi-search;0-wus-d10-66fac2a3b0cda332435c21a14485efe7`)
+
+**Common Reaction Keys:**
+| Emoji | Key |
+|-------|-----|
+| 👍 | `like` |
+| ❤️ | `heart` |
+| 😂 | `laugh` |
+| 😮 | `surprised` |
+| 😢 | `sad` |
+| 😠 | `angry` |
+
+**Notes:**
+- The `value` field is a timestamp in milliseconds
+- Emoji search is client-side (no server API) - Teams loads a static catalog
+- Authentication uses the same `skypetoken_asm` cookie as messaging
+
+---
+
+### 2.6 Consumption Horizons (Read Receipts)
 
 **Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/threads/{threadId}/consumptionhorizons`
 
@@ -444,7 +492,7 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 
 ---
 
-### 2.6 Conversation Folders (Favorites/Pinned)
+### 2.7 Conversation Folders (Favorites/Pinned)
 
 **Endpoint:** `POST https://teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders`
 
@@ -513,7 +561,7 @@ from:john sent:>=2026-01-18   # John's messages since Jan 18
 
 ---
 
-### 2.7 Saved Messages (Bookmarks)
+### 2.8 Saved Messages (Bookmarks)
 
 **Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/rcmetadata/{messageId}`
 
