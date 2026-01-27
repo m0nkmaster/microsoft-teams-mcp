@@ -332,7 +332,7 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 - `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, `nextFrom`
 
 The `conversationId` enables replying to search results via `teams_send_message`.
-The `messageLink` is a direct URL to open the message in Teams (format varies by conversation type - see Troubleshooting > Message Deep Links).
+The `messageLink` is a clickable URL to open the message directly in Teams.
 
 #### teams_send_message
 
