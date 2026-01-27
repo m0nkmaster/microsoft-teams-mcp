@@ -996,10 +996,6 @@ Teams requires different deep link formats depending on conversation type:
 
 **Detecting thread replies:** Compare the `messageid` in `ClientConversationId` with the message's own timestamp from `DateTimeReceived`. If they differ, it's a thread reply and needs `parentMessageId`.
 
-The link format is: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`
-
-Note: The `conversationId` returned in search results for threaded replies will be the thread ID (e.g., `19:0df465dd...@thread.tacv2`) not the channel ID (e.g., `19:-eGaQP4gB...@thread.tacv2`).
-
 ## Reference
 
 ### File Locations
