@@ -27,6 +27,7 @@ import {
   searchResultWithHtml,
   searchResultMinimal,
   searchResultTooShort,
+  searchResultThreadReply,
   searchEntitySetsResponse,
   personSuggestion,
   personMinimal,
@@ -278,6 +279,32 @@ describe('parseV2Result', () => {
   it('falls back to ClientThreadId for conversationId', () => {
     const result = parseV2Result(searchResultWithHtml);
     expect(result!.conversationId).toBe('19:meeting123@thread.v2');
+  });
+
+  it('generates messageLink with parentMessageId for thread replies', () => {
+    const result = parseV2Result(searchResultThreadReply);
+    
+    expect(result).not.toBeNull();
+    // Parent message ID from ClientConversationId;messageid=xxx
+    expect(result!.messageLink).toContain('parentMessageId=1768919400000');
+    // The message's own timestamp (from DateTimeReceived 2026-01-20T15:00:00.000Z)
+    expect(result!.messageLink).toContain('/1768921200000');
+  });
+
+  it('generates messageLink without parentMessageId for top-level posts', () => {
+    const result = parseV2Result(searchResultItem);
+    
+    expect(result).not.toBeNull();
+    // Top-level post: messageid matches the message timestamp, so no parentMessageId needed
+    expect(result!.messageLink).not.toContain('parentMessageId');
+  });
+
+  it('generates messageLink with context for meeting chats', () => {
+    const result = parseV2Result(searchResultWithHtml);
+    
+    expect(result).not.toBeNull();
+    // Meeting chats need context parameter
+    expect(result!.messageLink).toContain('context=');
   });
 });
 
