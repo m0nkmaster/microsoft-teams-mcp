@@ -181,6 +181,24 @@ The chatsvc conversation API returns `threadProperties` with type information:
 - `topic`: Meeting title or user-set chat topic
 - For chats without topics: extract from `members` array or recent messages
 
+### Virtual Conversations
+
+Teams uses special "virtual conversation" IDs that aggregate data across all conversations. These use the standard messages endpoint but return consolidated views:
+
+| Virtual ID | Purpose | Constant |
+|------------|---------|----------|
+| `48:saved` | Saved/bookmarked messages | - |
+| `48:threads` | Followed threads | - |
+| `48:mentions` | @mentions | - |
+| `48:notifications` | Activity feed | `NOTIFICATIONS_ID` |
+| `48:notes` | Personal notes/self-chat | `SELF_CHAT_ID` |
+
+**Endpoint pattern:** `GET /api/chatsvc/{region}/v1/users/ME/conversations/{virtualId}/messages`
+
+Each message in the response includes a `clumpId` field containing the original conversation ID where the message lives, enabling navigation back to the source.
+
+See `docs/API-REFERENCE.md` for full response structure.
+
 ### User ID Formats
 
 Teams APIs return user IDs in multiple formats. The `extractObjectId()` function in `parsers.ts` handles all of these:
@@ -220,6 +238,8 @@ The two user object IDs (GUIDs) are sorted lexicographically. This format works 
 | `teams_remove_favorite` | Unpin a conversation from favourites |
 | `teams_save_message` | Bookmark a message |
 | `teams_unsave_message` | Remove bookmark from a message |
+| `teams_get_saved_messages` | Get list of saved/bookmarked messages with source references |
+| `teams_get_followed_threads` | Get list of followed threads with source references |
 | `teams_get_thread` | Get messages from a conversation/thread |
 | `teams_find_channel` | Find channels by name (your teams + org-wide), shows membership |
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
@@ -457,6 +477,44 @@ Name sources by type:
 | messageId | string | required | The message ID to save/unsave |
 
 **Note:** These tools use the same session cookie authentication as messaging.
+
+#### teams_get_saved_messages
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | number | 50 | Maximum number of saved messages to return (1-200) |
+
+**Response** includes:
+- `count` - Number of saved messages returned
+- `messages[]` with:
+  - `content` - Message content (may be empty for some items - use `teams_get_thread` to fetch full content)
+  - `sender` - Object with `mri` and `displayName`
+  - `timestamp` - ISO timestamp when the message was saved
+  - `sourceConversationId` - The original conversation where this message lives
+  - `sourceMessageId` - The original message ID in the source conversation
+  - `messageLink` - Direct link to open this message in Teams
+
+**Use case:** List bookmarked messages. Use `sourceConversationId` with `teams_get_thread` to retrieve the full message content and context.
+
+**Note:** Returns references to saved messages. Some items may have empty content - these are bookmark pointers. The Teams client fetches actual content separately.
+
+#### teams_get_followed_threads
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | number | 50 | Maximum number of followed threads to return (1-200) |
+
+**Response** includes:
+- `count` - Number of followed threads returned
+- `threads[]` with:
+  - `content` - Thread content preview (may be empty for some items)
+  - `sender` - Object with `mri` and `displayName`
+  - `timestamp` - ISO timestamp
+  - `sourceConversationId` - The original conversation/channel where this thread lives
+  - `sourcePostId` - The root post ID of the thread
+  - `messageLink` - Direct link to open this thread in Teams
+
+**Use case:** List threads you're following. Use `sourceConversationId` with `teams_get_thread` to retrieve the full thread content.
 
 #### teams_get_thread
 
@@ -988,7 +1046,6 @@ Based on API research, these tools could be implemented:
 | `teams_get_files` | AllFiles API | Medium |
 
 **Known Limitations:**
-- **Get all saved messages** - No single endpoint; saved flag is per-message in rcMetadata
 - **Chat list** - Partially addressed by `teams_get_favorites` (pinned chats) and `teams_get_frequent_contacts` (common contacts), but no full chat list API
 - **Presence/Status** - Real-time via WebSocket, not HTTP
 - **Calendar** - Outlook APIs exist but need separate research

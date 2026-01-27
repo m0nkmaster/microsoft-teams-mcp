@@ -436,7 +436,41 @@ This document defines user stories and personas to guide development of the Team
 
 **Status:** ✅ Implemented.
 
-**Note:** There's no single API endpoint to retrieve all saved messages - the saved flag is per-message in rcMetadata.
+**Note:** Saved messages can be retrieved via `teams_get_saved_messages`. This returns references with source conversation IDs - use `teams_get_thread` to fetch full content.
+
+---
+
+#### 7.5 View saved messages
+> "Show me all my bookmarked messages"
+
+**Flow:**
+1. Get saved messages via `teams_get_saved_messages`
+2. Optionally fetch full content from source using `teams_get_thread`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_saved_messages` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented (for full content) |
+
+**Status:** ✅ Implemented - returns references with `sourceConversationId` and `messageLink`.
+
+---
+
+#### 7.6 View followed threads
+> "What threads am I following?"
+
+**Flow:**
+1. Get followed threads via `teams_get_followed_threads`
+2. Optionally fetch full thread content using `teams_get_thread`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_followed_threads` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented (for full content) |
+
+**Status:** ✅ Implemented - returns references with `sourceConversationId` and `messageLink`.
 
 ---
 
@@ -703,7 +737,8 @@ The following tools are implemented:
 
 **Organisation:**
 - `teams_get_favorites` / `teams_add_favorite` / `teams_remove_favorite`
-- `teams_save_message` / `teams_unsave_message`
+- `teams_save_message` / `teams_unsave_message` / `teams_get_saved_messages`
+- `teams_get_followed_threads`
 - `teams_get_unread` / `teams_mark_read`
 
 **Profile & Status:**
@@ -723,7 +758,8 @@ The following tools are implemented:
 | Recent chats list | No dedicated API | Use `teams_get_favorites` + `teams_get_frequent_contacts` as workaround |
 | Presence/availability | WebSocket only | Real-time presence not available via HTTP |
 | Calendar integration | Separate auth | Requires Outlook APIs |
-| Get all saved messages | No single endpoint | Saved flag is per-message in rcMetadata |
+| Get all saved messages | `48:saved` virtual conversation | ✅ Implemented (`teams_get_saved_messages`) |
+| Get followed threads | `48:threads` virtual conversation | ✅ Implemented (`teams_get_followed_threads`) |
 
 ---
 

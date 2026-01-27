@@ -8,13 +8,14 @@ Complete reference for the undocumented Microsoft Teams APIs used by this MCP se
 2. [Regional Variations](#regional-variations)
 3. [Search APIs](#search-apis)
 4. [People APIs](#people-apis)
-5. [Messaging APIs](#messaging-apis)
-6. [Conversation APIs](#conversation-apis)
-7. [Activity & Notifications](#activity--notifications)
-8. [Reactions & Emoji](#reactions--emoji)
-9. [Calendar & Scheduling](#calendar--scheduling)
-10. [Files & Attachments](#files--attachments)
-11. [Common Gotchas](#common-gotchas)
+5. [Virtual Conversations](#virtual-conversations)
+6. [Messaging APIs](#messaging-apis)
+7. [Conversation APIs](#conversation-apis)
+8. [Activity & Notifications](#activity--notifications)
+9. [Reactions & Emoji](#reactions--emoji)
+10. [Calendar & Scheduling](#calendar--scheduling)
+11. [Files & Attachments](#files--attachments)
+12. [Common Gotchas](#common-gotchas)
 
 ---
 
@@ -369,6 +370,86 @@ Available sizes: `HR64x64`, `HR96x96`, `HR196x196`
 
 ---
 
+## Virtual Conversations
+
+Teams uses special "virtual conversation" IDs that act as aggregated views across all conversations. These follow the same messaging API pattern but return consolidated data.
+
+**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{virtualId}/messages?view=msnp24Equivalent&pageSize=200&startTime=1`
+
+**Auth:** Skype Token + Bearer
+
+### Available Virtual Conversations
+
+| Virtual ID | Purpose | Notes |
+|------------|---------|-------|
+| `48:saved` | Saved/bookmarked messages | Messages you've bookmarked across all conversations |
+| `48:threads` | Followed threads | Threads you're following for updates |
+| `48:mentions` | @mentions | Messages where you were @mentioned |
+| `48:notifications` | Activity feed | All notifications (mentions, reactions, replies) |
+| `48:notes` | Personal notes | Self-chat / notes to self |
+| `48:drafts` | Draft messages | Unsent scheduled messages (different endpoint pattern) |
+
+### Response Structure
+
+Virtual conversation messages include additional fields to identify the source:
+
+```json
+{
+  "messages": [
+    {
+      "sequenceId": 55,
+      "conversationid": "48:saved",
+      "conversationLink": "https://teams.microsoft.com/api/chatsvc/amer/v1/users/ME/conversations/48:saved",
+      "contenttype": "text",
+      "type": "Message",
+      "s2spartnername": "skypespaces",
+      "clumpId": "19:QsLXSoyGdLTIChUa-elhfgq_VyIauBGVMBk3-7orc1w1@thread.tacv2",
+      "secondaryReferenceId": "T_19:QsLXSoyGdLTIChUa-elhfgq_VyIauBGVMBk3-7orc1w1@thread.tacv2_M_1769464929223",
+      "id": "1769470012345",
+      "originalarrivaltime": "2026-01-26T18:30:00.000Z",
+      "content": "Message content here...",
+      "from": "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24",
+      "imdisplayname": "Smith, John"
+    }
+  ]
+}
+```
+
+**Key Fields:**
+
+| Field | Description |
+|-------|-------------|
+| `clumpId` | The original conversation ID where the message lives |
+| `secondaryReferenceId` | Composite key: `T_{conversationId}_M_{messageId}` for messages, `T_{conversationId}_P_{postId}_Threads` for followed threads |
+| `id` | Message ID within the virtual conversation (not the original message ID) |
+| `originalarrivaltime` | Original timestamp from source conversation |
+
+### Drafts Endpoint (Different Pattern)
+
+Drafts use a slightly different endpoint:
+
+**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/drafts?view=msnp24Equivalent&pageSize=200&startTime=1`
+
+**Response:**
+```json
+{
+  "drafts": [
+    {
+      "sequenceId": 1,
+      "conversationid": "48:drafts",
+      "draftType": "ScheduledDraft",
+      "innerThreadId": "19:abc_def@unq.gbl.spaces",
+      "draftDetails": {
+        "sendAt": "1755475200000"
+      },
+      "content": "Scheduled message content..."
+    }
+  ]
+}
+```
+
+---
+
 ## Messaging APIs
 
 ### Send Message
@@ -403,9 +484,7 @@ Available sizes: `HR64x64`, `HR96x96`, `HR196x196`
 }
 ```
 
-**Special Conversation IDs:**
-- `48:notes` — Personal notes/self-chat
-- `48:notifications` — Activity feed
+**Special Conversation IDs:** See [Virtual Conversations](#virtual-conversations) for the full list (`48:notes`, `48:saved`, `48:threads`, etc.)
 
 ---
 
