@@ -101,6 +101,12 @@ export const SELF_CHAT_ID = '48:notes';
 /** Activity feed (notifications) conversation ID. */
 export const NOTIFICATIONS_ID = '48:notifications';
 
+/** Saved messages virtual conversation ID. */
+export const SAVED_MESSAGES_ID = '48:saved';
+
+/** Followed threads virtual conversation ID. */
+export const FOLLOWED_THREADS_ID = '48:threads';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Activity Feed
 // ─────────────────────────────────────────────────────────────────────────────
