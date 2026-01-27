@@ -9,13 +9,15 @@ An MCP (Model Context Protocol) server that enables AI assistants to interact wi
 
 ## How It Works
 
-This server calls Microsoft's Teams APIs directly (Substrate, chatsvc, CSA)-the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
+This server calls Microsoft's Teams APIs directly (Substrate, chatsvc, CSA)  - the same APIs the Teams web app uses. No Azure AD app registration or admin consent required.
 
 **Authentication flow:**
-1. Run `teams_login` to open a browser and log in
+1. AI runs `teams_login` to open a browser for you to log in
 2. OAuth tokens are extracted and cached
 3. All operations use cached tokens directly (no browser needed)
 4. Automatic token refresh (~1 hour)
+
+**Security:** Uses the same authentication as the Teams web client—your access is limited to what your account can already do.
 
 ## Installation
 
@@ -100,6 +102,8 @@ Then configure:
 | `teams_remove_favorite` | Unpin a conversation |
 | `teams_save_message` | Bookmark a message |
 | `teams_unsave_message` | Remove bookmark from a message |
+| `teams_get_saved_messages` | Get list of saved/bookmarked messages with source references |
+| `teams_get_followed_threads` | Get list of followed threads with source references |
 | `teams_get_unread` | Get unread counts (aggregate or per-conversation) |
 | `teams_mark_read` | Mark a conversation as read up to a message |
 
