@@ -971,6 +971,7 @@ async function handleGetSavedMessages(
       count: result.value.messages.length,
       messages: result.value.messages.map(msg => ({
         content: msg.content,
+        contentType: msg.contentType,
         sender: msg.sender,
         timestamp: msg.timestamp,
         sourceConversationId: msg.sourceConversationId,
@@ -997,6 +998,7 @@ async function handleGetFollowedThreads(
       count: result.value.threads.length,
       threads: result.value.threads.map(thread => ({
         content: thread.content,
+        contentType: thread.contentType,
         sender: thread.sender,
         timestamp: thread.timestamp,
         sourceConversationId: thread.sourceConversationId,

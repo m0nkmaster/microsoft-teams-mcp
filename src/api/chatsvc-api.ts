@@ -10,7 +10,7 @@ import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
-import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp } from '../utils/parsers.js';
+import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage } from '../utils/parsers.js';
 import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID } from '../constants.js';
 
 /** Result of sending a message. */
@@ -346,6 +346,12 @@ export async function getThreadMessages(
   });
 }
 
+// Regex pattern for extracting message ID from saved messages: T_{conversationId}_M_{messageId}
+const SAVED_MESSAGE_PATTERN = /_M_(\d+)$/;
+
+// Regex pattern for extracting post ID from followed threads: T_{conversationId}_P_{postId}_Threads
+const FOLLOWED_THREAD_PATTERN = /_P_(\d+)_Threads$/;
+
 /**
  * Gets saved (bookmarked) messages from the virtual 48:saved conversation.
  * Returns messages the user has bookmarked across all conversations.
@@ -386,58 +392,21 @@ export async function getSavedMessages(
   const messages: SavedMessage[] = [];
 
   for (const raw of rawMessages) {
-    const msg = raw as Record<string, unknown>;
-
-    // Skip non-message types
-    const messageType = msg.messagetype as string || msg.type as string;
-    if (!messageType || messageType.startsWith('Control/')) {
-      continue;
-    }
-
-    const id = msg.id as string;
-    if (!id) continue;
-
-    const content = msg.content as string || '';
-    const contentType = messageType || 'Text';
-
-    const fromMri = msg.from as string || '';
-    const displayName = msg.imdisplayname as string || msg.displayName as string;
-
-    const timestamp = msg.originalarrivaltime as string ||
-      msg.composetime as string ||
-      new Date(parseInt(id, 10)).toISOString();
-
-    // clumpId contains the original conversation where the message lives
-    const sourceConversationId = msg.clumpId as string || '';
-    
-    // Extract source message ID from secondaryReferenceId if available
-    // Format: T_{conversationId}_M_{messageId}
-    let sourceMessageId: string | undefined;
-    const secondaryRef = msg.secondaryReferenceId as string;
-    if (secondaryRef) {
-      const match = secondaryRef.match(/_M_(\d+)$/);
-      if (match) {
-        sourceMessageId = match[1];
-      }
-    }
-
-    // Build message link to original message
-    const messageLink = sourceConversationId && sourceMessageId
-      ? buildMessageLink(sourceConversationId, sourceMessageId)
-      : undefined;
+    const parsed = parseVirtualConversationMessage(
+      raw as Record<string, unknown>,
+      SAVED_MESSAGE_PATTERN
+    );
+    if (!parsed) continue;
 
     messages.push({
-      id,
-      content: stripHtml(content),
-      contentType,
-      sender: {
-        mri: fromMri,
-        displayName,
-      },
-      timestamp,
-      sourceConversationId,
-      sourceMessageId,
-      messageLink,
+      id: parsed.id,
+      content: parsed.content,
+      contentType: parsed.contentType,
+      sender: parsed.sender,
+      timestamp: parsed.timestamp,
+      sourceConversationId: parsed.sourceConversationId,
+      sourceMessageId: parsed.sourceReferenceId,
+      messageLink: parsed.messageLink,
     });
   }
 
@@ -487,58 +456,21 @@ export async function getFollowedThreads(
   const threads: FollowedThread[] = [];
 
   for (const raw of rawMessages) {
-    const msg = raw as Record<string, unknown>;
-
-    // Skip non-message types
-    const messageType = msg.messagetype as string || msg.type as string;
-    if (!messageType || messageType.startsWith('Control/')) {
-      continue;
-    }
-
-    const id = msg.id as string;
-    if (!id) continue;
-
-    const content = msg.content as string || '';
-    const contentType = messageType || 'Text';
-
-    const fromMri = msg.from as string || '';
-    const displayName = msg.imdisplayname as string || msg.displayName as string;
-
-    const timestamp = msg.originalarrivaltime as string ||
-      msg.composetime as string ||
-      new Date(parseInt(id, 10)).toISOString();
-
-    // clumpId contains the original conversation where the thread lives
-    const sourceConversationId = msg.clumpId as string || '';
-    
-    // Extract source post ID from secondaryReferenceId if available
-    // Format: T_{conversationId}_P_{postId}_Threads
-    let sourcePostId: string | undefined;
-    const secondaryRef = msg.secondaryReferenceId as string;
-    if (secondaryRef) {
-      const match = secondaryRef.match(/_P_(\d+)_Threads$/);
-      if (match) {
-        sourcePostId = match[1];
-      }
-    }
-
-    // Build message link to original thread
-    const messageLink = sourceConversationId && sourcePostId
-      ? buildMessageLink(sourceConversationId, sourcePostId)
-      : undefined;
+    const parsed = parseVirtualConversationMessage(
+      raw as Record<string, unknown>,
+      FOLLOWED_THREAD_PATTERN
+    );
+    if (!parsed) continue;
 
     threads.push({
-      id,
-      content: stripHtml(content),
-      contentType,
-      sender: {
-        mri: fromMri,
-        displayName,
-      },
-      timestamp,
-      sourceConversationId,
-      sourcePostId,
-      messageLink,
+      id: parsed.id,
+      content: parsed.content,
+      contentType: parsed.contentType,
+      sender: parsed.sender,
+      timestamp: parsed.timestamp,
+      sourceConversationId: parsed.sourceConversationId,
+      sourcePostId: parsed.sourceReferenceId,
+      messageLink: parsed.messageLink,
     });
   }
 
