@@ -971,9 +971,9 @@ If API calls fail with authentication errors:
 - Check for existing browser processes that may be blocking
 
 ### Search Doesn't Find All Thread Replies
-The Substrate search API is a **full-text search** — it only returns messages matching the search terms. If someone replied to your message but their reply doesn't contain your search keywords, it won't appear in results.
+The Substrate search API is a **full-text search** which only returns messages matching the search terms. If someone replied to your message but their reply doesn't contain your search keywords, it won't appear in results.
 
-**Example:** Searching for "Easter blockout" won't find a reply that says "Given World of Frozen opens the week before, I'd put a fair amount of money on 'yes'" — even though it's a direct reply.
+**Example:** Searching for "Easter blockout" won't find a reply that says "Given World of Frozen opens the week before, I'd put a fair amount of money on 'yes'", even though it's a direct reply.
 
 **Workaround:** After finding a message of interest, use `teams_get_thread` with the `conversationId` to retrieve the full thread context including all replies.
 
