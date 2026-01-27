@@ -491,6 +491,8 @@ This document defines user stories and personas to guide development of the Team
 
 **Status:** API discovered, implementation pending.
 
+**Workaround:** Use story 8.2 below - search for messages with attachments using `hasattachment:true from:sarah` to find messages where Sarah shared files.
+
 ---
 
 #### 8.2 Find messages with attachments
@@ -667,6 +669,26 @@ These patterns combine multiple tools for sophisticated interactions.
 
 ---
 
+#### 10.7 Mention someone in a message
+> "Send a message to the project channel mentioning Sarah about the deadline"
+
+**Flow:**
+1. Find channel via `teams_find_channel`
+2. Find Sarah's MRI via `teams_search_people`
+3. Compose message with inline mention: `@[Sarah Smith](8:orgid:abc...)`
+4. Send using `teams_send_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_find_channel` | ✅ Implemented |
+| `teams_search_people` | ✅ Implemented |
+| `teams_send_message` | ✅ Implemented |
+
+**Status:** ✅ Implemented - use `@[DisplayName](mri)` syntax in message content. The MRI comes from people search results.
+
+---
+
 ## Implementation Priority
 
 Based on user value and API readiness:
@@ -758,8 +780,6 @@ The following tools are implemented:
 | Recent chats list | No dedicated API | Use `teams_get_favorites` + `teams_get_frequent_contacts` as workaround |
 | Presence/availability | WebSocket only | Real-time presence not available via HTTP |
 | Calendar integration | Separate auth | Requires Outlook APIs |
-| Get all saved messages | `48:saved` virtual conversation | ✅ Implemented (`teams_get_saved_messages`) |
-| Get followed threads | `48:threads` virtual conversation | ✅ Implemented (`teams_get_followed_threads`) |
 
 ---
 
@@ -776,7 +796,7 @@ hasattachment:true             # Messages with files
 NOT from:email                 # Exclude results
 ```
 
-**⚠️ Does NOT work:** `@me`, `from:me`, `to:me`, `mentions:me` - use `teams_get_me` first to get actual email/displayName. Also `sent:lastweek`, `sent:today`, `sent:thisweek` do NOT work - use explicit dates or omit (results sorted by recency).
+**⚠️ Does NOT work:** `@me`, `from:me`, `to:me`, `mentions:me` - use `teams_get_me` first to get actual email/displayName. Also `sent:lastweek` and `sent:thisweek` do NOT work - use explicit dates or omit (results sorted by recency). `sent:today` works.
 
 Combine operators: `from:sarah@co.com sent:>=2026-01-18 hasattachment:true`
 
