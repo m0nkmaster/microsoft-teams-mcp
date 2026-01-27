@@ -46,7 +46,16 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 | `teams_delete_message` | Delete your own messages (soft delete) |
 | `teams_save_message` | Bookmark a message |
 | `teams_unsave_message` | Remove bookmark |
+| `teams_get_saved_messages` | Get list of saved/bookmarked messages |
+| `teams_get_followed_threads` | Get list of followed threads |
 | `teams_mark_read` | Mark conversation as read up to a message |
+
+### Reactions
+| Tool | Purpose |
+|------|---------|
+| `teams_add_reaction` | Add an emoji reaction to a message |
+| `teams_remove_reaction` | Remove an emoji reaction from a message |
+| `teams_search_emoji` | Search for emojis by name (standard + custom org emojis) |
 
 ### Favourites
 | Tool | Purpose |
@@ -119,6 +128,31 @@ Use `@[DisplayName](mri)` syntax inline. The display name can be anything (e.g.,
 ```
 1. teams_find_channel "channel name" → get channelId
 2. teams_get_thread conversationId="channelId" → read messages
+```
+
+### Review saved messages
+```
+1. teams_get_saved_messages → get list of bookmarked messages
+2. teams_get_thread conversationId="sourceConversationId" → read full context
+```
+
+### Check followed threads
+```
+1. teams_get_followed_threads → get list of threads you're following
+2. teams_get_thread conversationId="sourceConversationId" → read thread content
+```
+
+### React to a message
+```
+1. teams_search or teams_get_thread → find the message
+2. teams_add_reaction conversationId="..." messageId="..." emoji="like"
+```
+Quick reactions: `like` (👍), `heart` (❤️), `laugh` (😂), `surprised` (😮), `sad` (😢), `angry` (😠)
+
+### Find custom emojis
+```
+1. teams_search_emoji query="thumbs" → find emoji keys
+2. teams_add_reaction emoji="..." → use the key from search
 ```
 
 ---

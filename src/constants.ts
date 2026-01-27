@@ -95,11 +95,25 @@ export const RETRY_MAX_DELAY_MS = 10000;
 // Conversation IDs
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Virtual Conversation IDs.
+ * 
+ * These special IDs are used with the standard chatsvc messages endpoint
+ * (/users/ME/conversations/{id}/messages) to retrieve aggregated views
+ * across all conversations. See docs/API-REFERENCE.md for details.
+ */
+
 /** Self-chat (notes) conversation ID. */
 export const SELF_CHAT_ID = '48:notes';
 
 /** Activity feed (notifications) conversation ID. */
 export const NOTIFICATIONS_ID = '48:notifications';
+
+/** Saved messages virtual conversation ID. */
+export const SAVED_MESSAGES_ID = '48:saved';
+
+/** Followed threads virtual conversation ID. */
+export const FOLLOWED_THREADS_ID = '48:threads';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Activity Feed

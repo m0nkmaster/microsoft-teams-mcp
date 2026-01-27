@@ -18,9 +18,11 @@ import {
   getActivityFeed,
   addReaction,
   removeReaction,
+  getSavedMessages,
+  getFollowedThreads,
 } from '../api/chatsvc-api.js';
 import { getFavorites, addFavorite, removeFavorite, getCustomEmojis } from '../api/csa-api.js';
-import { SELF_CHAT_ID, MAX_UNREAD_AGGREGATE_CHECK } from '../constants.js';
+import { SELF_CHAT_ID, MAX_UNREAD_AGGREGATE_CHECK, MAX_THREAD_LIMIT } from '../constants.js';
 import { ErrorCode } from '../types/errors.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,6 +92,14 @@ export const RemoveReactionInputSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
   messageId: z.string().min(1, 'Message ID cannot be empty'),
   emoji: z.string().min(1, 'Emoji key cannot be empty'),
+});
+
+export const GetSavedMessagesInputSchema = z.object({
+  limit: z.number().min(1).max(MAX_THREAD_LIMIT).optional(),
+});
+
+export const GetFollowedThreadsInputSchema = z.object({
+  limit: z.number().min(1).max(MAX_THREAD_LIMIT).optional(),
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -381,6 +391,34 @@ const removeReactionToolDefinition: Tool = {
       },
     },
     required: ['conversationId', 'messageId', 'emoji'],
+  },
+};
+
+const getSavedMessagesToolDefinition: Tool = {
+  name: 'teams_get_saved_messages',
+  description: 'Get the list of messages the user has saved (bookmarked) in Teams. Returns references to saved messages with source conversation IDs and direct links. Use teams_get_thread with the sourceConversationId to fetch actual message content.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of saved messages to return (default: 50, max: 200)',
+      },
+    },
+  },
+};
+
+const getFollowedThreadsToolDefinition: Tool = {
+  name: 'teams_get_followed_threads',
+  description: 'Get the list of threads the user is following in Teams. Returns references to followed threads with source conversation IDs and direct links. Use teams_get_thread with the sourceConversationId to fetch actual thread content.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      limit: {
+        type: 'number',
+        description: 'Maximum number of followed threads to return (default: 50, max: 200)',
+      },
+    },
   },
 };
 
@@ -917,6 +955,60 @@ async function handleRemoveReaction(
   };
 }
 
+async function handleGetSavedMessages(
+  input: z.infer<typeof GetSavedMessagesInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await getSavedMessages({ limit: input.limit });
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      count: result.value.messages.length,
+      messages: result.value.messages.map(msg => ({
+        content: msg.content,
+        contentType: msg.contentType,
+        sender: msg.sender,
+        timestamp: msg.timestamp,
+        sourceConversationId: msg.sourceConversationId,
+        sourceMessageId: msg.sourceMessageId,
+        messageLink: msg.messageLink,
+      })),
+    },
+  };
+}
+
+async function handleGetFollowedThreads(
+  input: z.infer<typeof GetFollowedThreadsInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await getFollowedThreads({ limit: input.limit });
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      count: result.value.threads.length,
+      threads: result.value.threads.map(thread => ({
+        content: thread.content,
+        contentType: thread.contentType,
+        sender: thread.sender,
+        timestamp: thread.timestamp,
+        sourceConversationId: thread.sourceConversationId,
+        sourcePostId: thread.sourcePostId,
+        messageLink: thread.messageLink,
+      })),
+    },
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Exports
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1017,6 +1109,18 @@ export const removeReactionTool: RegisteredTool<typeof RemoveReactionInputSchema
   handler: handleRemoveReaction,
 };
 
+export const getSavedMessagesTool: RegisteredTool<typeof GetSavedMessagesInputSchema> = {
+  definition: getSavedMessagesToolDefinition,
+  schema: GetSavedMessagesInputSchema,
+  handler: handleGetSavedMessages,
+};
+
+export const getFollowedThreadsTool: RegisteredTool<typeof GetFollowedThreadsInputSchema> = {
+  definition: getFollowedThreadsToolDefinition,
+  schema: GetFollowedThreadsInputSchema,
+  handler: handleGetFollowedThreads,
+};
+
 /** All message-related tools. */
 export const messageTools = [
   sendMessageTool,
@@ -1035,4 +1139,6 @@ export const messageTools = [
   searchEmojiTool,
   addReactionTool,
   removeReactionTool,
+  getSavedMessagesTool,
+  getFollowedThreadsTool,
 ];
