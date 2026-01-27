@@ -78,10 +78,11 @@ export async function refreshTokensViaBrowser(): Promise<Result<TokenRefreshResu
     const { ensureAuthenticated } = await import('../browser/auth.js');
 
     // Use the same auth flow that works for login - this triggers token acquisition
+    // showOverlay: false since headless browser has no visible window
     await ensureAuthenticated(manager.page, manager.context, (msg) => {
       // Silent logging for headless refresh
       console.log(`[token-refresh] ${msg}`);
-    });
+    }, false);
 
     // Close browser (ensureAuthenticated already saved the session)
     await closeBrowser(manager, false);

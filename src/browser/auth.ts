@@ -5,8 +5,165 @@
 
 import type { Page, BrowserContext } from 'playwright';
 import { saveSessionState } from './context.js';
+import {
+  OVERLAY_STEP_PAUSE_MS,
+  OVERLAY_COMPLETE_PAUSE_MS,
+} from '../constants.js';
 
 const TEAMS_URL = 'https://teams.microsoft.com';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Progress Overlay UI
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PROGRESS_OVERLAY_ID = 'mcp-login-progress-overlay';
+
+/** Phases for the login progress overlay. */
+type OverlayPhase = 'signed-in' | 'acquiring' | 'saving' | 'complete' | 'refreshing' | 'error';
+
+/** Content for each overlay phase. */
+const OVERLAY_CONTENT: Record<OverlayPhase, { message: string; detail: string }> = {
+  'signed-in': {
+    message: "You're signed in!",
+    detail: 'Setting up your connection to Teams...',
+  },
+  'acquiring': {
+    message: 'Acquiring permissions...',
+    detail: 'Getting access to search and messages...',
+  },
+  'saving': {
+    message: 'Saving your session...',
+    detail: "So you won't need to log in again.",
+  },
+  'complete': {
+    message: 'All done!',
+    detail: 'This window will close automatically.',
+  },
+  'refreshing': {
+    message: 'Refreshing your session...',
+    detail: 'Updating your access tokens...',
+  },
+  'error': {
+    message: 'Something went wrong',
+    detail: 'Please try again or check the console for details.',
+  },
+};
+
+/**
+ * Shows a progress overlay for a specific phase.
+ * Handles injection, content, and optional pause.
+ * Failures are silently ignored - the overlay is purely cosmetic.
+ */
+async function showLoginProgress(
+  page: Page,
+  phase: OverlayPhase,
+  options: { pause?: boolean } = {}
+): Promise<void> {
+  const content = OVERLAY_CONTENT[phase];
+  const isComplete = phase === 'complete';
+  const isError = phase === 'error';
+
+  try {
+    await page.evaluate(({ id, message, detail, complete, error }) => {
+      // Remove existing overlay if present
+      const existing = document.getElementById(id);
+      if (existing) {
+        existing.remove();
+      }
+
+      // Create overlay container
+      const overlay = document.createElement('div');
+      overlay.id = id;
+      Object.assign(overlay.style, {
+        position: 'fixed',
+        top: '0',
+        left: '0',
+        right: '0',
+        bottom: '0',
+        background: 'rgba(0, 0, 0, 0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: '999999',
+        fontFamily: "'Segoe UI', system-ui, sans-serif",
+      });
+
+      // Create modal card
+      const modal = document.createElement('div');
+      Object.assign(modal.style, {
+        background: 'white',
+        borderRadius: '12px',
+        padding: '40px 48px',
+        maxWidth: '420px',
+        textAlign: 'center',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+      });
+
+      // Create icon
+      const icon = document.createElement('div');
+      const iconBg = error ? '#c42b1c' : complete ? '#107c10' : '#5b5fc7';
+      const iconText = error ? '✕' : complete ? '✓' : '⋯';
+      Object.assign(icon.style, {
+        width: '64px',
+        height: '64px',
+        margin: '0 auto 24px',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '32px',
+        background: iconBg,
+        color: 'white',
+      });
+      icon.textContent = iconText;
+
+      // Create title
+      const title = document.createElement('h2');
+      Object.assign(title.style, {
+        margin: '0 0 12px',
+        fontSize: '20px',
+        fontWeight: '600',
+        color: '#242424',
+      });
+      title.textContent = message;
+
+      // Create detail text
+      const detailEl = document.createElement('p');
+      Object.assign(detailEl.style, {
+        margin: '0',
+        fontSize: '14px',
+        color: '#616161',
+        lineHeight: '1.5',
+      });
+      detailEl.textContent = detail;
+
+      // Assemble and append
+      modal.appendChild(icon);
+      modal.appendChild(title);
+      modal.appendChild(detailEl);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+    }, {
+      id: PROGRESS_OVERLAY_ID,
+      message: content.message,
+      detail: content.detail,
+      complete: isComplete,
+      error: isError,
+    });
+
+    // Pause if requested (for steps that need user to see the message)
+    if (options.pause) {
+      const pauseMs = isComplete ? OVERLAY_COMPLETE_PAUSE_MS : OVERLAY_STEP_PAUSE_MS;
+      await page.waitForTimeout(pauseMs);
+    }
+  } catch {
+    // Overlay is cosmetic - don't fail login if it can't be shown
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Authentication Detection
+// ─────────────────────────────────────────────────────────────────────────────
 
 // URLs that indicate we're in a login flow
 const LOGIN_URL_PATTERNS = [
@@ -213,12 +370,20 @@ export async function waitForManualLogin(
     if (status.isAuthenticated) {
       log('Authentication successful!');
 
+      // Show progress through login steps
+      await showLoginProgress(page, 'signed-in', { pause: true });
+      await showLoginProgress(page, 'acquiring');
+
       // Trigger a search to cause MSAL to acquire the Substrate token
       await triggerTokenAcquisition(page, log);
+
+      await showLoginProgress(page, 'saving');
 
       // Save the session state with fresh tokens
       await saveSessionState(context);
       log('Session state saved.');
+
+      await showLoginProgress(page, 'complete', { pause: true });
 
       return;
     }
@@ -226,6 +391,9 @@ export async function waitForManualLogin(
     // Check every 2 seconds
     await page.waitForTimeout(2000);
   }
+
+  // Show error overlay before throwing
+  await showLoginProgress(page, 'error', { pause: true });
 
   throw new Error('Authentication timeout: user did not complete login within the allowed time');
 }
@@ -239,11 +407,13 @@ export async function waitForManualLogin(
  * @param page - The page to use
  * @param context - Browser context for session management
  * @param onProgress - Callback for progress updates
+ * @param showOverlay - Whether to show progress overlay (default: true for visible browsers)
  */
 export async function ensureAuthenticated(
   page: Page,
   context: BrowserContext,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  showOverlay: boolean = true
 ): Promise<void> {
   const log = onProgress ?? console.log;
 
@@ -253,11 +423,23 @@ export async function ensureAuthenticated(
   if (status.isAuthenticated) {
     log('Already authenticated.');
 
+    if (showOverlay) {
+      await showLoginProgress(page, 'refreshing');
+    }
+
     // Trigger a search to cause MSAL to acquire/refresh the Substrate token
     await triggerTokenAcquisition(page, log);
 
+    if (showOverlay) {
+      await showLoginProgress(page, 'saving');
+    }
+
     // Save the session state with fresh tokens
     await saveSessionState(context);
+
+    if (showOverlay) {
+      await showLoginProgress(page, 'complete', { pause: true });
+    }
 
     return;
   }
