@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import {
   stripHtml,
   buildMessageLink,
+  getConversationType,
   extractMessageTimestamp,
   parsePersonSuggestion,
   parseV2Result,
@@ -69,20 +70,64 @@ describe('stripHtml', () => {
   });
 });
 
-describe('buildMessageLink', () => {
-  it('builds correct Teams deep link', () => {
-    const link = buildMessageLink('19:abc@thread.tacv2', '1705760000000');
-    expect(link).toBe('https://teams.microsoft.com/l/message/19%3Aabc%40thread.tacv2/1705760000000');
+describe('getConversationType', () => {
+  it('identifies channel conversations', () => {
+    expect(getConversationType('19:abc@thread.tacv2')).toBe('channel');
+    expect(getConversationType('19:QsLXSoyGdLTIChUa-elhfgq_VyIauBGVMBk3-7orc1w1@thread.tacv2')).toBe('channel');
   });
 
-  it('accepts numeric timestamp', () => {
+  it('identifies meeting conversations', () => {
+    expect(getConversationType('19:meeting_OWVkMDgzYWMtOGQyNi00NjQ0@thread.v2')).toBe('meeting');
+    expect(getConversationType('19:meeting_abc123@thread.v2')).toBe('meeting');
+  });
+
+  it('identifies 1:1 chat conversations', () => {
+    expect(getConversationType('19:ab76f827-27e2-4c67-a765-f1a53145fa24_b71f4d0f-ed13-4f3e-abdf-037e146be579@unq.gbl.spaces')).toBe('chat');
+  });
+
+  it('identifies group chat conversations', () => {
+    // Group chats use @thread.v2 but don't have meeting_ prefix
+    expect(getConversationType('19:abc123@thread.v2')).toBe('chat');
+  });
+});
+
+describe('buildMessageLink', () => {
+  it('builds channel link without context parameter', () => {
+    const link = buildMessageLink('19:abc@thread.tacv2', '1705760000000');
+    expect(link).toBe('https://teams.microsoft.com/l/message/19%3Aabc%40thread.tacv2/1705760000000');
+    expect(link).not.toContain('context');
+  });
+
+  it('builds chat link with context parameter', () => {
+    const link = buildMessageLink('19:guid1_guid2@unq.gbl.spaces', '1705760000000');
+    expect(link).toContain('context=%7B%22contextType%22%3A%22chat%22%7D');
+  });
+
+  it('builds meeting link with context parameter', () => {
+    const link = buildMessageLink('19:meeting_abc@thread.v2', 1705760000000);
+    expect(link).toContain('context=%7B%22contextType%22%3A%22chat%22%7D');
+  });
+
+  it('builds group chat link with context parameter', () => {
     const link = buildMessageLink('19:abc@thread.v2', 1705760000000);
-    expect(link).toBe('https://teams.microsoft.com/l/message/19%3Aabc%40thread.v2/1705760000000');
+    expect(link).toContain('context=%7B%22contextType%22%3A%22chat%22%7D');
+  });
+
+  it('builds channel thread reply link with parentMessageId', () => {
+    // Thread reply: message timestamp differs from parent
+    const link = buildMessageLink('19:abc@thread.tacv2', '1705770000000', '1705760000000');
+    expect(link).toBe('https://teams.microsoft.com/l/message/19%3Aabc%40thread.tacv2/1705770000000?parentMessageId=1705760000000');
+  });
+
+  it('omits parentMessageId for top-level channel posts', () => {
+    // Top-level post: message timestamp equals parent (or no parent)
+    const link = buildMessageLink('19:abc@thread.tacv2', '1705760000000', '1705760000000');
+    expect(link).not.toContain('parentMessageId');
   });
 
   it('encodes special characters in conversation ID', () => {
-    const link = buildMessageLink('19:special@thread', '123');
-    expect(link).toContain('19%3Aspecial%40thread');
+    const link = buildMessageLink('19:special@thread.tacv2', '123');
+    expect(link).toContain('19%3Aspecial%40thread.tacv2');
   });
 });
 
