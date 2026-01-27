@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
 
-An MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams — search messages, send replies, manage favourites, and more.
+An MCP (Model Context Protocol) server that enables AI assistants to interact with Microsoft Teams. Search messages, send replies, manage favourites, and more.
 
 ## How It Works
 
@@ -17,7 +17,7 @@ This server calls Microsoft's Teams APIs directly (Substrate, chatsvc, CSA)  - t
 3. All operations use cached tokens directly (no browser needed)
 4. Automatic token refresh (~1 hour)
 
-**Security:** Uses the same authentication as the Teams web client—your access is limited to what your account can already do.
+**Security:** Uses the same authentication as the Teams web client - your access is limited to what your account can already do.
 
 ## Installation
 

@@ -1100,7 +1100,7 @@ Use `syncState` from response for efficient incremental polling.
 
 ## Common Gotchas
 
-1. **Date operators** — Only explicit dates work (`sent:2026-01-20`). Named shortcuts like `sent:lastweek`, `sent:today`, `sent:thisweek` return 0 results.
+1. **Date operators** - Only explicit dates work (`sent:2026-01-20`) or `sent:today`. Named shortcuts like `sent:lastweek` and `sent:thisweek` return 0 results.
 
 2. **`@me` doesn't exist** — `from:me`, `to:me`, and `mentions:me` don't work. Get your email/name first, then search with those values.
 
