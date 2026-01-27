@@ -416,9 +416,12 @@ The tool uses the provided `messageId` directly as the thread root. In Teams cha
 ```
 
 **Response** includes:
-- `messageId` - Your new reply's message ID
+- `messageId` - Client-generated ID (not useful for subsequent operations)
+- `serverMessageId` - **Use this for reactions, edits, deletions, etc.**
 - `threadRootMessageId` - The message ID used for the reply
 - `conversationId` - The channel ID
+
+**Important:** Use `serverMessageId` (not `messageId`) for any operations on the reply (reactions, edits, deletions).
 
 #### teams_get_me
 

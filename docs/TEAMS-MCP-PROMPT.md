@@ -77,7 +77,7 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 | `NOT` | `NOT from:user@company.com` | Exclude results |
 | `hasattachment:` | `hasattachment:true` | Messages with files |
 
-**Important**: `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your actual email/name. Also `sent:lastweek`, `sent:today`, `sent:thisweek` do NOT work - use explicit dates (e.g., `sent:>=2026-01-18`) or omit since results are sorted by recency.
+**Important**: `@me`, `from:me`, `to:me` do NOT work. Use `teams_get_me` first to get your actual email/name. `sent:today` works, but `sent:lastweek` and `sent:thisweek` do NOT - use explicit dates (e.g., `sent:>=2026-01-18`) or omit since results are sorted by recency.
 
 ---
 
