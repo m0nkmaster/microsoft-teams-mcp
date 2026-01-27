@@ -15,7 +15,7 @@ export const searchResultItem = {
   HitHighlightedSummary: 'Let me check the <c0>budget</c0> report for Q3',
   Summary: 'Let me check the budget report for Q3',
   Source: {
-    DateTimeReceived: '2026-01-20T14:30:00.000Z',
+    DateTimeReceived: '2026-01-20T14:30:00.000Z', // = 1768919400000
     From: {
       EmailAddress: {
         Name: 'Smith, John',
@@ -27,7 +27,8 @@ export const searchResultItem = {
     Extensions: {
       SkypeSpaces_ConversationPost_Extension_SkypeGroupId: '19:abcdef123456@thread.tacv2',
     },
-    ClientConversationId: '19:abcdef123456@thread.tacv2;messageid=1705760000000',
+    // Top-level post: messageid matches DateTimeReceived timestamp
+    ClientConversationId: '19:abcdef123456@thread.tacv2;messageid=1768919400000',
   },
 };
 
@@ -170,6 +171,34 @@ export const jwtPayloadSpaceName = {
   oid: 'space-name-user',
   name: 'Sarah Connor',
   upn: 'sarah.connor@company.com',
+};
+
+/**
+ * Channel thread reply - messageid differs from message timestamp.
+ * The parent post was at 1768919400000 (2026-01-20T14:30:00.000Z),
+ * this reply is at 1768921200000 (2026-01-20T15:00:00.000Z).
+ */
+export const searchResultThreadReply = {
+  Id: 'AAMkThreadReply',
+  ReferenceId: 'thread-reply.1000.1',
+  HitHighlightedSummary: 'Thanks for the update on the budget!',
+  Source: {
+    DateTimeReceived: '2026-01-20T15:00:00.000Z', // = 1768921200000
+    From: {
+      EmailAddress: {
+        Name: 'Doe, Jane',
+        Address: 'jane.doe@company.com',
+      },
+    },
+    ChannelName: 'General',
+    TeamName: 'Finance Team',
+    Extensions: {
+      SkypeSpaces_ConversationPost_Extension_SkypeGroupId: '19:abcdef123456@thread.tacv2',
+    },
+    // Parent message ID (1768919400000) differs from this message's timestamp (1768921200000)
+    ClientConversationId: '19:abcdef123456@thread.tacv2;messageid=1768919400000',
+    ClientThreadId: '19:abcdef123456@thread.tacv2',
+  },
 };
 
 /**
