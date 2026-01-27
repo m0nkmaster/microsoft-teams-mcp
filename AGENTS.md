@@ -332,7 +332,7 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 - `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, `nextFrom`
 
 The `conversationId` enables replying to search results via `teams_send_message`.
-The `messageLink` is a direct URL to open the message in Teams (format: `https://teams.microsoft.com/l/message/{conversationId}/{timestamp}`).
+The `messageLink` is a clickable URL to open the message directly in Teams.
 
 #### teams_send_message
 
@@ -416,9 +416,12 @@ The tool uses the provided `messageId` directly as the thread root. In Teams cha
 ```
 
 **Response** includes:
-- `messageId` - Your new reply's message ID
+- `messageId` - Client-generated ID (not useful for subsequent operations)
+- `serverMessageId` - **Use this for reactions, edits, deletions, etc.**
 - `threadRootMessageId` - The message ID used for the reply
 - `conversationId` - The channel ID
+
+**Important:** Use `serverMessageId` (not `messageId`) for any operations on the reply (reactions, edits, deletions).
 
 #### teams_get_me
 
@@ -968,20 +971,30 @@ If API calls fail with authentication errors:
 - Check for existing browser processes that may be blocking
 
 ### Search Doesn't Find All Thread Replies
-The Substrate search API is a **full-text search** — it only returns messages matching the search terms. If someone replied to your message but their reply doesn't contain your search keywords, it won't appear in results.
+The Substrate search API is a **full-text search** which only returns messages matching the search terms. If someone replied to your message but their reply doesn't contain your search keywords, it won't appear in results.
 
-**Example:** Searching for "Easter blockout" won't find a reply that says "Given World of Frozen opens the week before, I'd put a fair amount of money on 'yes'" — even though it's a direct reply.
+**Example:** Searching for "Easter blockout" won't find a reply that says "Given World of Frozen opens the week before, I'd put a fair amount of money on 'yes'", even though it's a direct reply.
 
 **Workaround:** After finding a message of interest, use `teams_get_thread` with the `conversationId` to retrieve the full thread context including all replies.
 
 ### Message Deep Links
-For channel threaded messages, deep links use:
-- The thread ID (`ClientThreadId`) — the specific thread within a channel
-- The message's own timestamp (`DateTimeReceived`) — the exact message, not the parent
 
-The link format is: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`
+Teams requires different deep link formats depending on conversation type:
 
-Note: The `conversationId` returned in search results for threaded replies will be the thread ID (e.g., `19:0df465dd...@thread.tacv2`) not the channel ID (e.g., `19:-eGaQP4gB...@thread.tacv2`).
+| Conversation Type | Format | Notes |
+|-------------------|--------|-------|
+| **Channel (top-level)** | `/l/message/{channelId}/{msgTimestamp}` | No extra params needed |
+| **Channel (thread reply)** | `/l/message/{channelId}/{msgTimestamp}?parentMessageId={parentId}` | Parent ID from `ClientConversationId;messageid=xxx` |
+| **1:1 / Group chat** | `/l/message/{chatId}/{msgTimestamp}?context={"contextType":"chat"}` | Context param required |
+| **Meeting chat** | `/l/message/{meetingId}/{msgTimestamp}?context={"contextType":"chat"}` | Context param required |
+
+**Conversation ID patterns:**
+- Channels: `19:xxx@thread.tacv2`
+- Meetings: `19:meeting_xxx@thread.v2`
+- 1:1 chats: `19:guid_guid@unq.gbl.spaces`
+- Group chats: `19:xxx@thread.v2` (non-meeting)
+
+**Detecting thread replies:** Compare the `messageid` in `ClientConversationId` with the message's own timestamp from `DateTimeReceived`. If they differ, it's a thread reply and needs `parentMessageId`.
 
 ## Reference
 

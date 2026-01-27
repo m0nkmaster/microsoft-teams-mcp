@@ -50,19 +50,58 @@ export function stripHtml(html: string): string {
 }
 
 /**
+ * Determines the conversation type from a Teams conversation ID.
+ * 
+ * Conversation ID formats:
+ * - Channels: 19:xxx@thread.tacv2
+ * - Meetings: 19:meeting_xxx@thread.v2
+ * - 1:1 chats: 19:guid_guid@unq.gbl.spaces
+ * - Group chats: 19:xxx@thread.v2 (non-meeting)
+ */
+export function getConversationType(conversationId: string): 'channel' | 'meeting' | 'chat' {
+  if (conversationId.includes('@thread.tacv2')) {
+    return 'channel';
+  }
+  if (conversationId.includes('meeting_')) {
+    return 'meeting';
+  }
+  // 1:1 chats (@unq.gbl.spaces) and group chats (@thread.v2) both need chat context
+  return 'chat';
+}
+
+/**
  * Builds a deep link to open a message in Teams.
  * 
- * Format: https://teams.microsoft.com/l/message/{conversationId}/{messageTimestamp}
+ * Different conversation types require different URL formats:
+ * - Channels: /l/message/{channelId}/{msgId}?parentMessageId={parentId} (for thread replies)
+ * - Chats/Meetings: /l/message/{chatId}/{msgId}?context={"contextType":"chat"}
  * 
  * @param conversationId - The conversation/thread ID (e.g., "19:xxx@thread.tacv2")
  * @param messageTimestamp - The message timestamp in epoch milliseconds
+ * @param parentMessageId - For channel thread replies, the ID of the parent/root message
  */
 export function buildMessageLink(
   conversationId: string,
-  messageTimestamp: string | number
+  messageTimestamp: string | number,
+  parentMessageId?: string
 ): string {
   const timestamp = typeof messageTimestamp === 'string' ? messageTimestamp : String(messageTimestamp);
-  return `https://teams.microsoft.com/l/message/${encodeURIComponent(conversationId)}/${timestamp}`;
+  const baseUrl = `https://teams.microsoft.com/l/message/${encodeURIComponent(conversationId)}/${timestamp}`;
+  
+  const convType = getConversationType(conversationId);
+  
+  // Chats and meetings require the context parameter
+  if (convType === 'chat' || convType === 'meeting') {
+    const context = encodeURIComponent('{"contextType":"chat"}');
+    return `${baseUrl}?context=${context}`;
+  }
+  
+  // Channel messages - add parentMessageId for thread replies
+  if (convType === 'channel' && parentMessageId && parentMessageId !== timestamp) {
+    return `${baseUrl}?parentMessageId=${parentMessageId}`;
+  }
+  
+  return baseUrl;
 }
 
 /**
@@ -218,10 +257,24 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
   // Extract message timestamp - used for both deep links and thread replies
   const messageTimestamp = extractMessageTimestamp(source, timestamp);
   
+  // Extract parent message ID from ClientConversationId for thread replies
+  // Format: "19:xxx@thread.tacv2;messageid=1769237777958"
+  // If the messageid differs from the message's own timestamp, it's a thread reply
+  let parentMessageId: string | undefined;
+  if (source) {
+    const clientConvId = source.ClientConversationId as string | undefined;
+    if (clientConvId?.includes(';messageid=')) {
+      const match = clientConvId.match(/;messageid=(\d+)/);
+      if (match) {
+        parentMessageId = match[1];
+      }
+    }
+  }
+  
   // Build message link if we have the required data
   let messageLink: string | undefined;
   if (conversationId && messageTimestamp) {
-    messageLink = buildMessageLink(conversationId, messageTimestamp);
+    messageLink = buildMessageLink(conversationId, messageTimestamp, parentMessageId);
   }
 
   return {

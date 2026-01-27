@@ -1,6 +1,6 @@
 # Microsoft Teams Web API Reference
 
-Complete reference for the undocumented Microsoft Teams APIs used by this MCP server. These are internal APIs discovered through browser network inspection—not the official Microsoft Graph API.
+Complete reference for the undocumented Microsoft Teams APIs used by this MCP server. These are internal APIs discovered through browser network inspection, not the official Microsoft Graph API.
 
 ## Table of Contents
 
@@ -41,7 +41,7 @@ Content-Type: application/json
 
 ### Token Storage
 
-Tokens are stored in browser localStorage under MSAL keys. Look for keys containing `SubstrateSearch` scope. Tokens typically expire after ~1 hour. MSAL only refreshes tokens when an API call requires them—not on page load.
+Tokens are stored in browser localStorage under MSAL keys. Look for keys containing `SubstrateSearch` scope. Tokens typically expire after ~1 hour. MSAL only refreshes tokens when an API call requires them, not on page load.
 
 ### Session Persistence
 
@@ -529,7 +529,7 @@ The `;messageid=` suffix indicates a thread reply. URL-encoded as `%3Bmessageid%
 | Reply to thread | `conversations/{channelId};messageid={threadRootId}/messages` |
 | Chat message | `conversations/{chatId}/messages` |
 
-**Note:** Chats (1:1, group, meeting) don't use threading—all messages go to the flat conversation.
+**Note:** Chats (1:1, group, meeting) don't use threading. All messages go to the flat conversation.
 
 ---
 
@@ -677,10 +677,10 @@ This is a soft delete. Channel owners/moderators can delete others' messages.
 **Endpoint:** `GET https://teams.microsoft.com/api/csa/{region}/api/v1/containers/{containerId}/posts`
 
 **Query Parameters:**
-- `threadedPostsOnly=true` — Only top-level posts
+- `threadedPostsOnly=true` - Only top-level posts
 - `pageSize=20`
 - `teamId={teamId}`
-- `includeRcMetadata=true` — Include read/saved metadata
+- `includeRcMetadata=true` - Include read/saved metadata
 
 **Response:**
 ```json
@@ -834,7 +834,7 @@ For **channel threaded replies**: `rootMessageId` = parent post ID ≠ `messageI
 
 ### 1:1 Chat ID Format
 
-Conversation IDs for 1:1 chats are **predictable**—no API call needed:
+Conversation IDs for 1:1 chats are **predictable** - no API call needed:
 
 ```
 19:{userId1}_{userId2}@unq.gbl.spaces
@@ -1102,19 +1102,19 @@ Use `syncState` from response for efficient incremental polling.
 
 1. **Date operators** - Only explicit dates work (`sent:2026-01-20`) or `sent:today`. Named shortcuts like `sent:lastweek` and `sent:thisweek` return 0 results.
 
-2. **`@me` doesn't exist** — `from:me`, `to:me`, and `mentions:me` don't work. Get your email/name first, then search with those values.
+2. **`@me` doesn't exist** - `from:me`, `to:me`, and `mentions:me` don't work. Get your email/name first, then search with those values.
 
-3. **Thread replies require `;messageid=`** — The URL suffix is required for channel thread replies. Chats don't have threading.
+3. **Thread replies require `;messageid=`** - The URL suffix is required for channel thread replies. Chats don't have threading.
 
-4. **Token expiry** — MSAL tokens last ~1 hour. They only refresh when an API call requires them—not on page load.
+4. **Token expiry** - MSAL tokens last ~1 hour. They only refresh when an API call requires them, not on page load.
 
-5. **CSA vs chatsvc auth** — CSA needs the CSA Bearer token; chatsvc uses the skypetoken cookie.
+5. **CSA vs chatsvc auth** - CSA needs the CSA Bearer token; chatsvc uses the skypetoken cookie.
 
-6. **Search won't find all thread replies** — It's full-text search. A reply that doesn't contain your search terms won't appear. Use `teams_get_thread` for full context.
+6. **Search won't find all thread replies** - It's full-text search. A reply that doesn't contain your search terms won't appear. Use `teams_get_thread` for full context.
 
-7. **User ID formats vary** — APIs return IDs as raw GUIDs, MRIs (`8:orgid:...`), with tenant suffixes (`...@tenantId`), or base64-encoded. Handle all formats.
+7. **User ID formats vary** - APIs return IDs as raw GUIDs, MRIs (`8:orgid:...`), with tenant suffixes (`...@tenantId`), or base64-encoded. Handle all formats.
 
-8. **Message deep links** — Format: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`. Use the thread ID, not the channel ID, for threaded messages.
+8. **Message deep links** - Format: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`. Use the thread ID, not the channel ID, for threaded messages.
 
 ---
 

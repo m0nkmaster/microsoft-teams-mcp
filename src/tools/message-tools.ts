@@ -486,14 +486,18 @@ async function handleReplyToThread(
     return { success: false, error: result.error };
   }
 
+  // The timestamp is the server-assigned ID - use this for reactions, edits, deletions, etc.
+  const serverMessageId = result.value.timestamp ? String(result.value.timestamp) : undefined;
+
   return {
     success: true,
     data: {
       messageId: result.value.messageId,
       timestamp: result.value.timestamp,
+      serverMessageId,
       conversationId: result.value.conversationId,
       threadRootMessageId: result.value.threadRootMessageId,
-      note: 'Reply posted to thread successfully.',
+      note: 'Use serverMessageId (not messageId) for reactions, edits, or deletions.',
     },
   };
 }
