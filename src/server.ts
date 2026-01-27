@@ -3,7 +3,11 @@
  * Exposes tools and resources for interacting with Microsoft Teams.
  */
 
+import { createRequire } from 'module';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json') as { version: string };
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
@@ -181,7 +185,7 @@ export class TeamsServer {
     const server = new Server(
       {
         name: 'teams-mcp',
-        version: '0.2.0',
+        version: pkg.version,
       },
       {
         capabilities: {
