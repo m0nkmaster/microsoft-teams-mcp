@@ -751,3 +751,89 @@ export function extractActivityTimestamp(msg: Record<string, unknown>): string |
   
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Virtual Conversation Parsing
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Common fields from a virtual conversation message (48:saved, 48:threads, etc). */
+export interface VirtualConversationItem {
+  id: string;
+  content: string;
+  contentType: string;
+  sender: {
+    mri: string;
+    displayName?: string;
+  };
+  timestamp: string;
+  sourceConversationId: string;
+  sourceReferenceId?: string;
+  messageLink?: string;
+}
+
+/**
+ * Parses a raw message from a virtual conversation (48:saved, 48:threads, etc).
+ * 
+ * Virtual conversations contain references to messages in other conversations.
+ * The clumpId field contains the source conversation ID, and secondaryReferenceId
+ * contains a composite key with the source message/post ID.
+ * 
+ * @param msg - Raw message object from virtual conversation API
+ * @param referencePattern - Regex to extract source ID from secondaryReferenceId
+ * @returns Parsed virtual conversation item, or null if message should be skipped
+ */
+export function parseVirtualConversationMessage(
+  msg: Record<string, unknown>,
+  referencePattern: RegExp
+): VirtualConversationItem | null {
+  // Skip non-message types
+  const messageType = msg.messagetype as string || msg.type as string;
+  if (!messageType || messageType.startsWith('Control/')) {
+    return null;
+  }
+
+  const id = msg.id as string;
+  if (!id) return null;
+
+  const content = msg.content as string || '';
+  const contentType = messageType || 'Text';
+
+  const fromMri = msg.from as string || '';
+  const displayName = msg.imdisplayname as string || msg.displayName as string;
+
+  // Safe timestamp extraction - use extractActivityTimestamp pattern
+  const timestamp = extractActivityTimestamp(msg);
+  if (!timestamp) return null;
+
+  // clumpId contains the original conversation where the message lives
+  const sourceConversationId = msg.clumpId as string || '';
+  
+  // Extract source reference ID from secondaryReferenceId if available
+  let sourceReferenceId: string | undefined;
+  const secondaryRef = msg.secondaryReferenceId as string;
+  if (secondaryRef) {
+    const match = secondaryRef.match(referencePattern);
+    if (match) {
+      sourceReferenceId = match[1];
+    }
+  }
+
+  // Build message link to original message
+  const messageLink = sourceConversationId && sourceReferenceId
+    ? buildMessageLink(sourceConversationId, sourceReferenceId)
+    : undefined;
+
+  return {
+    id,
+    content: stripHtml(content),
+    contentType,
+    sender: {
+      mri: fromMri,
+      displayName,
+    },
+    timestamp,
+    sourceConversationId,
+    sourceReferenceId,
+    messageLink,
+  };
+}

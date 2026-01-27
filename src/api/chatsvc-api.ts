@@ -10,8 +10,8 @@ import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
-import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp } from '../utils/parsers.js';
-import { DEFAULT_ACTIVITY_LIMIT } from '../constants.js';
+import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage } from '../utils/parsers.js';
+import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID } from '../constants.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -46,6 +46,50 @@ export interface SaveMessageResult {
   conversationId: string;
   messageId: string;
   saved: boolean;
+}
+
+/** A saved message from the virtual 48:saved conversation. */
+export interface SavedMessage {
+  id: string;
+  content: string;
+  contentType: string;
+  sender: {
+    mri: string;
+    displayName?: string;
+  };
+  timestamp: string;
+  /** The original conversation where this message lives. */
+  sourceConversationId: string;
+  /** The original message ID in the source conversation. */
+  sourceMessageId?: string;
+  messageLink?: string;
+}
+
+/** Result of getting saved messages. */
+export interface GetSavedMessagesResult {
+  messages: SavedMessage[];
+}
+
+/** A followed thread from the virtual 48:threads conversation. */
+export interface FollowedThread {
+  id: string;
+  content: string;
+  contentType: string;
+  sender: {
+    mri: string;
+    displayName?: string;
+  };
+  timestamp: string;
+  /** The original conversation/thread where this post lives. */
+  sourceConversationId: string;
+  /** The original post ID in the source conversation. */
+  sourcePostId?: string;
+  messageLink?: string;
+}
+
+/** Result of getting followed threads. */
+export interface GetFollowedThreadsResult {
+  threads: FollowedThread[];
 }
 
 /** A mention to include in a message (internal). */
@@ -300,6 +344,140 @@ export async function getThreadMessages(
     conversationId,
     messages,
   });
+}
+
+// Regex pattern for extracting message ID from saved messages: T_{conversationId}_M_{messageId}
+const SAVED_MESSAGE_PATTERN = /_M_(\d+)$/;
+
+// Regex pattern for extracting post ID from followed threads: T_{conversationId}_P_{postId}_Threads
+const FOLLOWED_THREAD_PATTERN = /_P_(\d+)_Threads$/;
+
+/**
+ * Gets saved (bookmarked) messages from the virtual 48:saved conversation.
+ * Returns messages the user has bookmarked across all conversations.
+ */
+export async function getSavedMessages(
+  options: { limit?: number } = {},
+  region: string = 'amer'
+): Promise<Result<GetSavedMessagesResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const limit = options.limit ?? 50;
+
+  let url = CHATSVC_API.messages(validRegion, SAVED_MESSAGES_ID);
+  url += `?view=msnp24Equivalent|supportsMessageProperties&pageSize=${limit}&startTime=1`;
+
+  const response = await httpRequest<{ messages?: unknown[] }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const rawMessages = response.value.data.messages;
+  if (!Array.isArray(rawMessages)) {
+    return ok({ messages: [] });
+  }
+
+  const messages: SavedMessage[] = [];
+
+  for (const raw of rawMessages) {
+    const parsed = parseVirtualConversationMessage(
+      raw as Record<string, unknown>,
+      SAVED_MESSAGE_PATTERN
+    );
+    if (!parsed) continue;
+
+    messages.push({
+      id: parsed.id,
+      content: parsed.content,
+      contentType: parsed.contentType,
+      sender: parsed.sender,
+      timestamp: parsed.timestamp,
+      sourceConversationId: parsed.sourceConversationId,
+      sourceMessageId: parsed.sourceReferenceId,
+      messageLink: parsed.messageLink,
+    });
+  }
+
+  // Sort by timestamp (newest first for saved messages)
+  messages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return ok({ messages });
+}
+
+/**
+ * Gets followed threads from the virtual 48:threads conversation.
+ * Returns threads the user is following for updates.
+ */
+export async function getFollowedThreads(
+  options: { limit?: number } = {},
+  region: string = 'amer'
+): Promise<Result<GetFollowedThreadsResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  const validRegion = validateRegion(region);
+  const limit = options.limit ?? 50;
+
+  let url = CHATSVC_API.messages(validRegion, FOLLOWED_THREADS_ID);
+  url += `?view=msnp24Equivalent|supportsMessageProperties&pageSize=${limit}&startTime=1`;
+
+  const response = await httpRequest<{ messages?: unknown[] }>(
+    url,
+    {
+      method: 'GET',
+      headers: getSkypeAuthHeaders(auth.skypeToken, auth.authToken),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  const rawMessages = response.value.data.messages;
+  if (!Array.isArray(rawMessages)) {
+    return ok({ threads: [] });
+  }
+
+  const threads: FollowedThread[] = [];
+
+  for (const raw of rawMessages) {
+    const parsed = parseVirtualConversationMessage(
+      raw as Record<string, unknown>,
+      FOLLOWED_THREAD_PATTERN
+    );
+    if (!parsed) continue;
+
+    threads.push({
+      id: parsed.id,
+      content: parsed.content,
+      contentType: parsed.contentType,
+      sender: parsed.sender,
+      timestamp: parsed.timestamp,
+      sourceConversationId: parsed.sourceConversationId,
+      sourcePostId: parsed.sourceReferenceId,
+      messageLink: parsed.messageLink,
+    });
+  }
+
+  // Sort by timestamp (newest first for followed threads)
+  threads.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  return ok({ threads });
 }
 
 /**
