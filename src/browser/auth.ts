@@ -158,6 +158,7 @@ async function showLoginProgress(
     }
   } catch {
     // Overlay is cosmetic - don't fail login if it can't be shown
+    // To debug: change to `catch (e)` and add `console.debug('[overlay]', e);`
   }
 }
 
