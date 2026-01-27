@@ -71,6 +71,12 @@ export const AUTH_CHECK_INTERVAL_MS = 2000;
 /** Default login timeout (5 minutes). */
 export const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** Pause after showing progress overlay step (ms). */
+export const OVERLAY_STEP_PAUSE_MS = 1500;
+
+/** Pause after showing final "All done" overlay (ms). */
+export const OVERLAY_COMPLETE_PAUSE_MS = 2000;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Session Management
 // ─────────────────────────────────────────────────────────────────────────────
