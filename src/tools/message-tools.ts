@@ -48,6 +48,7 @@ export const FavoriteInputSchema = z.object({
 export const SaveMessageInputSchema = z.object({
   conversationId: z.string().min(1, 'Conversation ID cannot be empty'),
   messageId: z.string().min(1, 'Message ID cannot be empty'),
+  rootMessageId: z.string().optional(),
 });
 
 export const GetChatInputSchema = z.object({
@@ -205,6 +206,10 @@ const saveMessageToolDefinition: Tool = {
         type: 'string',
         description: 'The message ID to save. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
+      rootMessageId: {
+        type: 'string',
+        description: 'For channel threaded replies only: the ID of the thread root post. Not needed for top-level posts or non-channel conversations.',
+      },
     },
     required: ['conversationId', 'messageId'],
   },
@@ -223,6 +228,10 @@ const unsaveMessageToolDefinition: Tool = {
       messageId: {
         type: 'string',
         description: 'The message ID to unsave',
+      },
+      rootMessageId: {
+        type: 'string',
+        description: 'For channel threaded replies only: the ID of the thread root post. Not needed for top-level posts or non-channel conversations.',
       },
     },
     required: ['conversationId', 'messageId'],
@@ -548,7 +557,7 @@ async function handleSaveMessage(
   input: z.infer<typeof SaveMessageInputSchema>,
   _ctx: ToolContext
 ): Promise<ToolResult> {
-  const result = await saveMessage(input.conversationId, input.messageId);
+  const result = await saveMessage(input.conversationId, input.messageId, input.rootMessageId);
 
   if (!result.ok) {
     return { success: false, error: result.error };
@@ -568,7 +577,7 @@ async function handleUnsaveMessage(
   input: z.infer<typeof SaveMessageInputSchema>,
   _ctx: ToolContext
 ): Promise<ToolResult> {
-  const result = await unsaveMessage(input.conversationId, input.messageId);
+  const result = await unsaveMessage(input.conversationId, input.messageId, input.rootMessageId);
 
   if (!result.ok) {
     return { success: false, error: result.error };

@@ -764,9 +764,19 @@ This is a soft delete. Channel owners/moderators can delete others' messages.
 
 ### Save/Unsave Message (Bookmarks)
 
-**Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/rcmetadata/{messageId}`
+**Endpoint:** `PUT https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{conversationId}/rcmetadata/{rootMessageId}`
 
 **Auth:** Skype Token + Bearer
+
+**Two-ID System:**
+
+The rcmetadata API uses two different message IDs:
+- **URL path** (`rootMessageId`): The thread root post ID for channel threaded replies, or the message ID itself for top-level posts
+- **Body** (`mid`): The actual message being saved/unsaved
+
+For **1:1 chats, group chats, meetings, and channel top-level posts**: `rootMessageId` = `messageId` (same value)
+
+For **channel threaded replies**: `rootMessageId` = parent post ID ≠ `messageId`
 
 **Save:**
 ```json

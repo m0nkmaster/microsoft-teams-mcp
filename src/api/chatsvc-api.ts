@@ -482,33 +482,46 @@ export async function getFollowedThreads(
 
 /**
  * Saves (bookmarks) a message.
+ * 
+ * @param rootMessageId - For channel threaded replies, the ID of the thread root post.
+ *                        For top-level posts and non-channel messages, omit or pass undefined.
  */
 export async function saveMessage(
   conversationId: string,
   messageId: string,
+  rootMessageId?: string,
   region: string = 'amer'
 ): Promise<Result<SaveMessageResult>> {
-  return setMessageSavedState(conversationId, messageId, true, region);
+  return setMessageSavedState(conversationId, messageId, true, rootMessageId, region);
 }
 
 /**
  * Unsaves (removes bookmark from) a message.
+ * 
+ * @param rootMessageId - For channel threaded replies, the ID of the thread root post.
+ *                        For top-level posts and non-channel messages, omit or pass undefined.
  */
 export async function unsaveMessage(
   conversationId: string,
   messageId: string,
+  rootMessageId?: string,
   region: string = 'amer'
 ): Promise<Result<SaveMessageResult>> {
-  return setMessageSavedState(conversationId, messageId, false, region);
+  return setMessageSavedState(conversationId, messageId, false, rootMessageId, region);
 }
 
 /**
  * Internal function to set the saved state of a message.
+ * 
+ * The rcmetadata API uses a two-ID system:
+ * - URL path: rootMessageId (thread root for channel replies, or messageId for top-level)
+ * - Body: mid (the actual message being saved/unsaved)
  */
 async function setMessageSavedState(
   conversationId: string,
   messageId: string,
   saved: boolean,
+  rootMessageId: string | undefined,
   region: string
 ): Promise<Result<SaveMessageResult>> {
   const authResult = requireMessageAuth();
@@ -518,7 +531,10 @@ async function setMessageSavedState(
   const auth = authResult.value;
 
   const validRegion = validateRegion(region);
-  const url = CHATSVC_API.messageMetadata(validRegion, conversationId, messageId);
+  // For channel threaded replies, rootMessageId is the thread root post ID
+  // For top-level posts and non-channel messages, use the messageId itself
+  const urlMessageId = rootMessageId ?? messageId;
+  const url = CHATSVC_API.messageMetadata(validRegion, conversationId, urlMessageId);
 
   const response = await httpRequest<unknown>(
     url,

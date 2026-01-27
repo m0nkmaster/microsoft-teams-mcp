@@ -475,6 +475,15 @@ Name sources by type:
 |-----------|------|---------|-------------|
 | conversationId | string | required | Conversation containing the message |
 | messageId | string | required | The message ID to save/unsave |
+| rootMessageId | string | optional | For channel threaded replies: the thread root post ID |
+
+**Channel Threaded Replies:**
+
+The Teams API uses a two-ID system for bookmarks:
+- **URL path**: `rootMessageId` (thread root for channel replies, or messageId for top-level posts)
+- **Body**: `mid` (the actual message being saved/unsaved)
+
+For most messages, you don't need `rootMessageId` - it defaults to `messageId`. But for **channel threaded replies**, you need to provide the thread root post's ID. You can get this from `teams_get_thread` - the first message in a channel thread is the root post.
 
 **Note:** These tools use the same session cookie authentication as messaging.
 
