@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   stripHtml,
+  extractLinks,
   buildMessageLink,
   getConversationType,
   extractMessageTimestamp,
@@ -68,6 +69,54 @@ describe('stripHtml', () => {
 
   it('returns empty string for empty input', () => {
     expect(stripHtml('')).toBe('');
+  });
+});
+
+describe('extractLinks', () => {
+  it('extracts simple links', () => {
+    const html = 'Check out <a href="https://example.com">this link</a> here';
+    expect(extractLinks(html)).toEqual([
+      { url: 'https://example.com', text: 'this link' }
+    ]);
+  });
+
+  it('extracts multiple links', () => {
+    const html = '<a href="https://a.com">A</a> and <a href="https://b.com">B</a>';
+    expect(extractLinks(html)).toEqual([
+      { url: 'https://a.com', text: 'A' },
+      { url: 'https://b.com', text: 'B' }
+    ]);
+  });
+
+  it('strips nested HTML from link text', () => {
+    const html = '<a href="https://example.com"><strong>Bold</strong> link</a>';
+    expect(extractLinks(html)).toEqual([
+      { url: 'https://example.com', text: 'Bold link' }
+    ]);
+  });
+
+  it('uses URL as text when link text is empty', () => {
+    const html = '<a href="https://example.com"></a>';
+    expect(extractLinks(html)).toEqual([
+      { url: 'https://example.com', text: 'https://example.com' }
+    ]);
+  });
+
+  it('ignores javascript: links', () => {
+    const html = '<a href="javascript:void(0)">Click</a>';
+    expect(extractLinks(html)).toEqual([]);
+  });
+
+  it('handles links with extra attributes', () => {
+    const html = '<a class="link" href="https://example.com" target="_blank">Link</a>';
+    expect(extractLinks(html)).toEqual([
+      { url: 'https://example.com', text: 'Link' }
+    ]);
+  });
+
+  it('returns empty array when no links', () => {
+    expect(extractLinks('No links here')).toEqual([]);
+    expect(extractLinks('')).toEqual([]);
   });
 });
 

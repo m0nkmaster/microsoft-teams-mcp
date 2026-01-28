@@ -32,6 +32,32 @@ export interface UserProfile {
   tenantId?: string;    // Azure tenant ID
 }
 
+/** A link extracted from message content. */
+export interface ExtractedLink {
+  url: string;
+  text: string;
+}
+
+/**
+ * Extracts links from HTML content before stripping.
+ * Returns an array of { url, text } objects.
+ */
+export function extractLinks(html: string): ExtractedLink[] {
+  const links: ExtractedLink[] = [];
+  const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  
+  let match;
+  while ((match = linkRegex.exec(html)) !== null) {
+    const url = match[1];
+    const text = stripHtml(match[2]); // Clean nested HTML in link text
+    if (url && !url.startsWith('javascript:')) {
+      links.push({ url, text: text || url });
+    }
+  }
+  
+  return links;
+}
+
 /**
  * Strips HTML tags from content for display.
  */
@@ -211,7 +237,8 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
              item.ReferenceId as string || 
              `v2-${Date.now()}`;
 
-  // Strip HTML from content
+  // Extract links before stripping HTML
+  const links = extractLinks(content);
   const cleanContent = stripHtml(content);
 
   const source = item.Source as Record<string, unknown> | undefined;
@@ -290,6 +317,7 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
     // Fallback to ReferenceId if timestamp extraction fails
     messageId: messageTimestamp || item.ReferenceId as string,
     messageLink,
+    links: links.length > 0 ? links : undefined,
   };
 }
 
@@ -822,6 +850,7 @@ export interface VirtualConversationItem {
   sourceConversationId: string;
   sourceReferenceId?: string;
   messageLink?: string;
+  links?: ExtractedLink[];
 }
 
 /**
@@ -876,6 +905,9 @@ export function parseVirtualConversationMessage(
     ? buildMessageLink(sourceConversationId, sourceReferenceId)
     : undefined;
 
+  // Extract links before stripping HTML
+  const links = extractLinks(content);
+
   return {
     id,
     content: stripHtml(content),
@@ -888,5 +920,6 @@ export function parseVirtualConversationMessage(
     sourceConversationId,
     sourceReferenceId,
     messageLink,
+    links: links.length > 0 ? links : undefined,
   };
 }

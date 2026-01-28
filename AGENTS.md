@@ -328,11 +328,12 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
    ```
 
 **Response** includes:
-- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`, `messageLink`
+- `results[]` with `id`, `content`, `sender`, `timestamp`, `conversationId`, `messageId`, `messageLink`, `links`
 - `pagination` object with `from`, `size`, `returned`, `total` (if known), `hasMore`, `nextFrom`
 
 The `conversationId` enables replying to search results via `teams_send_message`.
 The `messageLink` is a clickable URL to open the message directly in Teams.
+The `links` array (if present) contains URLs extracted from the message: `{ url, text }`.
 
 #### teams_send_message
 
@@ -351,6 +352,19 @@ teams_send_message content="Hey @[John Smith](8:orgid:abc...), can you review th
 ```
 
 The display name can be any text (e.g., first name only). The MRI determines who gets notified.
+
+**Links:**
+
+Use markdown-style `[text](url)` syntax to include clickable links in messages.
+
+```
+teams_send_message content="Check out [the docs](https://example.com/docs) for details"
+```
+
+Multiple links and combinations with mentions work:
+```
+teams_send_message content="Hey @[John](8:orgid:abc...), see [GitHub](https://github.com) and [Jira](https://jira.example.com)"
+```
 
 **Thread Reply Semantics:**
 
@@ -505,6 +519,7 @@ For most messages, you don't need `rootMessageId` - it defaults to `messageId`. 
   - `sourceConversationId` - The original conversation where this message lives
   - `sourceMessageId` - The original message ID in the source conversation
   - `messageLink` - Direct link to open this message in Teams
+  - `links` - Array of `{ url, text }` for any URLs in the message (if present)
 
 **Use case:** List bookmarked messages. Use `sourceConversationId` with `teams_get_thread` to retrieve the full message content and context.
 
@@ -525,6 +540,7 @@ For most messages, you don't need `rootMessageId` - it defaults to `messageId`. 
   - `sourceConversationId` - The original conversation/channel where this thread lives
   - `sourcePostId` - The root post ID of the thread
   - `messageLink` - Direct link to open this thread in Teams
+  - `links` - Array of `{ url, text }` for any URLs in the message (if present)
 
 **Use case:** List threads you're following. Use `sourceConversationId` with `teams_get_thread` to retrieve the full thread content.
 
@@ -550,6 +566,7 @@ For most messages, you don't need `rootMessageId` - it defaults to `messageId`. 
   - `timestamp` - ISO timestamp
   - `isFromMe` - Whether message is from the current user
   - `messageLink` - Direct link to open this message in Teams
+  - `links` - Array of `{ url, text }` for any URLs in the message (if present)
 
 **Use case:** Check for replies to a specific message, read thread context before replying, or review recent messages in a conversation. Use the `conversationId` from search results.
 
@@ -722,6 +739,7 @@ teams_mark_read conversationId="19:abc@thread.tacv2" messageId="1769276832046"
   - `conversationId` - Source conversation where activity occurred
   - `topic` - Conversation/thread topic name (if available)
   - `activityLink` - Direct link to open the activity in Teams
+  - `links` - Array of `{ url, text }` for any URLs in the message (if present)
 - `syncState` - State token for incremental polling (advanced usage)
 
 **Use case:** Check what's happening - who mentioned you, reacted to your messages, or replied to threads you're in. This is the programmatic equivalent of the Activity tab in Teams.

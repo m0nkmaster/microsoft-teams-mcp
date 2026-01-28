@@ -2,6 +2,12 @@
  * TypeScript interfaces for Teams data structures.
  */
 
+/** A link extracted from message content. */
+export interface ExtractedLink {
+  url: string;
+  text: string;
+}
+
 export interface TeamsSearchResult {
   id: string;
   type: 'message' | 'file' | 'person';
@@ -14,6 +20,8 @@ export interface TeamsSearchResult {
   messageId?: string;
   /** Direct link to open this message in Teams */
   messageLink?: string;
+  /** Links extracted from message content */
+  links?: ExtractedLink[];
 }
 
 export interface TeamsMessage {

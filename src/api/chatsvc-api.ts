@@ -10,7 +10,7 @@ import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
-import { stripHtml, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage } from '../utils/parsers.js';
+import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage, type ExtractedLink } from '../utils/parsers.js';
 import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID } from '../constants.js';
 
 /** Result of sending a message. */
@@ -33,6 +33,7 @@ export interface ThreadMessage {
   clientMessageId?: string;
   isFromMe?: boolean;
   messageLink?: string;
+  links?: ExtractedLink[];
 }
 
 /** Result of getting thread messages. */
@@ -63,6 +64,7 @@ export interface SavedMessage {
   /** The original message ID in the source conversation. */
   sourceMessageId?: string;
   messageLink?: string;
+  links?: ExtractedLink[];
 }
 
 /** Result of getting saved messages. */
@@ -85,6 +87,7 @@ export interface FollowedThread {
   /** The original post ID in the source conversation. */
   sourcePostId?: string;
   messageLink?: string;
+  links?: ExtractedLink[];
 }
 
 /** Result of getting followed threads. */
@@ -145,18 +148,18 @@ export async function sendMessage(
   // Generate unique message ID
   const clientMessageId = Date.now().toString();
 
-  // Check for inline mentions @[Name](mri) syntax
+  // Process content: handle mentions and links
   let processedContent: string;
   let mentionsToSend: Mention[] = [];
 
-  if (hasInlineMentions(content)) {
-    // Parse inline mentions from content
-    const parsed = parseInlineMentions(content);
+  // If content is already HTML, pass through as-is
+  if (content.startsWith('<')) {
+    processedContent = content;
+  } else {
+    // Process mentions and links together
+    const parsed = parseContentWithMentionsAndLinks(content);
     processedContent = parsed.html;
     mentionsToSend = parsed.mentions;
-  } else {
-    // No inline mentions - just escape the content
-    processedContent = content.startsWith('<') ? content : escapeHtml(content);
   }
 
   // Wrap content in paragraph if not already HTML
@@ -321,6 +324,9 @@ export async function getThreadMessages(
       ? buildMessageLink(conversationId, id)
       : undefined;
 
+    // Extract links before stripping HTML
+    const links = extractLinks(content);
+
     messages.push({
       id,
       content: stripHtml(content),
@@ -334,6 +340,7 @@ export async function getThreadMessages(
       clientMessageId: msg.clientmessageid as string,
       isFromMe: fromMri === auth.userMri,
       messageLink,
+      links: links.length > 0 ? links : undefined,
     });
   }
 
@@ -864,48 +871,80 @@ function buildMentionsProperty(mentions: Mention[]): string {
 }
 
 /**
- * Parses inline mentions from content using @[DisplayName](mri) syntax.
- * Returns the processed HTML content and the extracted mentions array.
+ * Parses content for both mentions @[Name](mri) and links [text](url).
+ * Processes them in a single pass to avoid escaping conflicts.
  */
-function parseInlineMentions(content: string): { html: string; mentions: Mention[] } {
-  // Pattern matches @[DisplayName](mri)
-  const inlineMentionPattern = /@\[([^\]]+)\]\(([^)]+)\)/g;
+function parseContentWithMentionsAndLinks(content: string): { html: string; mentions: Mention[] } {
+  // Combined pattern for mentions and links
+  const mentionPattern = /@\[([^\]]+)\]\(([^)]+)\)/g;
+  const linkPattern = /(?<!@)\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
   
-  const mentions: Mention[] = [];
-  let lastIndex = 0;
-  let result = '';
-  let match;
-  let itemId = 0;
-  
-  while ((match = inlineMentionPattern.exec(content)) !== null) {
-    // Escape and add the text before this mention
-    const textBefore = content.substring(lastIndex, match.index);
-    result += escapeHtml(textBefore);
-    
-    const displayName = match[1];
-    const mri = match[2];
-    
-    // Add to mentions array
-    mentions.push({ mri, displayName });
-    
-    // Add the mention HTML
-    result += buildMentionHtml(displayName, itemId);
-    itemId++;
-    
-    lastIndex = match.index + match[0].length;
+  // Find all matches with their positions
+  interface Match {
+    index: number;
+    length: number;
+    type: 'mention' | 'link';
+    text: string;
+    target: string; // mri for mentions, url for links
   }
   
-  // Add any remaining text after the last mention
+  const matches: Match[] = [];
+  
+  // Find mentions
+  let match;
+  while ((match = mentionPattern.exec(content)) !== null) {
+    matches.push({
+      index: match.index,
+      length: match[0].length,
+      type: 'mention',
+      text: match[1],
+      target: match[2],
+    });
+  }
+  
+  // Find links
+  while ((match = linkPattern.exec(content)) !== null) {
+    matches.push({
+      index: match.index,
+      length: match[0].length,
+      type: 'link',
+      text: match[1],
+      target: match[2],
+    });
+  }
+  
+  // Sort by position
+  matches.sort((a, b) => a.index - b.index);
+  
+  // Build result
+  const mentions: Mention[] = [];
+  let result = '';
+  let lastIndex = 0;
+  let mentionId = 0;
+  
+  for (const m of matches) {
+    // Add escaped text before this match
+    const textBefore = content.substring(lastIndex, m.index);
+    result += escapeHtml(textBefore);
+    
+    if (m.type === 'mention') {
+      mentions.push({ mri: m.target, displayName: m.text });
+      result += buildMentionHtml(m.text, mentionId);
+      mentionId++;
+    } else {
+      // Link
+      const safeText = escapeHtml(m.text);
+      const safeUrl = m.target.replace(/"/g, '&quot;');
+      result += `<a href="${safeUrl}">${safeText}</a>`;
+    }
+    
+    lastIndex = m.index + m.length;
+  }
+  
+  // Add remaining text
   result += escapeHtml(content.substring(lastIndex));
   
   return { html: result, mentions };
-}
-
-/**
- * Checks if content contains inline mention syntax.
- */
-function hasInlineMentions(content: string): boolean {
-  return /@\[[^\]]+\]\([^)]+\)/.test(content);
 }
 
 /** Result of getting a 1:1 conversation. */
@@ -1191,6 +1230,8 @@ export interface ActivityItem {
   topic?: string;
   /** Direct link to the activity in Teams. */
   activityLink?: string;
+  /** Links extracted from content. */
+  links?: ExtractedLink[];
 }
 
 /** Result of fetching the activity feed. */
@@ -1312,6 +1353,9 @@ export async function getActivityFeed(
 
     const activityType = detectActivityType(msg);
 
+    // Extract links before stripping HTML
+    const links = extractLinks(content);
+
     activities.push({
       id,
       type: activityType,
@@ -1325,6 +1369,7 @@ export async function getActivityFeed(
       conversationId,
       topic,
       activityLink,
+      links: links.length > 0 ? links : undefined,
     });
   }
 
