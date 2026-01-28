@@ -5,8 +5,11 @@
  * They are extracted here for testability - no side effects or external dependencies.
  */
 
-import type { TeamsSearchResult } from '../types/teams.js';
+import type { TeamsSearchResult, ExtractedLink } from '../types/teams.js';
 import { MIN_CONTENT_LENGTH } from '../constants.js';
+
+// Re-export ExtractedLink so existing imports from parsers.ts continue to work
+export type { ExtractedLink };
 
 /** Person search result from Substrate suggestions API. */
 export interface PersonSearchResult {
@@ -30,12 +33,6 @@ export interface UserProfile {
   givenName?: string;   // First name
   surname?: string;     // Last name
   tenantId?: string;    // Azure tenant ID
-}
-
-/** A link extracted from message content. */
-export interface ExtractedLink {
-  url: string;
-  text: string;
 }
 
 /**

@@ -875,11 +875,12 @@ function buildMentionsProperty(mentions: Mention[]): string {
  * Processes them in a single pass to avoid escaping conflicts.
  */
 function parseContentWithMentionsAndLinks(content: string): { html: string; mentions: Mention[] } {
-  // Combined pattern for mentions and links
+  // Patterns for mentions and links
+  // Note: Link pattern uses [^)\s] to reject URLs with spaces
   const mentionPattern = /@\[([^\]]+)\]\(([^)]+)\)/g;
-  const linkPattern = /(?<!@)\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g;
+  const linkPattern = /(?<!@)\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
   
-  // Find all matches with their positions
+  // Match type for tracking positions
   interface Match {
     index: number;
     length: number;
@@ -888,33 +889,27 @@ function parseContentWithMentionsAndLinks(content: string): { html: string; ment
     target: string; // mri for mentions, url for links
   }
   
-  const matches: Match[] = [];
+  // Helper to find all matches for a pattern
+  const findAll = (pattern: RegExp, type: 'mention' | 'link'): Match[] => {
+    const results: Match[] = [];
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      results.push({
+        index: match.index,
+        length: match[0].length,
+        type,
+        text: match[1],
+        target: match[2],
+      });
+    }
+    return results;
+  };
   
-  // Find mentions
-  let match;
-  while ((match = mentionPattern.exec(content)) !== null) {
-    matches.push({
-      index: match.index,
-      length: match[0].length,
-      type: 'mention',
-      text: match[1],
-      target: match[2],
-    });
-  }
-  
-  // Find links
-  while ((match = linkPattern.exec(content)) !== null) {
-    matches.push({
-      index: match.index,
-      length: match[0].length,
-      type: 'link',
-      text: match[1],
-      target: match[2],
-    });
-  }
-  
-  // Sort by position
-  matches.sort((a, b) => a.index - b.index);
+  // Find all mentions and links, then sort by position
+  const matches = [
+    ...findAll(mentionPattern, 'mention'),
+    ...findAll(linkPattern, 'link'),
+  ].sort((a, b) => a.index - b.index);
   
   // Build result
   const mentions: Mention[] = [];
