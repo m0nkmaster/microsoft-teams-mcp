@@ -211,46 +211,6 @@ export async function sendNoteToSelf(content: string): Promise<Result<SendMessag
   return sendMessage('48:notes', content);
 }
 
-/** Result of replying to a thread. */
-export interface ReplyToThreadResult extends SendMessageResult {
-  /** The thread root message ID used for the reply. */
-  threadRootMessageId: string;
-  /** The conversation ID (channel) the reply was posted to. */
-  conversationId: string;
-}
-
-/**
- * Replies to a thread in a Teams channel.
- * 
- * Uses the provided messageId as the thread root. For search results,
- * this is typically the original message that started the thread.
- * 
- * Supports inline @mentions using @[DisplayName](mri) syntax in the content.
- */
-export async function replyToThread(
-  conversationId: string,
-  messageId: string,
-  content: string,
-  region: string = 'amer'
-): Promise<Result<ReplyToThreadResult>> {
-  const threadRootMessageId = messageId;
-  const sendResult = await sendMessage(conversationId, content, {
-    region,
-    replyToMessageId: threadRootMessageId,
-  });
-  
-  if (!sendResult.ok) {
-    return sendResult;
-  }
-  
-  return ok({
-    messageId: sendResult.value.messageId,
-    timestamp: sendResult.value.timestamp,
-    threadRootMessageId,
-    conversationId,
-  });
-}
-
 /**
  * Gets messages from a Teams conversation/thread.
  */

@@ -226,8 +226,7 @@ The two user object IDs (GUIDs) are sorted lexicographically. This format works 
 | Tool | Purpose |
 |------|---------|
 | `teams_search` | Search messages with query operators, supports pagination |
-| `teams_send_message` | Send a message to a Teams conversation |
-| `teams_reply_to_thread` | Reply to a channel message as a threaded reply |
+| `teams_send_message` | Send a message to a Teams conversation (use `replyToMessageId` for thread replies) |
 | `teams_get_me` | Get current user profile (email, name, ID) |
 | `teams_get_frequent_contacts` | Get frequently contacted people (for name resolution) |
 | `teams_search_people` | Search for people by name or email |
@@ -405,37 +404,6 @@ teams_send_message content="Hey!" conversationId="19:abc_def@unq.gbl.spaces"
 **Important:** When performing operations on a newly-sent message (reactions, edits, threading), use `serverMessageId` - not `messageId`. The `messageId` is client-generated and won't work with Teams APIs. The `serverMessageId` is the server-assigned timestamp-based ID.
 
 **Note:** Messaging uses different authentication than search. It requires session cookies (`skypetoken_asm`, `authtoken`) rather than Bearer tokens. These are automatically extracted from the saved session state.
-
-#### teams_reply_to_thread
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| content | string | required | The reply content. Supports inline @mentions using `@[Name](mri)` syntax. |
-| conversationId | string | required | The channel conversation ID (from search results). |
-| messageId | string | required | The message ID to reply to (from search results). |
-
-**How it works:**
-
-The tool uses the provided `messageId` directly as the thread root. In Teams channels:
-- If the message is a top-level post, the reply appears as a threaded reply under that post
-- If the message is already a reply within a thread, the reply goes to the same thread
-
-**Important:** The `messageId` from search results is the timestamp-based ID (e.g., `1737445069907`) that Teams uses for threading. This is extracted automatically from search results.
-
-**Example workflow:**
-
-```
-1. teams_search "budget report" → returns { conversationId: "19:abc@thread.tacv2", messageId: "1737445069907" }
-2. teams_reply_to_thread content="Thanks!" conversationId="19:abc@thread.tacv2" messageId="1737445069907"
-```
-
-**Response** includes:
-- `messageId` - Client-generated ID (not useful for subsequent operations)
-- `serverMessageId` - **Use this for reactions, edits, deletions, etc.**
-- `threadRootMessageId` - The message ID used for the reply
-- `conversationId` - The channel ID
-
-**Important:** Use `serverMessageId` (not `messageId`) for any operations on the reply (reactions, edits, deletions).
 
 #### teams_get_me
 
@@ -853,7 +821,7 @@ npm run test:mcp -- me                               # teams_get_me
 npm run test:mcp -- login                            # teams_login
 npm run test:mcp -- send "Hello from MCP!"           # teams_send_message
 npm run test:mcp -- send "Message" --to "conv-id"
-npm run test:mcp -- reply "Thanks!" --to "channel-id" --message "msg-id"
+npm run test:mcp -- send "Reply" --to "channel-id" --replyTo "msg-id"  # thread reply
 npm run test:mcp -- people "john smith"              # teams_search_people
 npm run test:mcp -- favorites                        # teams_get_favorites
 npm run test:mcp -- contacts                         # teams_get_frequent_contacts

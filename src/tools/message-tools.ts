@@ -7,7 +7,6 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { RegisteredTool, ToolContext, ToolResult } from './index.js';
 import {
   sendMessage,
-  replyToThread,
   saveMessage,
   unsaveMessage,
   getOneOnOneChatId,
@@ -33,12 +32,6 @@ export const SendMessageInputSchema = z.object({
   content: z.string().min(1, 'Message content cannot be empty'),
   conversationId: z.string().optional().default(SELF_CHAT_ID),
   replyToMessageId: z.string().optional(),
-});
-
-export const ReplyToThreadInputSchema = z.object({
-  content: z.string().min(1, 'Reply content cannot be empty'),
-  conversationId: z.string().min(1, 'Conversation ID is required'),
-  messageId: z.string().min(1, 'Message ID is required'),
 });
 
 export const FavoriteInputSchema = z.object({
@@ -109,7 +102,7 @@ export const GetFollowedThreadsInputSchema = z.object({
 
 const sendMessageToolDefinition: Tool = {
   name: 'teams_send_message',
-  description: 'Send a message to a Teams conversation. Supports @mentions using @[Name](mri) syntax inline. Example: "Hey @[John Smith](8:orgid:abc...), check this". Get MRI from teams_search_people. Defaults to self-notes (48:notes).',
+  description: 'Send a message to a Teams conversation. Supports @mentions using @[Name](mri) syntax inline. Example: "Hey @[John Smith](8:orgid:abc...), check this". Get MRI from teams_search_people. Defaults to self-notes (48:notes). For channel thread replies, provide replyToMessageId.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -123,33 +116,10 @@ const sendMessageToolDefinition: Tool = {
       },
       replyToMessageId: {
         type: 'string',
-        description: 'For channel thread replies (advanced). Prefer using teams_reply_to_thread instead.',
+        description: 'For channel thread replies: the message ID of the thread root. Use serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
       },
     },
     required: ['content'],
-  },
-};
-
-const replyToThreadToolDefinition: Tool = {
-  name: 'teams_reply_to_thread',
-  description: 'Reply to a channel message as a threaded reply. Supports @mentions using @[Name](mri) syntax inline. Use conversationId and messageId from search results.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      content: {
-        type: 'string',
-        description: 'The reply content. For @mentions, use @[DisplayName](mri) syntax.',
-      },
-      conversationId: {
-        type: 'string',
-        description: 'The channel conversation ID.',
-      },
-      messageId: {
-        type: 'string',
-        description: 'The message ID to reply to. Use: serverMessageId from teams_send_message, id from teams_get_thread, or messageId from teams_search.',
-      },
-    },
-    required: ['content', 'conversationId', 'messageId'],
   },
 };
 
@@ -470,36 +440,6 @@ async function handleSendMessage(
   }
 
   return { success: true, data: response };
-}
-
-async function handleReplyToThread(
-  input: z.infer<typeof ReplyToThreadInputSchema>,
-  _ctx: ToolContext
-): Promise<ToolResult> {
-  const result = await replyToThread(
-    input.conversationId,
-    input.messageId,
-    input.content
-  );
-
-  if (!result.ok) {
-    return { success: false, error: result.error };
-  }
-
-  // The timestamp is the server-assigned ID - use this for reactions, edits, deletions, etc.
-  const serverMessageId = result.value.timestamp ? String(result.value.timestamp) : undefined;
-
-  return {
-    success: true,
-    data: {
-      messageId: result.value.messageId,
-      timestamp: result.value.timestamp,
-      serverMessageId,
-      conversationId: result.value.conversationId,
-      threadRootMessageId: result.value.threadRootMessageId,
-      note: 'Use serverMessageId (not messageId) for reactions, edits, or deletions.',
-    },
-  };
 }
 
 async function handleGetFavorites(
@@ -1032,12 +972,6 @@ export const sendMessageTool: RegisteredTool<typeof SendMessageInputSchema> = {
   handler: handleSendMessage,
 };
 
-export const replyToThreadTool: RegisteredTool<typeof ReplyToThreadInputSchema> = {
-  definition: replyToThreadToolDefinition,
-  schema: ReplyToThreadInputSchema,
-  handler: handleReplyToThread,
-};
-
 export const getFavoritesTool: RegisteredTool<z.ZodObject<Record<string, never>>> = {
   definition: getFavoritesToolDefinition,
   schema: z.object({}),
@@ -1137,7 +1071,6 @@ export const getFollowedThreadsTool: RegisteredTool<typeof GetFollowedThreadsInp
 /** All message-related tools. */
 export const messageTools = [
   sendMessageTool,
-  replyToThreadTool,
   getFavoritesTool,
   addFavoriteTool,
   removeFavoriteTool,
