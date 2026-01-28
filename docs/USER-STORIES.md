@@ -513,6 +513,24 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
+#### 8.3 Extract links from messages
+> "Find messages with links about the documentation"
+
+**Flow:**
+1. Search for messages mentioning documentation
+2. Results include a `links` array with extracted URLs and display text
+3. AI can present or act on the links
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+
+**Status:** ✅ Implemented - all message responses include a `links` field (when URLs are present) containing `{ url, text }` objects. Works across search results, threads, saved messages, followed threads, and activity feed.
+
+---
+
 ### 9. Calendar & Meetings (Stretch Goal)
 
 #### 9.1 Check upcoming meetings
@@ -686,6 +704,27 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_send_message` | ✅ Implemented |
 
 **Status:** ✅ Implemented - use `@[DisplayName](mri)` syntax in message content. The MRI comes from people search results.
+
+---
+
+#### 10.8 Include links in a message
+> "Send a message with a link to the project documentation"
+
+**Flow:**
+1. Compose message with markdown-style link: `[text](url)`
+2. Send using `teams_send_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_send_message` | ✅ Implemented |
+
+**Status:** ✅ Implemented - use `[display text](https://url)` syntax in message content. Multiple links and combinations with @mentions work.
+
+**Example:**
+```
+teams_send_message content="Check out [the docs](https://example.com/docs) for details"
+```
 
 ---
 

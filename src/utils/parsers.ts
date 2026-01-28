@@ -5,8 +5,11 @@
  * They are extracted here for testability - no side effects or external dependencies.
  */
 
-import type { TeamsSearchResult } from '../types/teams.js';
+import type { TeamsSearchResult, ExtractedLink } from '../types/teams.js';
 import { MIN_CONTENT_LENGTH } from '../constants.js';
+
+// Re-export ExtractedLink so existing imports from parsers.ts continue to work
+export type { ExtractedLink };
 
 /** Person search result from Substrate suggestions API. */
 export interface PersonSearchResult {
@@ -30,6 +33,26 @@ export interface UserProfile {
   givenName?: string;   // First name
   surname?: string;     // Last name
   tenantId?: string;    // Azure tenant ID
+}
+
+/**
+ * Extracts links from HTML content before stripping.
+ * Returns an array of { url, text } objects.
+ */
+export function extractLinks(html: string): ExtractedLink[] {
+  const links: ExtractedLink[] = [];
+  const linkRegex = /<a\s+[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  
+  let match;
+  while ((match = linkRegex.exec(html)) !== null) {
+    const url = match[1];
+    const text = stripHtml(match[2]); // Clean nested HTML in link text
+    if (url && !url.startsWith('javascript:')) {
+      links.push({ url, text: text || url });
+    }
+  }
+  
+  return links;
 }
 
 /**
@@ -211,7 +234,8 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
              item.ReferenceId as string || 
              `v2-${Date.now()}`;
 
-  // Strip HTML from content
+  // Extract links before stripping HTML
+  const links = extractLinks(content);
   const cleanContent = stripHtml(content);
 
   const source = item.Source as Record<string, unknown> | undefined;
@@ -290,6 +314,7 @@ export function parseV2Result(item: Record<string, unknown>): TeamsSearchResult 
     // Fallback to ReferenceId if timestamp extraction fails
     messageId: messageTimestamp || item.ReferenceId as string,
     messageLink,
+    links: links.length > 0 ? links : undefined,
   };
 }
 
@@ -822,6 +847,7 @@ export interface VirtualConversationItem {
   sourceConversationId: string;
   sourceReferenceId?: string;
   messageLink?: string;
+  links?: ExtractedLink[];
 }
 
 /**
@@ -876,6 +902,9 @@ export function parseVirtualConversationMessage(
     ? buildMessageLink(sourceConversationId, sourceReferenceId)
     : undefined;
 
+  // Extract links before stripping HTML
+  const links = extractLinks(content);
+
   return {
     id,
     content: stripHtml(content),
@@ -888,5 +917,6 @@ export function parseVirtualConversationMessage(
     sourceConversationId,
     sourceReferenceId,
     messageLink,
+    links: links.length > 0 ? links : undefined,
   };
 }
