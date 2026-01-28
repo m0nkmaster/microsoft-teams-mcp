@@ -79,8 +79,7 @@ Then configure:
 
 | Tool | Description |
 |------|-------------|
-| `teams_send_message` | Send a message (default: self-chat/notes) |
-| `teams_reply_to_thread` | Reply to a channel message as a threaded reply |
+| `teams_send_message` | Send a message (default: self-chat/notes). Use `replyToMessageId` for thread replies |
 | `teams_edit_message` | Edit one of your own messages |
 | `teams_delete_message` | Delete one of your own messages (soft delete) |
 

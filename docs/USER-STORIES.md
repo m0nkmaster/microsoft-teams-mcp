@@ -43,11 +43,10 @@ This document defines user stories and personas to guide development of the Team
 | Tool | Status |
 |------|--------|
 | `teams_search` | ✅ Implemented (returns conversationId, messageId) |
-| `teams_reply_to_thread` | ✅ Implemented - simple thread replies |
-| `teams_send_message` | ✅ Implemented - with replyToMessageId for manual control |
+| `teams_send_message` | ✅ Implemented - with replyToMessageId for thread replies |
 | `teams_get_thread` | ✅ Implemented - get surrounding messages |
 
-**Status:** ✅ Implemented - search returns `conversationId` and `messageId`, use `teams_reply_to_thread` to reply to channel threads (it finds the thread root automatically), or `teams_get_thread` for context first.
+**Status:** ✅ Implemented - search returns `conversationId` and `messageId`, use `teams_send_message` with `replyToMessageId` to reply to channel threads, or `teams_get_thread` for context first.
 
 ---
 
@@ -626,7 +625,7 @@ These patterns combine multiple tools for sophisticated interactions.
 | `teams_get_me` | ✅ Implemented |
 | `teams_search` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented |
-| `teams_reply_to_thread` | ✅ Implemented |
+| `teams_send_message` | ✅ Implemented |
 
 **Status:** ✅ Implemented - AI orchestrates the full workflow.
 
@@ -735,7 +734,7 @@ Based on user value and API readiness:
 ### Phase 1 - Core Messaging ✅ Complete
 | Story | Tools | Status |
 |-------|-------|--------|
-| 1.1 Find & reply | `teams_search`, `teams_reply_to_thread` | ✅ Done |
+| 1.1 Find & reply | `teams_search`, `teams_send_message` | ✅ Done |
 | 1.2 Search with filters | `teams_search` operators | ✅ Done |
 | 4.1 Find and message someone | `teams_search_people`, `teams_get_chat`, `teams_send_message` | ✅ Done |
 | 4.3 Get my profile | `teams_get_me` | ✅ Done |
@@ -785,8 +784,7 @@ The following tools are implemented:
 - `teams_get_frequent_contacts` - Ranked frequent contacts
 
 **Messaging:**
-- `teams_send_message` - Send messages (chats, channels, self-notes)
-- `teams_reply_to_thread` - Reply to channel threads
+- `teams_send_message` - Send messages (chats, channels, self-notes, thread replies via `replyToMessageId`)
 - `teams_get_thread` - Read conversation messages
 - `teams_edit_message` - Edit your own messages
 - `teams_delete_message` - Delete your own messages

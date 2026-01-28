@@ -33,8 +33,7 @@ Use this prompt when you want an AI assistant to interact with Microsoft Teams o
 ### Sending Messages
 | Tool | Purpose |
 |------|---------|
-| `teams_send_message` | Send a message with optional @mentions (defaults to self-notes) |
-| `teams_reply_to_thread` | Reply to a channel message as threaded reply (supports @mentions) |
+| `teams_send_message` | Send a message with optional @mentions (defaults to self-notes). Use `replyToMessageId` for thread replies |
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
 
 **@Mentions**: Use `@[DisplayName](mri)` syntax inline in content. Get MRI from `teams_search_people` or `teams_get_frequent_contacts`. Example: `"Hey @[John](8:orgid:abc...), check this"`
@@ -106,14 +105,14 @@ Use `@[DisplayName](mri)` syntax inline. The display name can be anything (e.g.,
 ### Reply to a channel thread
 ```
 1. teams_search or teams_get_thread → get conversationId and messageId
-2. teams_reply_to_thread content="Reply" conversationId="..." messageId="..."
+2. teams_send_message content="Reply" conversationId="..." replyToMessageId="..."
 ```
 
 ### Test reply and delete (for manual testing)
 ```
 1. teams_get_me → get your email
 2. teams_search from:your.email@company.com → find your own channel message
-3. teams_reply_to_thread content="Test reply" → reply to your own message
+3. teams_send_message content="Test reply" conversationId="..." replyToMessageId="..." → reply to your own message
 4. teams_delete_message → delete the test reply to clean up
 ```
 
