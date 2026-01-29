@@ -103,27 +103,38 @@ export function extractSubstrateToken(state?: SessionState): SubstrateTokenInfo 
   const localStorage = getTeamsLocalStorage(state);
   if (!localStorage) return null;
 
+  // Collect all valid Substrate tokens and pick the one with longest expiry
+  let bestToken: SubstrateTokenInfo | null = null;
+
   for (const item of localStorage) {
     try {
       const entry = JSON.parse(item.value);
       
-      // Look for the Substrate search token by its target scope
-      if (!entry.target?.includes('substrate.office.com/search/SubstrateSearch')) {
-        continue;
-      }
+      // Look for Substrate search tokens by target scope
+      // Match both old format (substrate.office.com/search/SubstrateSearch)
+      // and new format (substrate.office.com/SubstrateSearch-Internal.ReadWrite)
+      const target = entry.target as string | undefined;
+      if (!target?.includes('substrate.office.com')) continue;
+      if (!target.includes('SubstrateSearch')) continue;
 
       if (!isJwtToken(entry.secret)) continue;
 
       const expiry = getJwtExpiry(entry.secret);
-      if (expiry) {
-        return { token: entry.secret, expiry };
+      if (!expiry) continue;
+
+      // Skip expired tokens
+      if (expiry.getTime() <= Date.now()) continue;
+
+      // Keep the token with longest remaining validity
+      if (!bestToken || expiry.getTime() > bestToken.expiry.getTime()) {
+        bestToken = { token: entry.secret, expiry };
       }
     } catch {
       continue;
     }
   }
 
-  return null;
+  return bestToken;
 }
 
 // ============================================================================

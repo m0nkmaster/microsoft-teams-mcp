@@ -242,57 +242,91 @@ async function triggerTokenAcquisition(
 
   try {
     // Wait for the app to be ready
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
 
-    // Try to find a search input directly
-    let searchInput = null;
-    for (const selector of SEARCH_INPUT_SELECTORS) {
-      const loc = page.locator(selector).first();
-      if (await loc.isVisible().catch(() => false)) {
-        searchInput = loc;
-        break;
-      }
+    // Try multiple methods to trigger search
+    let searchTriggered = false;
+
+    // Method 1: Navigate to search results URL (triggers Substrate API call directly)
+    log('Navigating to search results...');
+    try {
+      await page.goto('https://teams.microsoft.com/v2/#/search?query=test', {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      });
+      await page.waitForTimeout(5000);
+      searchTriggered = true;
+      log('Search results page loaded.');
+    } catch (e) {
+      log(`Search navigation failed: ${e instanceof Error ? e.message : String(e)}`);
     }
 
-    // If no input visible, try clicking a search button first
-    if (!searchInput) {
-      for (const selector of SEARCH_BUTTON_SELECTORS) {
-        const btn = page.locator(selector).first();
-        if (await btn.isVisible().catch(() => false)) {
-          await btn.click();
-          await page.waitForTimeout(1000);
-          
-          // Now look for the input again
-          for (const inputSelector of SEARCH_INPUT_SELECTORS) {
-            const loc = page.locator(inputSelector).first();
-            if (await loc.isVisible().catch(() => false)) {
-              searchInput = loc;
-              break;
+    // Method 2: Fallback - focus and type
+    if (!searchTriggered) {
+      log('Trying focus+type fallback...');
+      try {
+        const focused = await page.evaluate(() => {
+          const selectors = [
+            '#ms-searchux-input',
+            '[data-tid="searchInputField"]',
+            'input[placeholder*="Search"]',
+          ];
+          for (const sel of selectors) {
+            const el = document.querySelector(sel) as HTMLInputElement | null;
+            if (el) {
+              el.focus();
+              el.click();
+              return true;
             }
           }
-          break;
+          return false;
+        });
+
+        if (focused) {
+          await page.waitForTimeout(500);
+          await page.keyboard.type('test', { delay: 30 });
+          await page.keyboard.press('Enter');
+          searchTriggered = true;
+          log('Search submitted via typing.');
         }
+      } catch {
+        // Continue
       }
     }
 
-    if (searchInput) {
-      // Use a filter syntax that looks like a system command
-      await searchInput.fill('is:Messages');
-      await page.keyboard.press('Enter');
-
-      // Wait for the search API call to complete
-      log('Waiting for search API...');
-      await page.waitForTimeout(5000);
-
-      // Close search
-      await page.keyboard.press('Escape');
+    // Method 2: Keyboard shortcut fallback
+    if (!searchTriggered) {
+      log('Trying keyboard shortcut...');
+      const isMac = process.platform === 'darwin';
+      await page.keyboard.press(isMac ? 'Meta+e' : 'Control+e');
       await page.waitForTimeout(1000);
-
-      log('Token acquisition complete.');
-    } else {
-      log('Search UI not found, waiting for background refresh...');
-      await page.waitForTimeout(5000);
+      await page.keyboard.type('is:Messages', { delay: 30 });
+      await page.keyboard.press('Enter');
+      searchTriggered = true;
     }
+
+    // Wait for the Substrate search API call to complete
+    log('Waiting for search API...');
+    try {
+      // Wait for the actual API request to substrate.office.com
+      await Promise.race([
+        page.waitForResponse(
+          resp => resp.url().includes('substrate.office.com') && resp.status() === 200,
+          { timeout: 15000 }
+        ),
+        page.waitForTimeout(15000),
+      ]);
+      log('Substrate API call detected.');
+    } catch {
+      log('No Substrate API call detected, continuing...');
+    }
+    await page.waitForTimeout(2000);
+
+    // Close search and reset
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1000);
+
+    log('Token acquisition complete.');
   } catch (error) {
     log(`Token acquisition warning: ${error instanceof Error ? error.message : String(error)}`);
     await page.waitForTimeout(3000);
