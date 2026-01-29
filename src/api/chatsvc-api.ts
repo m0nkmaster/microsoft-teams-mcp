@@ -11,7 +11,7 @@ import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage, type ExtractedLink } from '../utils/parsers.js';
-import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID } from '../constants.js';
+import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX } from '../constants.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -1304,7 +1304,7 @@ export async function getActivityFeed(
     const clumpId = msg.clumpId as string;
     
     // Use clumpId if conversationid is a virtual conversation (48:xxx format)
-    const isVirtualConversation = rawConversationId?.startsWith('48:');
+    const isVirtualConversation = rawConversationId?.startsWith(VIRTUAL_CONVERSATION_PREFIX);
     const conversationId = (isVirtualConversation && clumpId) ? clumpId : rawConversationId;
     
     const topic = msg.threadtopic as string || msg.topic as string;
@@ -1312,7 +1312,7 @@ export async function getActivityFeed(
     // Build activity link if we have a valid source conversation context
     // Skip virtual conversations (48:xxx) as they don't produce working deep links
     let activityLink: string | undefined;
-    if (conversationId && !conversationId.startsWith('48:') && /^\d+$/.test(id)) {
+    if (conversationId && !conversationId.startsWith(VIRTUAL_CONVERSATION_PREFIX) && /^\d+$/.test(id)) {
       activityLink = buildMessageLink(conversationId, id);
     }
 

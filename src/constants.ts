@@ -109,6 +109,9 @@ export const RETRY_MAX_DELAY_MS = 10000;
  * across all conversations. See docs/API-REFERENCE.md for details.
  */
 
+/** Prefix for virtual conversation IDs (48:saved, 48:notifications, etc). */
+export const VIRTUAL_CONVERSATION_PREFIX = '48:';
+
 /** Self-chat (notes) conversation ID. */
 export const SELF_CHAT_ID = '48:notes';
 
