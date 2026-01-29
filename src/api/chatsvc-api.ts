@@ -11,7 +11,7 @@ import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage, type ExtractedLink } from '../utils/parsers.js';
-import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID } from '../constants.js';
+import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX, SELF_CHAT_ID } from '../constants.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -208,7 +208,7 @@ export async function sendMessage(
  * Sends a message to your own notes/self-chat.
  */
 export async function sendNoteToSelf(content: string): Promise<Result<SendMessageResult>> {
-  return sendMessage('48:notes', content);
+  return sendMessage(SELF_CHAT_ID, content);
 }
 
 /**
@@ -1297,12 +1297,22 @@ export async function getActivityFeed(
     const timestamp = extractActivityTimestamp(msg);
     if (!timestamp) continue;
 
-    const conversationId = msg.conversationid as string || msg.conversationId as string;
+    // Get source conversation - prefer clumpId (actual source) over conversationid
+    // Some activity items have conversationid as "48:notifications" (the virtual conversation)
+    // which doesn't work for deep links. clumpId contains the real source conversation.
+    const rawConversationId = msg.conversationid as string || msg.conversationId as string;
+    const clumpId = msg.clumpId as string;
+    
+    // Use clumpId if conversationid is a virtual conversation (48:xxx format)
+    const isVirtualConversation = rawConversationId?.startsWith(VIRTUAL_CONVERSATION_PREFIX);
+    const conversationId = (isVirtualConversation && clumpId) ? clumpId : rawConversationId;
+    
     const topic = msg.threadtopic as string || msg.topic as string;
 
-    // Build activity link if we have the conversation context
+    // Build activity link if we have a valid source conversation context
+    // Skip virtual conversations (48:xxx) as they don't produce working deep links
     let activityLink: string | undefined;
-    if (conversationId && /^\d+$/.test(id)) {
+    if (conversationId && !conversationId.startsWith(VIRTUAL_CONVERSATION_PREFIX) && /^\d+$/.test(id)) {
       activityLink = buildMessageLink(conversationId, id);
     }
 
