@@ -17,6 +17,7 @@ import {
   getSessionAge,
   clearSessionState,
 } from '../auth/session-store.js';
+import { SELF_CHAT_ID } from '../constants.js';
 import {
   hasValidSubstrateToken,
   getSubstrateTokenStatus,
@@ -289,7 +290,7 @@ async function commandSend(
   }
 
   const asJson = flags.has('json');
-  const conversationId = options.get('to') || '48:notes';
+  const conversationId = options.get('to') || SELF_CHAT_ID;
 
   const auth = extractMessageAuth();
   if (!auth) {
@@ -298,7 +299,7 @@ async function commandSend(
   }
 
   if (!asJson) {
-    if (conversationId === '48:notes') {
+    if (conversationId === SELF_CHAT_ID) {
       console.log(`\n📝 Sending note to yourself...`);
     } else {
       console.log(`\n📤 Sending message to: ${conversationId}`);
@@ -306,7 +307,7 @@ async function commandSend(
     console.log(`   Content: "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`);
   }
 
-  const result = conversationId === '48:notes'
+  const result = conversationId === SELF_CHAT_ID
     ? await sendNoteToSelf(message)
     : await sendMessage(conversationId, message);
 

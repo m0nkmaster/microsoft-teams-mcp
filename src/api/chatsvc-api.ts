@@ -11,7 +11,7 @@ import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage, type ExtractedLink } from '../utils/parsers.js';
-import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX } from '../constants.js';
+import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX, SELF_CHAT_ID } from '../constants.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -208,7 +208,7 @@ export async function sendMessage(
  * Sends a message to your own notes/self-chat.
  */
 export async function sendNoteToSelf(content: string): Promise<Result<SendMessageResult>> {
-  return sendMessage('48:notes', content);
+  return sendMessage(SELF_CHAT_ID, content);
 }
 
 /**
