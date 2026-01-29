@@ -353,12 +353,14 @@ export async function navigateToTeams(page: Page): Promise<AuthStatus> {
  * @param context - Browser context for saving session
  * @param timeoutMs - Maximum time to wait (default: 5 minutes)
  * @param onProgress - Callback for progress updates
+ * @param showOverlay - Whether to show progress overlay (default: true for visible browsers)
  */
 export async function waitForManualLogin(
   page: Page,
   context: BrowserContext,
   timeoutMs: number = 5 * 60 * 1000,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  showOverlay: boolean = true
 ): Promise<void> {
   const startTime = Date.now();
   const log = onProgress ?? console.log;
@@ -371,20 +373,26 @@ export async function waitForManualLogin(
     if (status.isAuthenticated) {
       log('Authentication successful!');
 
-      // Show progress through login steps
-      await showLoginProgress(page, 'signed-in', { pause: true });
-      await showLoginProgress(page, 'acquiring');
+      // Show progress through login steps (only if overlay enabled)
+      if (showOverlay) {
+        await showLoginProgress(page, 'signed-in', { pause: true });
+        await showLoginProgress(page, 'acquiring');
+      }
 
       // Trigger a search to cause MSAL to acquire the Substrate token
       await triggerTokenAcquisition(page, log);
 
-      await showLoginProgress(page, 'saving');
+      if (showOverlay) {
+        await showLoginProgress(page, 'saving');
+      }
 
       // Save the session state with fresh tokens
       await saveSessionState(context);
       log('Session state saved.');
 
-      await showLoginProgress(page, 'complete', { pause: true });
+      if (showOverlay) {
+        await showLoginProgress(page, 'complete', { pause: true });
+      }
 
       return;
     }
@@ -393,8 +401,10 @@ export async function waitForManualLogin(
     await page.waitForTimeout(2000);
   }
 
-  // Show error overlay before throwing
-  await showLoginProgress(page, 'error', { pause: true });
+  // Show error overlay before throwing (only if overlay enabled)
+  if (showOverlay) {
+    await showLoginProgress(page, 'error', { pause: true });
+  }
 
   throw new Error('Authentication timeout: user did not complete login within the allowed time');
 }
@@ -447,14 +457,14 @@ export async function ensureAuthenticated(
 
   if (status.isOnLoginPage) {
     log('Login required. Please complete authentication in the browser window.');
-    await waitForManualLogin(page, context, undefined, onProgress);
+    await waitForManualLogin(page, context, undefined, onProgress, showOverlay);
 
     // Navigate back to Teams after login (in case we're on a callback URL)
     await navigateToTeams(page);
   } else {
     // Unexpected state - might need manual intervention
     log('Unexpected page state. Waiting for authentication...');
-    await waitForManualLogin(page, context, undefined, onProgress);
+    await waitForManualLogin(page, context, undefined, onProgress, showOverlay);
   }
 }
 
