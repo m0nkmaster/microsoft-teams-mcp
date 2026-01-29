@@ -1297,12 +1297,22 @@ export async function getActivityFeed(
     const timestamp = extractActivityTimestamp(msg);
     if (!timestamp) continue;
 
-    const conversationId = msg.conversationid as string || msg.conversationId as string;
+    // Get source conversation - prefer clumpId (actual source) over conversationid
+    // Some activity items have conversationid as "48:notifications" (the virtual conversation)
+    // which doesn't work for deep links. clumpId contains the real source conversation.
+    const rawConversationId = msg.conversationid as string || msg.conversationId as string;
+    const clumpId = msg.clumpId as string;
+    
+    // Use clumpId if conversationid is a virtual conversation (48:xxx format)
+    const isVirtualConversation = rawConversationId?.startsWith('48:');
+    const conversationId = (isVirtualConversation && clumpId) ? clumpId : rawConversationId;
+    
     const topic = msg.threadtopic as string || msg.topic as string;
 
-    // Build activity link if we have the conversation context
+    // Build activity link if we have a valid source conversation context
+    // Skip virtual conversations (48:xxx) as they don't produce working deep links
     let activityLink: string | undefined;
-    if (conversationId && /^\d+$/.test(id)) {
+    if (conversationId && !conversationId.startsWith('48:') && /^\d+$/.test(id)) {
       activityLink = buildMessageLink(conversationId, id);
     }
 
