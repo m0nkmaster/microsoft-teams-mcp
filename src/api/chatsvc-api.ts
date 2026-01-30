@@ -972,6 +972,8 @@ export interface CreateGroupChatResult {
   members: string[];
   /** Optional topic/name set for the chat. */
   topic?: string;
+  /** Optional note about the result, e.g. if the ID could not be retrieved. */
+  note?: string;
 }
 
 /**
@@ -1075,9 +1077,10 @@ export async function createGroupChat(
   // The response returns threadResource.id with the new conversation ID
   // Note: Sometimes the API returns an empty body {} but includes the ID in the Location header
   const responseData = response.value.data as Record<string, unknown>;
-  let conversationId = (responseData.threadResource as Record<string, unknown>)?.id as string
-    || responseData.id as string
-    || responseData.threadId as string;
+  const threadResource = responseData.threadResource as Record<string, unknown> | undefined;
+  let conversationId = (typeof threadResource?.id === 'string' ? threadResource.id : undefined)
+    || (typeof responseData.id === 'string' ? responseData.id : undefined)
+    || (typeof responseData.threadId === 'string' ? responseData.threadId : undefined);
   
   // Fallback: extract from Location header (format: .../threads/19:xxx@thread.v2)
   if (!conversationId) {
@@ -1097,7 +1100,7 @@ export async function createGroupChat(
       members: memberMris,
       topic,
       note: 'Group chat created successfully but API did not return the conversation ID. Check Teams to find the new chat.',
-    } as CreateGroupChatResult);
+    });
   }
 
   return ok({
