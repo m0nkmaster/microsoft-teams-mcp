@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { RegisteredTool, ToolContext, ToolResult } from './index.js';
+import { handleApiResult } from './index.js';
 import { searchPeople, getFrequentContacts } from '../api/substrate-api.js';
 import { getUserProfile } from '../auth/token-extractor.js';
 import { ErrorCode, createError } from '../types/errors.js';
@@ -106,18 +107,11 @@ async function handleSearchPeople(
 ): Promise<ToolResult> {
   const result = await searchPeople(input.query, input.limit);
 
-  if (!result.ok) {
-    return { success: false, error: result.error };
-  }
-
-  return {
-    success: true,
-    data: {
-      query: input.query,
-      returned: result.value.returned,
-      results: result.value.results,
-    },
-  };
+  return handleApiResult(result, (value) => ({
+    query: input.query,
+    returned: value.returned,
+    results: value.results,
+  }));
 }
 
 async function handleGetFrequentContacts(
@@ -126,17 +120,10 @@ async function handleGetFrequentContacts(
 ): Promise<ToolResult> {
   const result = await getFrequentContacts(input.limit);
 
-  if (!result.ok) {
-    return { success: false, error: result.error };
-  }
-
-  return {
-    success: true,
-    data: {
-      returned: result.value.returned,
-      contacts: result.value.results,
-    },
-  };
+  return handleApiResult(result, (value) => ({
+    returned: value.returned,
+    contacts: value.results,
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

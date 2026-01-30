@@ -15,7 +15,6 @@ import {
   writeSessionState,
   readSessionState,
 } from '../auth/session-store.js';
-import { areTokensExpired } from '../auth/token-extractor.js';
 
 export interface BrowserManager {
   browser: Browser;
@@ -84,7 +83,6 @@ export async function createBrowserContext(
 
   const hasSession = hasSessionState();
   const sessionExpired = isSessionLikelyExpired();
-  const _tokensExpired = areTokensExpired();
 
   // Restore session if we have one and it's not ancient
   const shouldRestoreSession = hasSession && !sessionExpired;

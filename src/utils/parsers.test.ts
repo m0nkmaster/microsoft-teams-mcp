@@ -444,9 +444,7 @@ describe('calculateTokenStatus', () => {
 describe('parseSearchResults', () => {
   it('parses EntitySets structure', () => {
     const { results, total } = parseSearchResults(
-      searchEntitySetsResponse.EntitySets,
-      0,
-      25
+      searchEntitySetsResponse.EntitySets
     );
     
     expect(results).toHaveLength(2);
@@ -454,7 +452,7 @@ describe('parseSearchResults', () => {
   });
 
   it('returns empty for undefined input', () => {
-    const { results, total } = parseSearchResults(undefined, 0, 25);
+    const { results, total } = parseSearchResults(undefined);
     
     expect(results).toHaveLength(0);
     expect(total).toBeUndefined();
@@ -462,9 +460,7 @@ describe('parseSearchResults', () => {
 
   it('returns empty for non-array input', () => {
     const { results } = parseSearchResults(
-      'not an array' as unknown as unknown[],
-      0,
-      25
+      'not an array' as unknown as unknown[]
     );
     
     expect(results).toHaveLength(0);
@@ -480,7 +476,7 @@ describe('parseSearchResults', () => {
       }],
     }];
     
-    const { results } = parseSearchResults(entitySets, 0, 25);
+    const { results } = parseSearchResults(entitySets);
     expect(results).toHaveLength(1);
   });
 });

@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { RegisteredTool, ToolContext, ToolResult } from './index.js';
+import { handleApiResult } from './index.js';
 import { searchMessages, searchChannels } from '../api/substrate-api.js';
 import { getThreadMessages, getConsumptionHorizon, markAsRead } from '../api/chatsvc-api.js';
 import {
@@ -220,18 +221,11 @@ async function handleFindChannel(
 ): Promise<ToolResult> {
   const result = await searchChannels(input.query, input.limit);
 
-  if (!result.ok) {
-    return { success: false, error: result.error };
-  }
-
-  return {
-    success: true,
-    data: {
-      query: input.query,
-      count: result.value.returned,
-      channels: result.value.results,
-    },
-  };
+  return handleApiResult(result, (value) => ({
+    query: input.query,
+    count: value.returned,
+    channels: value.results,
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

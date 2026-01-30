@@ -160,3 +160,84 @@ export const ORGID_PREFIX = 'orgid:';
 
 /** Full MRI prefix for organisation users (8:orgid:). */
 export const MRI_ORGID_PREFIX = `${MRI_TYPE_PREFIX}${ORGID_PREFIX}`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emoji Data
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Standard Teams emoji entry. */
+export interface StandardEmoji {
+  key: string;
+  description: string;
+  category: 'reaction' | 'expression' | 'affection' | 'action' | 'animal' | 'object' | 'other';
+}
+
+/**
+ * Standard Teams emoji shortcuts (built-in, no API call needed).
+ * These are the common emojis available in Teams for reactions and messages.
+ */
+export const STANDARD_EMOJIS: StandardEmoji[] = [
+  // Quick reactions (shown in reaction picker)
+  { key: 'like', description: 'Thumbs up 👍', category: 'reaction' },
+  { key: 'heart', description: 'Heart ❤️', category: 'reaction' },
+  { key: 'laugh', description: 'Laughing 😂', category: 'reaction' },
+  { key: 'surprised', description: 'Surprised 😮', category: 'reaction' },
+  { key: 'sad', description: 'Sad 😢', category: 'reaction' },
+  { key: 'angry', description: 'Angry 😠', category: 'reaction' },
+  // Expressions
+  { key: 'smile', description: 'Smiley 😊', category: 'expression' },
+  { key: 'wink', description: 'Winking 😉', category: 'expression' },
+  { key: 'cry', description: 'Crying 😭', category: 'expression' },
+  { key: 'cwl', description: 'Crying with laughter 😂', category: 'expression' },
+  { key: 'rofl', description: 'Rolling on floor laughing 🤣', category: 'expression' },
+  { key: 'blush', description: 'Blushing 😊', category: 'expression' },
+  { key: 'speechless', description: 'Speechless 😶', category: 'expression' },
+  { key: 'wonder', description: 'Wondering 🤔', category: 'expression' },
+  { key: 'sleepy', description: 'Sleepy 😴', category: 'expression' },
+  { key: 'yawn', description: 'Yawning 🥱', category: 'expression' },
+  { key: 'eyeroll', description: 'Eye roll 🙄', category: 'expression' },
+  { key: 'worry', description: 'Worried 😟', category: 'expression' },
+  { key: 'puke', description: 'Puking 🤮', category: 'expression' },
+  { key: 'giggle', description: 'Giggling 🤭', category: 'expression' },
+  { key: 'tongueout', description: 'Tongue out 😛', category: 'expression' },
+  // Affection
+  { key: 'kiss', description: 'Kiss 😘', category: 'affection' },
+  { key: 'inlove', description: 'In love 😍', category: 'affection' },
+  { key: 'hug', description: 'Hug 🤗', category: 'affection' },
+  { key: 'lips', description: 'Kissing lips 💋', category: 'affection' },
+  // Actions
+  { key: 'facepalm', description: 'Facepalm 🤦', category: 'action' },
+  { key: 'sweat', description: 'Sweating 😓', category: 'action' },
+  { key: 'dance', description: 'Dancing 💃', category: 'action' },
+  { key: 'bow', description: 'Bowing 🙇', category: 'action' },
+  { key: 'headbang', description: 'Banging head on wall', category: 'action' },
+  { key: 'wasntme', description: "It wasn't me 🤷", category: 'action' },
+  { key: 'hungover', description: 'Hungover', category: 'action' },
+  { key: 'shivering', description: 'Shivering 🥶', category: 'action' },
+  // Animals
+  { key: 'penguin', description: 'Penguin 🐧', category: 'animal' },
+  { key: 'cat', description: 'Cat 🐱', category: 'animal' },
+  { key: 'monkey', description: 'Monkey 🐵', category: 'animal' },
+  { key: 'polarbear', description: 'Polar bear 🐻‍❄️', category: 'animal' },
+  { key: 'elephant', description: 'Elephant 🐘', category: 'animal' },
+  // Objects
+  { key: 'flower', description: 'Flower 🌸', category: 'object' },
+  { key: 'sun', description: 'Sun ☀️', category: 'object' },
+  { key: 'star', description: 'Star ⭐', category: 'object' },
+  { key: 'xmastree', description: 'Christmas tree 🎄', category: 'object' },
+  { key: 'cake', description: 'Cake 🎂', category: 'object' },
+  { key: 'gift', description: 'Gift 🎁', category: 'object' },
+  { key: 'cash', description: 'Cash 💵', category: 'object' },
+  { key: 'champagne', description: 'Champagne 🍾', category: 'object' },
+  // Other
+  { key: 'yes', description: 'Yes/Thumbs up ✅', category: 'other' },
+  { key: 'cool', description: 'Cool 😎', category: 'other' },
+  { key: 'party', description: 'Party 🎉', category: 'other' },
+  { key: 'hi', description: 'Wave/Hello 👋', category: 'other' },
+  { key: 'angel', description: 'Angel 😇', category: 'other' },
+  { key: 'devil', description: 'Devil 😈', category: 'other' },
+  { key: 'holidayspirit', description: 'Holiday spirit 🎅', category: 'other' },
+  { key: 'lipssealed', description: 'Lips sealed 🤐', category: 'other' },
+  { key: 'makeup', description: 'Make-up 💄', category: 'other' },
+  { key: 'snowangel', description: 'Snow angel', category: 'other' },
+];
