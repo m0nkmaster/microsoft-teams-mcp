@@ -91,6 +91,7 @@ Then configure:
 | `teams_search_people` | Search for people by name or email |
 | `teams_get_frequent_contacts` | Get frequently contacted people (useful for name resolution) |
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
+| `teams_create_group_chat` | Create a new group chat with multiple people (2+ others) |
 
 ### Organisation
 
