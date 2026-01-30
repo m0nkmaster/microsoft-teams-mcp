@@ -29,6 +29,9 @@ debug-output/
 research-findings.json
 search-api-findings.json
 
+# SSO research output (contains sensitive auth data)
+scripts/
+
 # Logs
 *.log
 npm-debug.log*
