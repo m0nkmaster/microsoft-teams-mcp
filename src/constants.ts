@@ -176,7 +176,7 @@ export interface StandardEmoji {
  * Standard Teams emoji shortcuts (built-in, no API call needed).
  * These are the common emojis available in Teams for reactions and messages.
  */
-export const STANDARD_EMOJIS: StandardEmoji[] = [
+export const STANDARD_EMOJIS: readonly StandardEmoji[] = [
   // Quick reactions (shown in reaction picker)
   { key: 'like', description: 'Thumbs up 👍', category: 'reaction' },
   { key: 'heart', description: 'Heart ❤️', category: 'reaction' },
