@@ -212,21 +212,6 @@ async function hasAuthenticatedContent(page: Page): Promise<boolean> {
   return false;
 }
 
-// Search input selectors - must match those in teams/search.ts
-const SEARCH_INPUT_SELECTORS = [
-  '[data-tid="searchInputField"]',
-  '[data-tid="app-search-input"]',
-  'input[data-tid*="search"]',
-  'input[placeholder*="Search"]',
-];
-
-const SEARCH_BUTTON_SELECTORS = [
-  '[data-tid="search-box"]',
-  '[data-tid="search-button"]',
-  '[data-tid="app-bar-search"]',
-  '[role="search"] input',
-];
-
 /**
  * Triggers MSAL to acquire the Substrate token.
  * 
