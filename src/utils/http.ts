@@ -146,7 +146,8 @@ async function fetchWithTimeout<T>(
     let data: T;
     
     if (contentType.includes('application/json')) {
-      data = await response.json() as T;
+      const text = await response.text();
+      data = text ? JSON.parse(text) as T : {} as T;
     } else {
       data = await response.text() as unknown as T;
     }

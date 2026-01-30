@@ -11,7 +11,7 @@ import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
 import { requireMessageAuth } from '../utils/auth-guards.js';
 import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage, type ExtractedLink } from '../utils/parsers.js';
-import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX, SELF_CHAT_ID } from '../constants.js';
+import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX, SELF_CHAT_ID, MRI_ORGID_PREFIX } from '../constants.js';
 
 /** Result of sending a message. */
 export interface SendMessageResult {
@@ -957,6 +957,156 @@ export function getOneOnOneChatId(
     conversationId,
     otherUserId,
     currentUserId,
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Group Chat Operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Result of creating a group chat. */
+export interface CreateGroupChatResult {
+  /** The newly created conversation ID. */
+  conversationId: string;
+  /** The member MRIs included in the chat. */
+  members: string[];
+  /** Optional topic/name set for the chat. */
+  topic?: string;
+  /** Optional note about the result, e.g. if the ID could not be retrieved. */
+  note?: string;
+}
+
+/**
+ * Creates a new group chat with multiple members.
+ * 
+ * Unlike 1:1 chats which have a predictable ID format, group chats require
+ * an API call to create. The conversation ID is returned by the server.
+ * 
+ * @param memberIdentifiers - Array of user identifiers (MRI, object ID, or GUID)
+ * @param topic - Optional chat topic/name
+ * @param region - API region (default: 'amer')
+ * 
+ * @example
+ * ```typescript
+ * // Create a group chat with 2 other people
+ * const result = await createGroupChat(
+ *   ['8:orgid:abc123...', '8:orgid:def456...'],
+ *   'Project Discussion'
+ * );
+ * if (result.ok) {
+ *   console.log('Created chat:', result.value.conversationId);
+ * }
+ * ```
+ */
+export async function createGroupChat(
+  memberIdentifiers: string[],
+  topic?: string,
+  region: string = 'amer'
+): Promise<Result<CreateGroupChatResult>> {
+  const authResult = requireMessageAuth();
+  if (!authResult.ok) {
+    return authResult;
+  }
+  const auth = authResult.value;
+
+  // Validate we have at least 2 other members (plus current user = 3+ total)
+  if (!memberIdentifiers || memberIdentifiers.length < 2) {
+    return err(createError(
+      ErrorCode.INVALID_INPUT,
+      'Group chat requires at least 2 other members. For 1:1 chats, use teams_get_chat instead.'
+    ));
+  }
+
+  const validRegion = validateRegion(region);
+
+  // Build MRI list for all members, including current user
+  const memberMris: string[] = [auth.userMri];
+
+  for (const identifier of memberIdentifiers) {
+    // Extract object ID and convert to MRI format
+    const objectId = extractObjectId(identifier);
+    if (!objectId) {
+      return err(createError(
+        ErrorCode.INVALID_INPUT,
+        `Invalid user identifier: ${identifier}. Expected MRI (8:orgid:guid), ID with tenant (guid@tenant), or raw GUID.`
+      ));
+    }
+    
+    // Convert to MRI format if not already
+    const mri = identifier.startsWith(MRI_ORGID_PREFIX) 
+      ? identifier 
+      : `${MRI_ORGID_PREFIX}${objectId}`;
+    memberMris.push(mri);
+  }
+
+  // Build the request body
+  // Format discovered via API research: POST /threads with members having "Admin" role
+  const body: Record<string, unknown> = {
+    members: memberMris.map(mri => ({
+      id: mri,
+      role: 'Admin',
+    })),
+    properties: {
+      threadType: 'chat',
+    },
+  };
+
+  // Add topic if provided
+  if (topic) {
+    (body.properties as Record<string, unknown>).topic = topic;
+  }
+
+  const url = CHATSVC_API.createThread(validRegion);
+
+  const response = await httpRequest<{ threadResource?: { id?: string } }>(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        ...getMessagingHeaders(auth.skypeToken, auth.authToken),
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!response.ok) {
+    return response;
+  }
+
+  // The response returns threadResource.id with the new conversation ID
+  // Note: Sometimes the API returns an empty body {} but includes the ID in the Location header
+  const responseData = response.value.data as Record<string, unknown>;
+  const threadResource = responseData.threadResource as Record<string, unknown> | undefined;
+  let conversationId = (typeof threadResource?.id === 'string' ? threadResource.id : undefined)
+    || (typeof responseData.id === 'string' ? responseData.id : undefined)
+    || (typeof responseData.threadId === 'string' ? responseData.threadId : undefined);
+  
+  // Fallback: extract from Location header (format: .../threads/19:xxx@thread.v2)
+  if (!conversationId) {
+    const locationHeader = response.value.headers.get('location');
+    if (locationHeader) {
+      const match = locationHeader.match(/threads\/(19:[^/]+)/);
+      if (match) {
+        conversationId = match[1];
+      }
+    }
+  }
+  
+  if (!conversationId) {
+    // Chat was likely created (201 status) but we couldn't find the ID
+    return ok({
+      conversationId: '(created - check Teams for conversation ID)',
+      members: memberMris,
+      topic,
+      note: 'Group chat created successfully but API did not return the conversation ID. Check Teams to find the new chat.',
+    });
+  }
+
+  return ok({
+    conversationId,
+    members: memberMris,
+    topic,
   });
 }
 

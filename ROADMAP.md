@@ -2,6 +2,7 @@
 
 | Priority | Feature | Description | Difficulty | Notes |
 |----------|---------|-------------|------------|-------|
+| P2 | Create group chat | Create group conversations with multiple people | Medium | ✅ Implemented - `teams_create_group_chat` |
 | P2 | Find team | Search/discover teams by name | Easy | Teams List API |
 | P2 | Get person details | Detailed profile info (working hours, OOO status) | Easy | Delve API |
 | P2 | Get shared files | Files shared in a conversation | Medium | AllFiles API |

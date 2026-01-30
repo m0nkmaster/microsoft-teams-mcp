@@ -34,6 +34,7 @@ const SHORTCUTS: Record<string, { tool: string; primaryArg?: string }> = {
   contacts: { tool: 'teams_get_frequent_contacts' },
   channel: { tool: 'teams_find_channel', primaryArg: 'query' },
   chat: { tool: 'teams_get_chat', primaryArg: 'userId' },
+  groupchat: { tool: 'teams_create_group_chat' },
   unread: { tool: 'teams_get_unread' },
   markread: { tool: 'teams_mark_read' },
   activity: { tool: 'teams_get_activity' },
@@ -53,6 +54,8 @@ const FLAG_MAPPINGS: Record<string, string> = {
   '--force': 'forceNew',
   '--user': 'userId',
   '--userId': 'userId',
+  '--userIds': 'userIds',
+  '--topic': 'topic',
   '--markRead': 'markRead',
 };
 

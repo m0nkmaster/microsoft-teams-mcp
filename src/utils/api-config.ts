@@ -102,6 +102,10 @@ export const CHATSVC_API = {
   /** Message emotions (reactions) URL. */
   messageEmotions: (region: Region, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}/properties?name=emotions`,
+  
+  /** Create a new thread (group chat). */
+  createThread: (region: Region) =>
+    `https://teams.microsoft.com/api/chatsvc/${region}/v1/threads`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */

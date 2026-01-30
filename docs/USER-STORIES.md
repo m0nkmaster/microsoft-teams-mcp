@@ -247,7 +247,26 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
-#### 4.2 Check someone's availability
+#### 4.2 Create a group chat
+> "Start a group chat with John and Sarah about the project"
+
+**Flow:**
+1. Search for people using `teams_search_people`
+2. Create group chat using `teams_create_group_chat` with their MRIs
+3. Send initial message using `teams_send_message`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search_people` | ✅ Implemented |
+| `teams_create_group_chat` | ✅ Implemented |
+| `teams_send_message` | ✅ Implemented |
+
+**Status:** ✅ Implemented - uses `POST /api/chatsvc/{region}/v1/threads` endpoint.
+
+---
+
+#### 4.3 Check someone's availability
 > "Is Sarah available for a call right now?"
 
 **Flow:**
@@ -264,7 +283,7 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
-#### 4.3 Get my profile
+#### 4.4 Get my profile
 > "What's my Teams email address?"
 
 **Flow:**

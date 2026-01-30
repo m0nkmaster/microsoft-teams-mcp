@@ -20,10 +20,11 @@ permissions:
 
 jobs:
   review:
-    # Only run on PR events or comments on PRs (not issues)
+    # Run on PR events, issue comments on PRs, or review comments (not from bots)
     if: |
       github.event_name == 'pull_request' ||
-      (github.event.issue.pull_request && !contains(github.event.comment.user.login, '[bot]'))
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && !contains(github.event.comment.user.login, '[bot]')) ||
+      (github.event_name == 'pull_request_review_comment' && !contains(github.event.comment.user.login, '[bot]'))
     runs-on: ubuntu-latest
 
     steps:
@@ -71,7 +72,15 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          PR_NUMBER=${{ github.event.issue.number }}
+          # Handle both issue_comment (PR conversation) and pull_request_review_comment (inline review)
+          if [ "${{ github.event_name }}" = "pull_request_review_comment" ]; then
+            PR_NUMBER=${{ github.event.pull_request.number }}
+            echo "IS_REVIEW_COMMENT=true" >> $GITHUB_ENV
+            echo "REVIEW_COMMENT_ID=${{ github.event.comment.id }}" >> $GITHUB_ENV
+          else
+            PR_NUMBER=${{ github.event.issue.number }}
+            echo "IS_REVIEW_COMMENT=false" >> $GITHUB_ENV
+          fi
           gh pr diff $PR_NUMBER > pr-diff.txt
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           PR_TITLE=$(gh pr view $PR_NUMBER --json title -q '.title')
@@ -309,7 +318,18 @@ jobs:
             # Append signature
             echo "" >> response-output.md
             echo "<!-- pr-reviewer-bot -->" >> response-output.md
-            gh pr comment $PR_NUMBER --body-file response-output.md
+            
+            if [ "$IS_REVIEW_COMMENT" = "true" ]; then
+              # Post as inline reply to the review comment
+              RESPONSE_BODY=$(cat response-output.md)
+              gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/comments/$REVIEW_COMMENT_ID/replies" \
+                -f body="$RESPONSE_BODY"
+              echo "Posted inline reply to review comment $REVIEW_COMMENT_ID"
+            else
+              # Post as general PR comment
+              gh pr comment $PR_NUMBER --body-file response-output.md
+              echo "Posted PR comment"
+            fi
           else
             echo "No response output generated"
           fi

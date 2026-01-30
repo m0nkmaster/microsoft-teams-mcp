@@ -16,7 +16,7 @@ import {
   type TokenCache,
 } from './session-store.js';
 import { parseJwtProfile, type UserProfile } from '../utils/parsers.js';
-import { MRI_ORGID_PREFIX } from '../constants.js';
+import { MRI_TYPE_PREFIX, ORGID_PREFIX, MRI_ORGID_PREFIX } from '../constants.js';
 
 // ============================================================================
 // JWT Utilities
@@ -354,7 +354,17 @@ export function getMessageAuthStatus(): {
 
 function extractMriFromSkypeToken(token: string): string | null {
   const payload = decodeJwtPayload(token);
-  return typeof payload?.skypeid === 'string' ? payload.skypeid : null;
+  if (typeof payload?.skypeid !== 'string') return null;
+  
+  // The skypeid claim may be 'orgid:guid' without the '8:' prefix
+  // Ensure we return the full MRI format '8:orgid:guid'
+  const skypeid = payload.skypeid;
+  if (skypeid.startsWith(MRI_TYPE_PREFIX)) {
+    return skypeid;
+  } else if (skypeid.startsWith(ORGID_PREFIX)) {
+    return `${MRI_TYPE_PREFIX}${skypeid}`;
+  }
+  return skypeid;
 }
 
 function extractMriFromAuthToken(token: string): string | null {

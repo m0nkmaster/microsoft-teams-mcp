@@ -242,6 +242,7 @@ The two user object IDs (GUIDs) are sorted lexicographically. This format works 
 | `teams_get_thread` | Get messages from a conversation/thread |
 | `teams_find_channel` | Find channels by name (your teams + org-wide), shows membership |
 | `teams_get_chat` | Get conversation ID for 1:1 chat with a person |
+| `teams_create_group_chat` | Create a new group chat with multiple people |
 | `teams_edit_message` | Edit one of your own messages |
 | `teams_delete_message` | Delete one of your own messages (soft delete) |
 | `teams_get_unread` | Get unread status for favourites (aggregate) or specific conversation |
@@ -273,7 +274,7 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 | `from:` | `from:sarah@company.com` | Messages from a person (email or name) |
 | `to:` | `to:rob macdonald` | Messages to a person (use spaces, not dots/email) |
 | `sent:` | `sent:2026-01-20`, `sent:>=2026-01-15` | Messages by date (use explicit dates) |
-| `in:` | `budget in:EEC Leads` | Channel filter - only works reliably WITH content terms (no quotes!) |
+| `in:` | `budget in:IT Support` | Channel filter - only works reliably WITH content terms (no quotes!) |
 | `sent:today` | `sent:today` | Messages from today |
 | `"Name"` | `"Rob Smith"` | Find @mentions (display name in quotes) |
 | `NOT` | `NOT from:user@email.com` | Exclude results |
@@ -293,9 +294,9 @@ The toolset follows a **minimal tool philosophy**: fewer, more powerful tools th
 | `is:meeting` | Must be plural with capital | Use `is:Meetings` (case-sensitive) |
 | `is:Group Chats` | Spaces break it | Use `is:Chats` (no "Group" variant exists) |
 | `sent:lastweek` | Not supported by Teams API | Use `sent:>=2026-01-18` or omit (results sorted by recency) |
-| `in:EEC Leads` alone | Unreliable without content | Use `content in:EEC Leads` or `teams_get_thread` |
+| `in:IT Support` alone | Unreliable without content | Use `content in:IT Support` or `teams_get_thread` |
 | `sent:thisweek` | Not supported | Use date range like `sent:>=2026-01-20` |
-| `in:"EEC Leads"` | Quotes break the operator | `in:EEC Leads` (no quotes, full channel name) |
+| `in:"IT Support"` | Quotes break the operator | `in:IT Support` (no quotes, full channel name) |
 
 **Common Patterns:**
 
@@ -593,6 +594,31 @@ Results are merged and deduplicated. Channels from your teams appear first with 
 
 **Technical note:** The conversation ID format for 1:1 chats is `19:{id1}_{id2}@unq.gbl.spaces` where the two user object IDs are sorted lexicographically. This is a predictable format - Teams creates the conversation implicitly when the first message is sent.
 
+#### teams_create_group_chat
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| userIds | array of strings | required | At least 2 user identifiers (MRI, object ID, or GUID) |
+| topic | string | - | Optional chat topic/name |
+
+**Response** includes:
+- `conversationId` - The newly created group chat ID (use with `teams_send_message`)
+- `members` - Array of member MRIs included in the chat
+- `topic` - The topic if one was set
+
+**Use case:** Create a group chat with multiple people, then send a message. For 1:1 chats, use `teams_get_chat` instead.
+
+**Example flow:**
+```
+1. teams_search_people "John Smith" → returns { id: "abc123-...", mri: "8:orgid:abc123-..." }
+2. teams_search_people "Sarah Jones" → returns { id: "def456-...", mri: "8:orgid:def456-..." }
+3. teams_create_group_chat userIds=["abc123-...", "def456-..."] topic="Project Discussion"
+   → returns { conversationId: "19:xxx@thread.v2" }
+4. teams_send_message content="Hello team!" conversationId="19:xxx@thread.v2"
+```
+
+**Technical note:** Uses `POST /api/chatsvc/{region}/v1/threads` with members having `"role": "Admin"`. The response body may be empty - the conversation ID is extracted from the `Location` header (format: `.../threads/19:xxx@thread.v2`).
+
 #### teams_edit_message
 
 | Parameter | Type | Default | Description |
@@ -827,6 +853,7 @@ npm run test:mcp -- favorites                        # teams_get_favorites
 npm run test:mcp -- contacts                         # teams_get_frequent_contacts
 npm run test:mcp -- channel "project-alpha"          # teams_find_channel
 npm run test:mcp -- chat "user-guid-or-mri"          # teams_get_chat
+npm run test:mcp -- groupchat --userIds '["id1","id2"]' --topic "Chat Name"  # teams_create_group_chat
 npm run test:mcp -- thread --to "conv-id"            # teams_get_thread
 npm run test:mcp -- save --to "conv-id" --message "msg-id"
 npm run test:mcp -- unsave --to "conv-id" --message "msg-id"

@@ -587,6 +587,52 @@ This is a soft delete. Channel owners/moderators can delete others' messages.
 
 ## Conversation APIs
 
+### Create Group Chat
+
+**Endpoint:** `POST https://teams.microsoft.com/api/chatsvc/{region}/v1/threads`
+
+**Auth:** Skype Token + Bearer
+
+**Request:**
+```json
+{
+  "members": [
+    { "id": "8:orgid:user1-guid", "role": "Admin" },
+    { "id": "8:orgid:user2-guid", "role": "Admin" },
+    { "id": "8:orgid:user3-guid", "role": "Admin" }
+  ],
+  "properties": {
+    "threadType": "chat",
+    "topic": "Optional chat name"
+  }
+}
+```
+
+**Response (201):**
+```json
+{
+  "threadResource": {
+    "id": "19:5bf2c81dc44b4a60a181bf9170953912@thread.v2",
+    "tenantId": "56b731a8-...",
+    "type": "Thread",
+    "properties": {
+      "creator": "8:orgid:user1-guid",
+      "threadType": "chat",
+      "historydisclosed": "false"
+    }
+  }
+}
+```
+
+**Notes:**
+- All members get `"role": "Admin"` for group chats
+- The `topic` property is optional - sets the chat name
+- **Response body may be empty `{}`** - extract conversation ID from `Location` header instead
+- Location header format: `https://amer.ng.msg.teams.microsoft.com/v1/threads/19:xxx@thread.v2`
+- Use the extracted ID with the messages endpoint to send messages
+
+---
+
 ### Get User's Teams & Channels
 
 **Endpoint:** `GET https://teams.microsoft.com/api/csa/{region}/api/v3/teams/users/me?isPrefetch=false&enableMembershipSummary=true`
