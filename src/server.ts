@@ -40,6 +40,7 @@ import type { ToolContext } from './tools/index.js';
 
 // Types
 import { ErrorCode, createError, type McpError } from './types/errors.js';
+import type { TeamsServer as ITeamsServer } from './types/server.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MCP Server Class
@@ -49,8 +50,9 @@ import { ErrorCode, createError, type McpError } from './types/errors.js';
  * MCP Server for Teams integration.
  * 
  * Encapsulates all server state to allow multiple instances.
+ * Implements ITeamsServer interface for use by tool handlers.
  */
-export class TeamsServer {
+export class TeamsServer implements ITeamsServer {
   private browserManager: BrowserManager | null = null;
   private isInitialised = false;
 

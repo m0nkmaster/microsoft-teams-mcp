@@ -394,14 +394,10 @@ export function calculateTokenStatus(
  * Parses the pagination result from a search API response.
  * 
  * @param entitySets - Raw EntitySets array from API response
- * @param from - Starting offset used in request
- * @param size - Page size used in request
- * @returns Parsed results and pagination metadata
+ * @returns Parsed results and total count if available
  */
 export function parseSearchResults(
-  entitySets: unknown[] | undefined,
-  _from: number,
-  _size: number
+  entitySets: unknown[] | undefined
 ): { results: TeamsSearchResult[]; total?: number } {
   const results: TeamsSearchResult[] = [];
   let total: number | undefined;

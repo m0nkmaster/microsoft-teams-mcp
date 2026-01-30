@@ -107,9 +107,7 @@ export async function searchMessages(
 
   const data = response.value.data;
   const { results, total } = parseSearchResults(
-    data.EntitySets as unknown[] | undefined,
-    from,
-    size
+    data.EntitySets as unknown[] | undefined
   );
 
   const maxResults = options.maxResults ?? size;
