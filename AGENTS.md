@@ -121,15 +121,7 @@ This is configured via Playwright's `channel` option in `src/browser/context.ts`
 - This is seamless to the user - the browser is invisible
 - If refresh fails, user must re-authenticate via `teams_login`
 
-**How token refresh works:**
-1. `requireSubstrateTokenAsync()` checks if tokens are expired or have <10 minutes remaining
-2. If so, `refreshTokensViaBrowser()` opens a headless browser with saved session
-3. Navigates to Teams and triggers a search (MSAL only refreshes tokens when an API call requires them)
-4. The search triggers MSAL's `acquireTokenSilent` which refreshes the Substrate token
-5. Saves the updated session state with new tokens
-6. Subsequent API calls use the refreshed tokens
-
-**Important:** MSAL doesn't automatically refresh tokens on page load - it only acquires new tokens when an API call actually needs them. Simply loading Teams isn't enough; we must trigger a search to force token acquisition.
+**How token refresh works:** When tokens are nearly expired, a headless browser loads Teams and triggers a search to force MSAL's `acquireTokenSilent`, then saves the refreshed session state.
 
 **Testing token refresh:**
 ```bash
@@ -161,63 +153,6 @@ Session state and token cache files are protected by:
 1. **Encryption at rest**: AES-256-GCM encryption using a key derived from machine-specific values (hostname + username)
 2. **File permissions**: Restrictive 0o600 permissions (owner read/write only)
 3. **Automatic migration**: Existing plaintext files are automatically encrypted on first read
-
-### Conversation Types
-
-The chatsvc conversation API returns `threadProperties` with type information:
-
-| Type | `threadType` | `productThreadType` | Notes |
-|------|--------------|---------------------|-------|
-| Standard Channel | `topic` | `TeamsStandardChannel` | Has `groupId`, name in `topicThreadTopic` |
-| Team (General) | `space` | `TeamsTeam` | Team root, name in `spaceThreadTopic` |
-| Private Channel | `space` | `TeamsPrivateChannel` | Has `groupId`, name in `topicThreadTopic` |
-| Meeting Chat | `meeting` | `Meeting` | Name in `topic` |
-| Group Chat | `chat` | `Chat` | Name in `topic` or from members |
-| 1:1 Chat | `chat` | `OneOnOne` | Name from other participant |
-
-**Name sources:**
-- `topicThreadTopic`: Channel name (for channels within a team)
-- `spaceThreadTopic`: Team name (for team root conversations)
-- `topic`: Meeting title or user-set chat topic
-- For chats without topics: extract from `members` array or recent messages
-
-### Virtual Conversations
-
-Teams uses special "virtual conversation" IDs that aggregate data across all conversations. These use the standard messages endpoint but return consolidated views:
-
-| Virtual ID | Purpose | Constant |
-|------------|---------|----------|
-| `48:saved` | Saved/bookmarked messages | - |
-| `48:threads` | Followed threads | - |
-| `48:mentions` | @mentions | - |
-| `48:notifications` | Activity feed | `NOTIFICATIONS_ID` |
-| `48:notes` | Personal notes/self-chat | `SELF_CHAT_ID` |
-
-**Endpoint pattern:** `GET /api/chatsvc/{region}/v1/users/ME/conversations/{virtualId}/messages`
-
-Each message in the response includes a `clumpId` field containing the original conversation ID where the message lives, enabling navigation back to the source.
-
-See `docs/API-REFERENCE.md` for full response structure.
-
-### User ID Formats
-
-Teams APIs return user IDs in multiple formats. The `extractObjectId()` function in `parsers.ts` handles all of these:
-
-| Format | Example | Notes |
-|--------|---------|-------|
-| Raw GUID | `ab76f827-27e2-4c67-a765-f1a53145fa24` | Standard format |
-| MRI | `8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24` | Teams internal identifier |
-| ID with tenant | `ab76f827-...@56b731a8-...` | GUID followed by tenant ID |
-| Base64-encoded GUID | `93qkaTtFGWpUHjyRafgdhg==` | 16 bytes, little-endian |
-| Skype ID | `orgid:ab76f827-...` | Used in skypetoken claims |
-
-**Base64 GUID decoding:** The Substrate people search API returns user IDs as base64-encoded GUIDs. These are 16 bytes encoded in base64 (24 chars with padding). Microsoft uses little-endian byte ordering for the first three GUID groups (Data1, Data2, Data3).
-
-**1:1 Chat ID format:** Conversation IDs for 1:1 chats follow this predictable format:
-```
-19:{userId1}_{userId2}@unq.gbl.spaces
-```
-The two user object IDs (GUIDs) are sorted lexicographically. This format works for internal users. External/guest users may require a different format (not researched).
 
 ## MCP Tools
 
@@ -835,37 +770,16 @@ The harness can call **any tool** generically. Unrecognised commands are treated
 # List available MCP tools and shortcuts
 npm run test:mcp
 
-# Generic tool call (any tool works)
+# Generic tool call (any tool works - auto-prefixes teams_ if missing)
 npm run test:mcp -- teams_find_channel --query "support"
-npm run test:mcp -- find_channel --query "support"   # auto-prefixes teams_
+npm run test:mcp -- find_channel --query "support"
 
-# Shortcuts for common tools
+# Common shortcuts
 npm run test:mcp -- search "your query"              # teams_search
-npm run test:mcp -- search "your query" --from 25 --size 10
 npm run test:mcp -- status                           # teams_status
-npm run test:mcp -- me                               # teams_get_me
-npm run test:mcp -- login                            # teams_login
-npm run test:mcp -- send "Hello from MCP!"           # teams_send_message
-npm run test:mcp -- send "Message" --to "conv-id"
-npm run test:mcp -- send "Reply" --to "channel-id" --replyTo "msg-id"  # thread reply
-npm run test:mcp -- people "john smith"              # teams_search_people
-npm run test:mcp -- favorites                        # teams_get_favorites
-npm run test:mcp -- contacts                         # teams_get_frequent_contacts
-npm run test:mcp -- channel "project-alpha"          # teams_find_channel
-npm run test:mcp -- chat "user-guid-or-mri"          # teams_get_chat
-npm run test:mcp -- groupchat --userIds '["id1","id2"]' --topic "Chat Name"  # teams_create_group_chat
+npm run test:mcp -- send "Hello!" --to "conv-id"     # teams_send_message
 npm run test:mcp -- thread --to "conv-id"            # teams_get_thread
-npm run test:mcp -- save --to "conv-id" --message "msg-id"
-npm run test:mcp -- unsave --to "conv-id" --message "msg-id"
-npm run test:mcp -- unread                           # teams_get_unread (aggregate)
-npm run test:mcp -- unread --to "conv-id"            # teams_get_unread (specific)
-npm run test:mcp -- markread --to "conv-id" --message "msg-id"
-npm run test:mcp -- thread --to "conv-id" --markRead
 npm run test:mcp -- activity                         # teams_get_activity
-npm run test:mcp -- activity --limit 10
-npm run test:mcp -- teams_search_emoji --query "heart"    # teams_search_emoji
-npm run test:mcp -- teams_add_reaction --conversationId "conv-id" --messageId "msg-id" --emoji "like"
-npm run test:mcp -- teams_remove_reaction --conversationId "conv-id" --messageId "msg-id" --emoji "like"
 
 # Output raw MCP response as JSON
 npm run test:mcp -- search "your query" --json
@@ -1031,45 +945,21 @@ Development-only files (created in project root):
 Development files:
 - **API reference**: `./docs/API-REFERENCE.md`
 
+### API Internals
+
+**Conversation Types:** The chatsvc API returns `threadType` (`topic`, `space`, `meeting`, `chat`) and `productThreadType` (`TeamsStandardChannel`, `TeamsTeam`, `TeamsPrivateChannel`, `Meeting`, `Chat`, `OneOnOne`). See `docs/API-REFERENCE.md` for details.
+
+**Virtual Conversations:** Special IDs like `48:saved`, `48:threads`, `48:mentions`, `48:notifications`, `48:notes` aggregate data across conversations. Messages include `clumpId` for the source conversation.
+
+**User ID Formats:** The `extractObjectId()` function in `parsers.ts` handles all ID formats: raw GUIDs, MRIs (`8:orgid:...`), tenant-suffixed IDs, base64-encoded GUIDs (little-endian), and Skype IDs.
+
+**1:1 Chat ID format:** `19:{userId1}_{userId2}@unq.gbl.spaces` (GUIDs sorted lexicographically).
+
 ### API Endpoints
 
-From research, Teams uses these primary APIs:
-
-#### Search & Query
-| Endpoint | Purpose |
-|----------|---------|
-| `substrate.office.com/searchservice/api/v2/query` | Full message search with pagination |
-| `substrate.office.com/search/api/v1/suggestions` | People/message typeahead |
-| `substrate.office.com/search/api/v1/suggestions?scenario=peoplecache` | Frequent contacts list |
-| `substrate.office.com/search/api/v1/suggestions?domain=TeamsChannel` | Organisation-wide channel search |
-
-#### Messages
-| Endpoint | Purpose |
-|----------|---------|
-| `teams.microsoft.com/api/csa/{region}/api/v1/containers/{id}/posts` | Channel messages |
-| `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/messages` | Send/receive messages |
-| `teams.microsoft.com/api/chatsvc/{region}/v1/threads/{id}/annotations` | Reactions, read status |
-| `teams.microsoft.com/api/csa/{region}/api/v1/teams/users/me/conversationFolders` | Favorites/pinned chats |
-| `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/rcmetadata/{mid}` | Save/unsave messages |
-| `teams.microsoft.com/api/chatsvc/{region}/v1/threads/{id}/consumptionhorizons` | Get read receipts |
-| `teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{id}/properties?name=consumptionhorizon` | Mark as read |
-
-#### People & Profile
-| Endpoint | Purpose |
-|----------|---------|
-| `nam.loki.delve.office.com/api/v2/person` | Detailed person profile |
-| `nam.loki.delve.office.com/api/v1/schedule` | Working hours, availability |
-| `nam.loki.delve.office.com/api/v1/oofstatus` | Out of office status |
-| `teams.microsoft.com/api/mt/part/{region}/beta/users/fetch` | Batch user lookup |
-
-#### Files & Attachments
-| Endpoint | Purpose |
-|----------|---------|
-| `substrate.office.com/AllFiles/api/users(...)/AllShared` | Files shared in conversation |
+See `docs/API-REFERENCE.md` for full endpoint documentation with request/response examples.
 
 Regional identifiers: `amer`, `emea`, `apac`
-
-See `docs/API-REFERENCE.md` for full endpoint documentation with request/response examples.
 
 ### Possible Tools
 
