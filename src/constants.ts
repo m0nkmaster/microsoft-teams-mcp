@@ -152,5 +152,11 @@ export const TOKEN_REFRESH_THRESHOLD_MS = 10 * 60 * 1000;
 // User Identity
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** MRI prefix for organisation users (orgid). */
-export const MRI_ORGID_PREFIX = '8:orgid:';
+/** MRI type prefix for Teams/AAD users (type 8). */
+export const MRI_TYPE_PREFIX = '8:';
+
+/** Identity type prefix for organisation users. */
+export const ORGID_PREFIX = 'orgid:';
+
+/** Full MRI prefix for organisation users (8:orgid:). */
+export const MRI_ORGID_PREFIX = `${MRI_TYPE_PREFIX}${ORGID_PREFIX}`;

@@ -44,13 +44,13 @@ export const FindChannelInputSchema = z.object({
 
 const searchToolDefinition: Tool = {
   name: 'teams_search',
-  description: 'Search for messages in Microsoft Teams. Returns matching messages with sender, timestamp, content, conversationId (for replies), and pagination info. Supports operators: from:email, to:name, sent:YYYY-MM-DD, sent:today, is:Messages, is:Meetings, is:Channels, is:Chats, hasattachment:true, "Name" for @mentions. The in:channel operator only works reliably when combined with content (e.g., "meeting in:EEC Leads"). Combine with NOT to exclude. Results sorted by recency.',
+  description: 'Search for messages in Microsoft Teams. Returns matching messages with sender, timestamp, content, conversationId (for replies), and pagination info. Supports operators: from:email, to:name, sent:YYYY-MM-DD, sent:today, is:Messages, is:Meetings, is:Channels, is:Chats, hasattachment:true, "Name" for @mentions. The in:channel operator only works reliably when combined with content (e.g., "meeting in:IT Support"). Combine with NOT to exclude. Results sorted by recency.',
   inputSchema: {
     type: 'object',
     properties: {
       query: {
         type: 'string',
-        description: 'Search query with optional operators. WORKING: from:email (or name), to:name (spaces not dots - "to:rob macdonald"), sent:YYYY-MM-DD, sent:>=YYYY-MM-DD, sent:today, is:Messages, is:Meetings, is:Channels, is:Chats (case-sensitive, plural required), hasattachment:true, "Display Name" for @mentions. CHANNEL FILTER: in:channel only works reliably WITH content terms (e.g., "budget in:EEC Leads"). NEVER quote channel names. NOT WORKING: mentions:, sent:lastweek, @me, from:me, is:meeting (must be is:Meetings). Use teams_get_me first to get email/displayName.',
+        description: 'Search query with optional operators. WORKING: from:email (or name), to:name (spaces not dots - "to:rob macdonald"), sent:YYYY-MM-DD, sent:>=YYYY-MM-DD, sent:today, is:Messages, is:Meetings, is:Channels, is:Chats (case-sensitive, plural required), hasattachment:true, "Display Name" for @mentions. CHANNEL FILTER: in:channel only works reliably WITH content terms (e.g., "budget in:IT Support"). NEVER quote channel names. NOT WORKING: mentions:, sent:lastweek, @me, from:me, is:meeting (must be is:Meetings). Use teams_get_me first to get email/displayName.',
       },
       maxResults: {
         type: 'number',

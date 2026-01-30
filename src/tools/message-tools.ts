@@ -10,6 +10,7 @@ import {
   saveMessage,
   unsaveMessage,
   getOneOnOneChatId,
+  createGroupChat,
   editMessage,
   deleteMessage,
   getUnreadStatus,
@@ -46,6 +47,11 @@ export const SaveMessageInputSchema = z.object({
 
 export const GetChatInputSchema = z.object({
   userId: z.string().min(1, 'User ID cannot be empty'),
+});
+
+export const CreateGroupChatInputSchema = z.object({
+  userIds: z.array(z.string().min(1)).min(2, 'At least 2 user IDs are required for a group chat'),
+  topic: z.string().optional(),
 });
 
 export const EditMessageInputSchema = z.object({
@@ -220,6 +226,27 @@ const getChatToolDefinition: Tool = {
       },
     },
     required: ['userId'],
+  },
+};
+
+const createGroupChatToolDefinition: Tool = {
+  name: 'teams_create_group_chat',
+  description: 'Create a new group chat with multiple people. Returns a conversation ID for use with teams_send_message. You are automatically included as a member. For 1:1 chats, use teams_get_chat instead.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      userIds: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Array of OTHER users to add (at least 2, not including yourself). Can be: MRI (8:orgid:guid), object ID with tenant (guid@tenantId), or raw GUID. Get these from teams_search_people or teams_get_frequent_contacts.',
+        minItems: 2,
+      },
+      topic: {
+        type: 'string',
+        description: 'Optional chat name/topic. If omitted, Teams shows member names.',
+      },
+    },
+    required: ['userIds'],
   },
 };
 
@@ -554,6 +581,27 @@ async function handleGetChat(
       otherUserId: result.value.otherUserId,
       currentUserId: result.value.currentUserId,
       note: 'Use this conversationId with teams_send_message to send a message. The conversation is created automatically when the first message is sent.',
+    },
+  };
+}
+
+async function handleCreateGroupChat(
+  input: z.infer<typeof CreateGroupChatInputSchema>,
+  _ctx: ToolContext
+): Promise<ToolResult> {
+  const result = await createGroupChat(input.userIds, input.topic);
+
+  if (!result.ok) {
+    return { success: false, error: result.error };
+  }
+
+  return {
+    success: true,
+    data: {
+      conversationId: result.value.conversationId,
+      members: result.value.members,
+      topic: result.value.topic,
+      note: 'Use this conversationId with teams_send_message to send messages to the group.',
     },
   };
 }
@@ -1008,6 +1056,12 @@ export const getChatTool: RegisteredTool<typeof GetChatInputSchema> = {
   handler: handleGetChat,
 };
 
+export const createGroupChatTool: RegisteredTool<typeof CreateGroupChatInputSchema> = {
+  definition: createGroupChatToolDefinition,
+  schema: CreateGroupChatInputSchema,
+  handler: handleCreateGroupChat,
+};
+
 export const editMessageTool: RegisteredTool<typeof EditMessageInputSchema> = {
   definition: editMessageToolDefinition,
   schema: EditMessageInputSchema,
@@ -1077,6 +1131,7 @@ export const messageTools = [
   saveMessageTool,
   unsaveMessageTool,
   getChatTool,
+  createGroupChatTool,
   editMessageTool,
   deleteMessageTool,
   getUnreadTool,
