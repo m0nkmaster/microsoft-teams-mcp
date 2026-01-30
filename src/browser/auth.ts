@@ -279,7 +279,7 @@ async function triggerTokenAcquisition(
       }
     }
 
-    // Method 2: Keyboard shortcut fallback
+    // Method 3: Keyboard shortcut fallback
     if (!searchTriggered) {
       log('Trying keyboard shortcut...');
       const isMac = process.platform === 'darwin';
