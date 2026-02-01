@@ -12,6 +12,7 @@ import {
   extractMessageAuth,
   extractCsaToken,
   extractSubstrateToken,
+  extractSkypeSpacesToken,
   type MessageAuthInfo,
 } from '../auth/token-extractor.js';
 import { TOKEN_REFRESH_THRESHOLD_MS } from '../constants.js';
@@ -113,4 +114,29 @@ export function requireCsaAuth(): Result<CsaAuthInfo, McpError> {
   }
 
   return ok({ auth, csaToken });
+}
+
+/** Authentication info for calendar/meetings API. */
+export interface CalendarAuthInfo {
+  skypeToken: string;
+  spacesToken: string;
+}
+
+/**
+ * Requires valid calendar authentication (Skype token + Spaces token).
+ * Use for mt/part calendar APIs.
+ */
+export function requireCalendarAuth(): Result<CalendarAuthInfo, McpError> {
+  const auth = extractMessageAuth();
+  const spacesToken = extractSkypeSpacesToken();
+
+  if (!auth?.skypeToken || !spacesToken) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'Calendar access requires authentication. Please run teams_login.',
+      { suggestions: ['Call teams_login to authenticate'] }
+    ));
+  }
+
+  return ok({ skypeToken: auth.skypeToken, spacesToken });
 }

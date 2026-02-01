@@ -142,6 +142,19 @@ export const MAX_ACTIVITY_LIMIT = 200;
 export const MAX_UNREAD_AGGREGATE_CHECK = 20;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Calendar/Meetings
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Default number of days ahead to fetch meetings. */
+export const DEFAULT_MEETING_DAYS_AHEAD = 7;
+
+/** Default limit for meeting results. */
+export const DEFAULT_MEETING_LIMIT = 50;
+
+/** Maximum limit for meeting results. */
+export const MAX_MEETING_LIMIT = 200;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Token Refresh
 // ─────────────────────────────────────────────────────────────────────────────
 

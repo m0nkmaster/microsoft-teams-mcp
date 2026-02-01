@@ -40,6 +40,7 @@ src/
 │   ├── search-tools.ts   # Search and channel tools
 │   ├── message-tools.ts  # Messaging, favourites, save/unsave tools
 │   ├── people-tools.ts   # People search and profile tools
+│   ├── meeting-tools.ts  # Calendar and meeting tools
 │   └── auth-tools.ts     # Login and status tools
 ├── auth/                 # Authentication and credential management
 │   ├── index.ts          # Module exports
@@ -51,7 +52,8 @@ src/
 │   ├── index.ts          # Module exports
 │   ├── substrate-api.ts  # Search and people APIs (Substrate v2)
 │   ├── chatsvc-api.ts    # Messaging, threads, save/unsave (chatsvc)
-│   └── csa-api.ts        # Favorites API (CSA)
+│   ├── csa-api.ts        # Favorites API (CSA)
+│   └── calendar-api.ts   # Calendar/meetings API
 ├── browser/              # Playwright browser automation (login only)
 │   ├── context.ts        # Browser/context management with encrypted session
 │   └── auth.ts           # Authentication detection and manual login handling
@@ -139,8 +141,9 @@ Different Teams APIs use different authentication mechanisms:
 | **Messaging** (chatsvc) | `skypetoken_asm` cookie | `auth/token-extractor` | `extractMessageAuth()` |
 | **Favorites** (csa/conversationFolders) | CSA token from MSAL + `skypetoken_asm` | `auth/token-extractor` | `extractCsaToken()` + `extractMessageAuth()` |
 | **Threads** (chatsvc) | `skypetoken_asm` cookie | `auth/token-extractor` | `extractMessageAuth()` |
+| **Calendar** (mt/part/calendarView) | Skype Spaces token (`api.spaces.skype.com` scope) + `skypetoken_asm` | `auth/token-extractor` | `extractSkypeSpacesToken()` |
 
-**Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
+**Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body. The Calendar API uses partitioned regions (e.g., `amer-02`) - the correct partition is extracted from the session's `DISCOVER-REGION-GTM` config.
 
 ### Session Persistence
 
@@ -186,6 +189,7 @@ Session state and token cache files are protected by:
 | `teams_search_emoji` | Search for emojis by name (standard + custom org emojis) |
 | `teams_add_reaction` | Add an emoji reaction to a message |
 | `teams_remove_reaction` | Remove an emoji reaction from a message |
+| `teams_get_meetings` | Get meetings from calendar (upcoming/past by date range) |
 
 ### Design Philosophy
 
@@ -729,6 +733,62 @@ teams_add_reaction conversationId="19:abc@thread.tacv2" messageId="1769276832046
 | conversationId | string | required | The conversation containing the message |
 | messageId | string | required | The server-assigned message ID (same as `teams_add_reaction`) |
 | emoji | string | required | The emoji key to remove |
+
+#### teams_get_meetings
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| startDate | string | Now | Start of date range (ISO 8601) |
+| endDate | string | +7 days | End of date range (ISO 8601) |
+| limit | number | 50 | Maximum meetings to return (max: 200) |
+
+**Response** includes:
+- `count` - Number of meetings returned
+- `meetings[]` with:
+  - `id` - Meeting unique identifier
+  - `subject` - Meeting title
+  - `startTime`, `endTime` - ISO 8601 timestamps
+  - `organizer` - Object with `name` and `email`
+  - `location` - Room name or location text (if set)
+  - `isOnlineMeeting` - Whether it's a Teams meeting
+  - `joinUrl` - Teams join link (if online meeting)
+  - `threadId` - Meeting chat thread ID (use with `teams_get_thread` to read chat)
+  - `myResponse` - Your RSVP: `None`, `Accepted`, `Tentative`, `Declined`
+  - `showAs` - Calendar status: `Free`, `Busy`, `Tentative`, `OutOfOffice`, `Unknown`
+  - `isOrganizer` - Whether you're the organiser
+  - `eventType` - `Single`, `Occurrence`, `Exception`, `SeriesMaster`
+
+**Common Patterns:**
+
+1. **When's my next meeting?**
+   ```
+   teams_get_meetings  # defaults to next 7 days, first result is next meeting
+   ```
+
+2. **How many meetings do I have tomorrow?**
+   ```
+   teams_get_meetings startDate="2026-02-02T00:00:00Z" endDate="2026-02-03T00:00:00Z"
+   ```
+
+3. **Summarise my last meeting:**
+   ```
+   # Get recent meetings
+   teams_get_meetings startDate="2026-01-31T00:00:00Z" endDate="2026-02-01T12:00:00Z"
+   
+   # Use the threadId from the meeting to get the chat
+   teams_get_thread conversationId="19:meeting_abc@thread.v2"
+   ```
+
+4. **Find meetings with a person (by organiser):**
+   ```
+   # Get meetings, then filter by organizer.email
+   teams_get_meetings
+   # AI filters results where organizer.email matches the person
+   ```
+
+**Note:** Currently filters by organiser only. Attendee list requires additional API research.
+
+---
 
 #### teams_login
 

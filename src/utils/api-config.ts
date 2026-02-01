@@ -108,6 +108,23 @@ export const CHATSVC_API = {
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/threads`,
 } as const;
 
+/** 
+ * Calendar/Meeting API endpoints.
+ * 
+ * The mt/part endpoints use partitioned regions (e.g., amer-02, emea-03).
+ * The correct partition is extracted from the user's session via DISCOVER-REGION-GTM.
+ */
+export const CALENDAR_API = {
+  /**
+   * Get calendar view (meetings) for a date range.
+   * 
+   * Uses OData-style query parameters for filtering and pagination.
+   * The partition parameter (e.g., "02") is appended to the region.
+   */
+  calendarView: (region: string, partition: string) =>
+    `https://teams.microsoft.com/api/mt/part/${region}-${partition}/v2.1/me/calendars/calendarView`,
+} as const;
+
 /** CSA (Chat Service Aggregator) API endpoints. */
 export const CSA_API = {
   /** Conversation folders (favourites) URL. */

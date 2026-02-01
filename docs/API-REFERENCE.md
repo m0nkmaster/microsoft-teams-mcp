@@ -27,7 +27,8 @@ Teams uses multiple authentication mechanisms depending on the API surface:
 |-----------|--------|--------|---------|
 | **Bearer (Substrate)** | `Authorization: Bearer {token}` | MSAL localStorage, `SubstrateSearch-Internal.ReadWrite` scope | Search, People |
 | **Bearer (CSA)** | `Authorization: Bearer {csaToken}` | MSAL, `chatsvcagg.teams.microsoft.com` audience | Teams list, Favorites |
-| **Skype Token** | `Authentication: skypetoken={token}` | Cookie `skypetoken_asm` | Messaging, Threads |
+| **Bearer (Spaces)** | `Authorization: Bearer {spacesToken}` | MSAL, `api.spaces.skype.com` audience | Calendar/Meetings |
+| **Skype Token** | `Authentication: skypetoken={token}` | Cookie `skypetoken_asm` | Messaging, Threads, Calendar |
 
 ### Required Headers
 
@@ -362,6 +363,65 @@ Same as people search, but with empty `QueryString`. Returns ranked list of freq
 
 ---
 
+### Batch Profile Resolution (fetchShortProfile)
+
+**Endpoint:** `POST https://teams.microsoft.com/api/mt/part/{region}/beta/users/fetchShortProfile?isMailAddress=false&enableGuest=true&skypeTeamsInfo=true&canBeSmtpAddress=false&includeIBBarredUsers=true&includeDisabledAccounts=true`
+
+**Auth:** Skype Token + Bearer
+
+This is the primary API Teams uses to resolve MRIs to display names. It supports batching multiple MRIs in a single request.
+
+**Request Body:**
+```json
+[
+  "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24",
+  "8:orgid:0166b018-6b8a-4352-9c64-004738067307",
+  "28:fd931076-bbfb-4a38-a85c-1f0fb5b61bee"
+]
+```
+
+**Response:**
+```json
+{
+  "type": "Microsoft.SkypeSpaces.MiddleTier.Models.IUserIdentity",
+  "value": [
+    {
+      "userPrincipalName": "john.smith@company.com",
+      "givenName": "John",
+      "surname": "Smith",
+      "displayName": "Smith, John",
+      "jobTitle": "Senior Engineer",
+      "department": "Engineering",
+      "email": "john.smith@company.com",
+      "userType": "Member",
+      "isShortProfile": true,
+      "tenantName": "Company Name",
+      "companyName": "Company Inc",
+      "mri": "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24"
+    }
+  ]
+}
+```
+
+**Supported MRI Formats:**
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| Organisation user | `8:orgid:{guid}` | Standard Teams/AAD user |
+| Bot/App | `28:{guid}` | Teams bot or application |
+
+**Use Cases:**
+- Resolving sender MRIs from activity feed to display names
+- Bulk resolving user identities for message display
+- Getting profile details (job title, department) for users
+
+**Notes:**
+- Disabled/deleted accounts return minimal data with `accountEnabled: false`
+- Guests may have limited profile information
+- The response `mri` field confirms which MRI each result corresponds to
+
+---
+
 ### Profile Picture
 
 **Endpoint:** `GET https://teams.microsoft.com/api/mt/part/{region}/beta/users/{userId}/profilepicturev2/{mri}?size=HR96x96`
@@ -374,20 +434,31 @@ Available sizes: `HR64x64`, `HR96x96`, `HR196x196`
 
 Teams uses special "virtual conversation" IDs that act as aggregated views across all conversations. These follow the same messaging API pattern but return consolidated data.
 
-**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{virtualId}/messages?view=msnp24Equivalent&pageSize=200&startTime=1`
+**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/{virtualId}/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=200&startTime=1`
 
 **Auth:** Skype Token + Bearer
 
 ### Available Virtual Conversations
 
-| Virtual ID | Purpose | Notes |
-|------------|---------|-------|
-| `48:saved` | Saved/bookmarked messages | Messages you've bookmarked across all conversations |
-| `48:threads` | Followed threads | Threads you're following for updates |
-| `48:mentions` | @mentions | Messages where you were @mentioned |
-| `48:notifications` | Activity feed | All notifications (mentions, reactions, replies) |
-| `48:notes` | Personal notes | Self-chat / notes to self |
-| `48:drafts` | Draft messages | Unsent scheduled messages (different endpoint pattern) |
+| Virtual ID | Purpose | Content Quality | Notes |
+|------------|---------|-----------------|-------|
+| `48:mentions` | @mentions | **Full content (RichText/Html)** | Messages where you were @mentioned - includes complete message text |
+| `48:annotations` | Messages with reactions | **Full content (RichText/Html)** | Messages that received reactions - includes the reacted-to message content |
+| `48:notifications` | Activity feed (aggregate) | Stubs with references | All notifications combined - often has empty content, use `clumpId` to fetch source |
+| `48:saved` | Saved/bookmarked messages | Stubs with references | Messages you've bookmarked - use `secondaryReferenceId` to get original |
+| `48:threads` | Followed threads | Stubs with references | Threads you're following for updates |
+| `48:notes` | Personal notes | Full content | Self-chat / notes to self |
+| `48:calllogs` | Call history | Unknown | Record of calls made/received (endpoint exists, message format unconfirmed) |
+| `48:drafts` | Draft messages | Full content | Unsent scheduled messages (uses different endpoint pattern) |
+
+**Content Quality Explanation:**
+
+- **Full content**: The `content` field contains the actual message HTML. Ready to use directly.
+- **Stubs with references**: The `content` field is often empty. Use `clumpId` (source conversation ID) and `secondaryReferenceId` to fetch the actual message from the source conversation.
+
+**Recommendation for Activity Data:**
+
+For the richest activity data, prefer `48:mentions` and `48:annotations` over `48:notifications`. The mentions and annotations endpoints return complete message content, while notifications returns stub records that require additional API calls to resolve.
 
 ### Response Structure
 
@@ -899,30 +970,105 @@ Conversation IDs for 1:1 chats are **predictable** - no API call needed:
 
 ## Activity & Notifications
 
-### Activity Feed
+Teams provides multiple virtual conversation endpoints for activity data. Each has different content quality:
 
-**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/48%3Anotifications/messages?view=msnp24Equivalent&pageSize=50`
+### Mentions Feed (Recommended for @mentions)
+
+**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/48%3Amentions/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=200&startTime=1`
 
 **Auth:** Skype Token + Bearer
+
+Returns messages where you were @mentioned with **full content**.
 
 **Response:**
 ```json
 {
   "messages": [
     {
-      "id": "1769276832046",
-      "originalarrivaltime": "2026-01-24T18:47:12.046Z",
+      "sequenceId": 221,
+      "conversationid": "48:mentions",
+      "contenttype": "RichText/Html",
       "messagetype": "RichText/Html",
-      "content": "<p>Activity content here</p>",
+      "content": "<p>Hey <span itemtype=\"http://schema.skype.com/Mention\">@Rob</span>, can you review this?</p>",
       "from": "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24",
       "imdisplayname": "Smith, John",
-      "conversationid": "19:meeting_abc123@thread.v2",
-      "threadtopic": "Weekly Standup"
+      "clumpId": "19:154a997776b7479cbc27fc34b3e3688a@thread.tacv2",
+      "secondaryReferenceId": "T_19:154a997776b7479cbc27fc34b3e3688a@thread.tacv2_M_1769794973794",
+      "id": "1769794976533",
+      "originalarrivaltime": "2026-01-30T12:30:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### Annotations Feed (Messages with Reactions)
+
+**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/48%3Aannotations/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=200&startTime=1`
+
+**Auth:** Skype Token + Bearer
+
+Returns messages that received reactions/annotations with **full content**.
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "sequenceId": 2267,
+      "conversationid": "48:annotations",
+      "contenttype": "Text",
+      "messagetype": "RichText/Html",
+      "content": "<p>FYI the deployment is complete</p>",
+      "from": "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24",
+      "imdisplayname": "Macdonald, Rob",
+      "clumpId": "19:meeting_abc123@thread.v2",
+      "id": "1769797291002",
+      "originalarrivaltime": "2026-01-30T13:15:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### Aggregate Activity Feed
+
+**Endpoint:** `GET https://teams.microsoft.com/api/chatsvc/{region}/v1/users/ME/conversations/48%3Anotifications/messages?view=msnp24Equivalent|supportsMessageProperties&pageSize=50`
+
+**Auth:** Skype Token + Bearer
+
+Returns all activity types combined but with **limited content** (often empty stubs).
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "sequenceId": 4230,
+      "conversationid": "48:notifications",
+      "contenttype": "text",
+      "s2spartnername": "skypespaces",
+      "clumpId": "19:QsLXSoyGdLTIChUa-elhfgq_VyIauBGVMBk3-7orc1w1@thread.tacv2",
+      "secondaryReferenceId": "T_19:QsLXSoyGdLTIChUa-elhfgq_VyIauBGVMBk3-7orc1w1@thread.tacv2_P_1769200182753_Threads",
+      "content": "",
+      "from": "8:orgid:ab76f827-27e2-4c67-a765-f1a53145fa24",
+      "id": "1769276832046",
+      "originalarrivaltime": "2026-01-24T18:47:12.046Z"
     }
   ],
   "syncState": "base64EncodedState..."
 }
 ```
+
+**Content Limitations:**
+
+The `48:notifications` endpoint often returns empty `content` fields. To get actual message content:
+
+1. Extract `clumpId` (the source conversation ID)
+2. Extract message ID from `secondaryReferenceId` (format: `T_{convId}_M_{messageId}` or `T_{convId}_P_{postId}_Threads`)
+3. Fetch the message from the source conversation using the messages API
 
 **Activity Types (identified via `messagetype` and content patterns):**
 
@@ -931,6 +1077,8 @@ Conversation IDs for 1:1 chats are **predictable** - no API call needed:
 | @Mention | Content contains `<span itemtype="http://schema.skype.com/Mention">` |
 | Reaction | `messagetype` contains reaction identifier |
 | Reply | Standard message in a thread context |
+
+**Recommendation:** For rich activity data, prefer `48:mentions` and `48:annotations` which include full message content. Use `48:notifications` when you need a combined view and are willing to make follow-up API calls for content.
 
 Use `syncState` from response for efficient incremental polling.
 
@@ -1050,6 +1198,146 @@ Use `syncState` from response for efficient incremental polling.
 
 ## Calendar & Scheduling
 
+### Get Meetings (Calendar View)
+
+**Endpoint:** `GET https://teams.microsoft.com/api/mt/part/{region}-{partition}/v2.1/me/calendars/calendarView`
+
+**Auth:** Skype Token + Skype Spaces Bearer Token
+
+This is the primary endpoint for fetching upcoming and recent meetings. Supports OData-style query parameters.
+
+**Region Partitioning:**
+
+The `mt/part` endpoints use partitioned regions (e.g., `amer-02`, `emea-01`). The partition is tenant-specific and assigned when the tenant is provisioned.
+
+**Finding the Correct Partition:**
+
+Teams stores the user's region/partition in localStorage under a key containing `DISCOVER-REGION-GTM`. This contains a `middleTier` URL like:
+```
+https://teams.microsoft.com/api/mt/part/amer-02
+```
+
+Extract the region-partition from this URL to use the correct endpoint without guessing.
+
+**Authentication:**
+
+This endpoint requires a specific token combination:
+- `Authentication: skypetoken={skypetoken_asm}` (from cookies)
+- `Authorization: Bearer {spacesToken}` (from MSAL localStorage)
+
+The Bearer token must have scope `https://api.spaces.skype.com/Authorization.ReadWrite`. Other tokens (authtoken cookie, CSA token, Substrate token) will return 401 Unauthorized.
+
+**Finding the Spaces Token:**
+
+Look in MSAL localStorage for an accesstoken entry where `target` includes `api.spaces.skype.com`. Extract the `secret` field as the Bearer token.
+
+**Query Parameters:**
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `startDate` | Start of date range (ISO 8601) | `2026-02-01T00:00:00.000Z` |
+| `endDate` | End of date range (ISO 8601) | `2026-02-11T00:00:00.000Z` |
+| `$top` | Max results to return | `100` |
+| `$skip` | Pagination offset | `0` |
+| `$count` | Include total count | `true` |
+| `$orderby` | Sort order | `startTime asc` or `endTime desc` |
+| `$filter` | Filter criteria | See below |
+| `$select` | Fields to return | See below |
+
+**Common Filters:**
+
+```
+isAppointment eq false and isAllDayEvent eq false and isCancelled eq false
+```
+
+**Recommended Select Fields:**
+
+```
+cleanGlobalObjectId,endTime,eventTimeZone,eventType,hasAttachments,iCalUid,
+isAllDayEvent,isAppointment,isCancelled,isOnlineMeeting,isOrganizer,isPrivate,
+lastModifiedTime,location,myResponseType,objectId,organizerAddress,organizerName,
+schedulingServiceUpdateUrl,showAs,skypeTeamsData,skypeTeamsMeetingUrl,startTime,subject
+```
+
+**Example: Upcoming Meetings (next 10 days)**
+
+```
+GET /api/mt/part/amer-02/v2.1/me/calendars/calendarView
+  ?startDate=2026-02-01T00:00:00.000Z
+  &endDate=2026-02-11T00:00:00.000Z
+  &$top=100&$count=true&$skip=0
+  &$orderby=startTime asc
+  &$filter=isAppointment eq false and isAllDayEvent eq false and isCancelled eq false
+  &$select=...
+```
+
+**Example: Recent Meetings (past 5 days)**
+
+```
+GET /api/mt/part/amer-02/v2.1/me/calendars/calendarView
+  ?startDate=2026-01-27T23:59:59.999Z
+  &endDate=2026-02-01T23:59:59.999Z
+  &$top=500&$count=true&$skip=0
+  &$orderby=endTime desc
+  &$filter=isAppointment eq false and isAllDayEvent eq false and isCancelled eq false
+  &$select=...
+```
+
+**Response:**
+
+```json
+{
+  "count": 15,
+  "value": [
+    {
+      "objectId": "AQMkAGU5NDVj...",
+      "startTime": "2026-01-30T13:30:00+00:00",
+      "endTime": "2026-01-30T14:30:00+00:00",
+      "lastModifiedTime": "2026-01-30T13:31:46+00:00",
+      "eventTimeZone": "IndianSt",
+      "eventType": "Single",
+      "subject": "Weekly Standup",
+      "location": "Conference Room A",
+      "organizerName": "Smith, John",
+      "organizerAddress": "john.smith@company.com",
+      "isOnlineMeeting": true,
+      "skypeTeamsMeetingUrl": "https://teams.microsoft.com/l/meetup-join/...",
+      "myResponseType": "Accepted",
+      "isOrganizer": false,
+      "isCancelled": false,
+      "isPrivate": false,
+      "showAs": "Busy"
+    }
+  ]
+}
+```
+
+**Key Response Fields:**
+
+| Field | Description |
+|-------|-------------|
+| `subject` | Meeting title |
+| `startTime`, `endTime` | Meeting times (ISO 8601 with timezone) |
+| `organizerName`, `organizerAddress` | Who created the meeting |
+| `skypeTeamsMeetingUrl` | Teams join link (if online meeting) |
+| `isOnlineMeeting` | Whether it's a Teams meeting |
+| `location` | Location text or room name |
+| `myResponseType` | Your RSVP: `None`, `Accepted`, `Tentative`, `Declined` |
+| `showAs` | Calendar status: `Free`, `Busy`, `Tentative`, `OutOfOffice` |
+| `eventType` | `Single`, `Occurrence`, `Exception`, `SeriesMaster` |
+| `skypeTeamsData` | Contains meeting thread ID for fetching chat messages |
+
+**Alternative Endpoint (simpler, less filtering):**
+
+```
+GET /api/mt/part/{region}/v2.0/me/calendars/default/calendarView
+  ?StartDate=2026-02-01T00:00:00.000Z
+  &EndDate=2026-02-07T00:00:00.000Z
+  &shouldDecryptData=true
+```
+
+---
+
 ### Schedule / Availability
 
 **Endpoint:** `POST https://nam.loki.delve.office.com/api/v1/schedule?smtp={email}&personaType=User`
@@ -1161,6 +1449,10 @@ Use `syncState` from response for efficient incremental polling.
 7. **User ID formats vary** - APIs return IDs as raw GUIDs, MRIs (`8:orgid:...`), with tenant suffixes (`...@tenantId`), or base64-encoded. Handle all formats.
 
 8. **Message deep links** - Format: `https://teams.microsoft.com/l/message/{threadId}/{messageTimestamp}`. Use the thread ID, not the channel ID, for threaded messages.
+
+9. **Activity feed content is often empty** - The `48:notifications` endpoint returns stub records with empty `content` fields for many activity types. Use `48:mentions` for @mentions and `48:annotations` for reactions to get full message content.
+
+10. **Sender names not always included** - Activity items may only include the MRI (`8:orgid:...`) without `imdisplayname`. Use the `fetchShortProfile` API to batch-resolve MRIs to display names.
 
 ---
 

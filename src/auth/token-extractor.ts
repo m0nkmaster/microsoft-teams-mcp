@@ -268,6 +268,100 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
 }
 
 /**
+ * Extracts the Skype Spaces API token from session state.
+ * 
+ * This token is required for the calendar/meetings API (mt/part endpoints).
+ * It has scope: https://api.spaces.skype.com/Authorization.ReadWrite
+ */
+export function extractSkypeSpacesToken(state?: SessionState): string | null {
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
+
+  let bestCandidate: { token: string; expiry: Date } | null = null;
+
+  for (const item of localStorage) {
+    try {
+      const entry = JSON.parse(item.value);
+      if (!entry.target || !isJwtToken(entry.secret)) continue;
+
+      // Look for api.spaces.skype.com token
+      if (!entry.target.includes('api.spaces.skype.com')) continue;
+
+      const payload = decodeJwtPayload(entry.secret);
+      if (!payload?.exp || typeof payload.exp !== 'number') continue;
+
+      const expiry = new Date(payload.exp * 1000);
+      
+      // Skip expired tokens
+      if (expiry.getTime() <= Date.now()) continue;
+
+      // Keep the one with the latest expiry
+      if (!bestCandidate || expiry > bestCandidate.expiry) {
+        bestCandidate = { token: entry.secret, expiry };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return bestCandidate?.token ?? null;
+}
+
+/** Region configuration from Teams discovery. */
+export interface RegionConfig {
+  /** Full region with partition (e.g., "amer-02", "emea-01"). */
+  regionPartition: string;
+  /** Base region (e.g., "amer", "emea", "apac"). */
+  region: string;
+  /** Partition number (e.g., "02", "01"). */
+  partition: string;
+  /** Full middleTier URL. */
+  middleTierUrl: string;
+}
+
+/**
+ * Extracts the user's region and partition from the Teams discovery config.
+ * 
+ * Teams stores a DISCOVER-REGION-GTM config in localStorage that contains
+ * region-specific URLs including the middleTier URL with partition:
+ * e.g., "https://teams.microsoft.com/api/mt/part/amer-02"
+ * 
+ * This gives us the exact region/partition for the user's tenant without guessing.
+ */
+export function extractRegionConfig(state?: SessionState): RegionConfig | null {
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
+
+  // Find the DISCOVER-REGION-GTM key
+  for (const item of localStorage) {
+    if (!item.name.includes('DISCOVER-REGION-GTM')) continue;
+
+    try {
+      const data = JSON.parse(item.value) as { item?: Record<string, string> };
+      const middleTierUrl = data.item?.middleTier;
+      
+      if (!middleTierUrl) continue;
+
+      // Extract region-partition from URL like "https://teams.microsoft.com/api/mt/part/amer-02"
+      const match = middleTierUrl.match(/\/api\/mt\/part\/([a-z]+)-(\d+)$/);
+      if (!match) continue;
+
+      const [, region, partition] = match;
+      return {
+        regionPartition: `${region}-${partition}`,
+        region,
+        partition,
+        middleTierUrl,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extracts user MRI from the Substrate token's oid claim.
  */
 function extractUserMriFromSubstrate(state?: SessionState): string | null {
