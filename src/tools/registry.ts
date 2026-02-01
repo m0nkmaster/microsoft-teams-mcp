@@ -11,6 +11,7 @@ import { searchTools } from './search-tools.js';
 import { messageTools } from './message-tools.js';
 import { peopleTools } from './people-tools.js';
 import { authTools } from './auth-tools.js';
+import { meetingTools } from './meeting-tools.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry
@@ -23,6 +24,7 @@ const allTools: RegisteredTool<any>[] = [
   ...messageTools,
   ...peopleTools,
   ...authTools,
+  ...meetingTools,
 ];
 
 /** Lookup map for tools by name. */

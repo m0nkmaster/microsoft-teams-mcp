@@ -549,38 +549,143 @@ This document defines user stories and personas to guide development of the Team
 
 ---
 
-### 9. Calendar & Meetings (Stretch Goal)
+### 9. Calendar & Meetings
 
-#### 9.1 Check upcoming meetings
-> "What meetings do I have today?"
+#### 9.1 Check next meeting
+> "When's my next meeting?"
 
 **Flow:**
-1. Get calendar events for today
-2. Include Teams meeting links
+1. Get upcoming meetings via `teams_get_meetings` (default: next 7 days)
+2. Return the first meeting with time, subject, and join link
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_get_calendar` | ❌ Needed (Outlook API) |
+| `teams_get_meetings` | ✅ Implemented |
 
-**Gap:** Requires Outlook calendar APIs, separate auth scope.
+**Status:** ✅ Implemented.
 
 ---
 
-#### 9.2 Get meeting chat context
-> "What was discussed in yesterday's standup meeting chat?"
+#### 9.2 Count meetings for a day
+> "How many meetings do I have tomorrow?"
 
 **Flow:**
-1. Search for the meeting by name: `in:"Daily Standup"`
-2. Get the conversation thread using `teams_get_thread`
+1. Get meetings for tomorrow via `teams_get_meetings` with specific date range
+2. Return count and optionally list subjects
 
 **Required Tools:**
 | Tool | Status |
 |------|--------|
-| `teams_search` | ✅ Implemented |
+| `teams_get_meetings` | ✅ Implemented |
+
+**Status:** ✅ Implemented.
+
+---
+
+#### 9.3 Get meeting summary (recent meeting)
+> "Get me a summary of my last meeting"
+
+**Flow:**
+1. Get recent meetings via `teams_get_meetings` with past date range
+2. Get the meeting thread ID from the response
+3. Fetch chat messages via `teams_get_thread` using the thread ID
+4. AI summarises the meeting discussion
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_meetings` | ✅ Implemented |
 | `teams_get_thread` | ✅ Implemented |
 
-**Status:** ✅ Implemented - meeting chats are searchable and readable like any other conversation.
+**Status:** ✅ Implemented - set `startDate` to past to get recent meetings, then use `threadId` with `teams_get_thread`.
+
+---
+
+#### 9.4 Find meetings with a person
+> "When's the next meeting with Dave?"
+
+**Flow:**
+1. Find Dave's email via `teams_search_people`
+2. Get upcoming meetings via `teams_get_meetings`
+3. Filter to meetings where Dave is organiser
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_search_people` | ✅ Implemented |
+| `teams_get_meetings` | ✅ Implemented |
+
+**Status:** ✅ Implemented (organiser filter only). Note: Currently filters by organiser email. Attendee list filtering requires additional API research.
+
+---
+
+#### 9.5 Get meeting chat context
+> "What was discussed in yesterday's standup meeting chat?"
+
+**Flow:**
+1. Get meeting via `teams_get_meetings` with yesterday's date range
+2. Get the conversation thread using `teams_get_thread` with the meeting's `threadId`
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_meetings` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+
+**Status:** ✅ Implemented - `teams_get_meetings` returns `threadId` for each meeting.
+
+---
+
+#### 9.6 Today's schedule overview
+> "What's my schedule for today?"
+
+**Flow:**
+1. Get today's meetings via `teams_get_meetings` with today's date range
+2. AI presents as a timeline with gaps shown
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_meetings` | ✅ Implemented |
+
+**Status:** ✅ Implemented.
+
+---
+
+#### 9.7 Prepare for a meeting
+> "Help me prepare for my 2pm meeting"
+
+**Flow:**
+1. Get today's meetings via `teams_get_meetings`, find the 2pm one
+2. Get recent messages in that meeting's chat via `teams_get_thread`
+3. Search for related messages from the organiser
+4. AI compiles context and prep notes
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_meetings` | ✅ Implemented |
+| `teams_get_thread` | ✅ Implemented |
+| `teams_search` | ✅ Implemented |
+
+**Status:** ✅ Implemented.
+
+---
+
+#### 9.8 Check free time
+> "When am I free this afternoon?"
+
+**Flow:**
+1. Get today's meetings via `teams_get_meetings`
+2. AI identifies gaps between meetings
+
+**Required Tools:**
+| Tool | Status |
+|------|--------|
+| `teams_get_meetings` | ✅ Implemented |
+
+**Status:** ✅ Implemented.
 
 ---
 
@@ -780,13 +885,21 @@ Based on user value and API readiness:
 | 7.2 Delete messages | `teams_delete_message` | ✅ Done |
 | 7.4 Save messages | `teams_save_message`, `teams_unsave_message` | ✅ Done |
 
-### Phase 4 - Remaining Gaps
+### Phase 4 - Meetings & Calendar ✅ Complete
+| Story | Tools | Status |
+|-------|-------|--------|
+| 9.1 Check next meeting | `teams_get_meetings` | ✅ Done |
+| 9.2 Count meetings | `teams_get_meetings` | ✅ Done |
+| 9.3 Meeting summary | `teams_get_meetings`, `teams_get_thread` | ✅ Done |
+| 9.4 Meetings with person | `teams_get_meetings`, `teams_search_people` | ✅ Done (organiser only) |
+| 9.5-9.8 Other meeting stories | `teams_get_meetings` | ✅ Done |
+
+### Phase 5 - Remaining Gaps
 | Story | Tools Needed | Effort |
 |-------|-------------|--------|
 | 3.2 Recent chats list | No dedicated API | Blocked |
 | 4.2 Presence/availability | WebSocket (not HTTP) | Very High |
 | 8.1 Find shared files | AllFiles API | Medium |
-| 9.1 Calendar | Outlook APIs | High |
 
 ---
 
@@ -828,6 +941,9 @@ The following tools are implemented:
 **Chat Management:**
 - `teams_get_chat` - Get 1:1 conversation ID
 
+**Calendar:**
+- `teams_get_meetings` - Get meetings from calendar
+
 ### Remaining Gaps
 
 | Feature | Blocker | Notes |
@@ -835,7 +951,6 @@ The following tools are implemented:
 | `teams_get_files` | Medium effort | AllFiles API discovered, implementation pending |
 | Recent chats list | No dedicated API | Use `teams_get_favorites` + `teams_get_frequent_contacts` as workaround |
 | Presence/availability | WebSocket only | Real-time presence not available via HTTP |
-| Calendar integration | Separate auth | Requires Outlook APIs |
 
 ---
 

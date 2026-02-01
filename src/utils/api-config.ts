@@ -2,39 +2,12 @@
  * API endpoint configuration and header utilities.
  * 
  * Centralises all API URLs and common request headers.
+ * 
+ * Region is extracted from the user's session via DISCOVER-REGION-GTM,
+ * so we no longer need validation - the data comes from Teams itself.
  */
 
 import { NOTIFICATIONS_ID } from '../constants.js';
-
-/** Valid API regions. */
-export const VALID_REGIONS = ['amer', 'emea', 'apac'] as const;
-export type Region = typeof VALID_REGIONS[number];
-
-/**
- * Validates a region string.
- * @throws Error if region is invalid.
- */
-export function validateRegion(region: string): Region {
-  if (!VALID_REGIONS.includes(region as Region)) {
-    throw new Error(
-      `Invalid region: ${region}. Valid regions: ${VALID_REGIONS.join(', ')}`
-    );
-  }
-  return region as Region;
-}
-
-/**
- * Attempts to parse region from a URL or returns default.
- */
-export function parseRegionFromUrl(url: string): Region {
-  for (const region of VALID_REGIONS) {
-    if (url.includes(`/api/chatsvc/${region}/`) ||
-        url.includes(`/api/csa/${region}/`)) {
-      return region;
-    }
-  }
-  return 'amer'; // Default region
-}
 
 /** Substrate API endpoints. */
 export const SUBSTRATE_API = {
@@ -63,7 +36,7 @@ export const CHATSVC_API = {
    * `;messageid={id}` to the conversation path. This tells Teams the message
    * is a reply to an existing thread rather than a new top-level post.
    */
-  messages: (region: Region, conversationId: string, replyToMessageId?: string) => {
+  messages: (region: string, conversationId: string, replyToMessageId?: string) => {
     // When replying to a thread, the URL includes ;messageid={threadRootId}
     const conversationPath = replyToMessageId
       ? `${conversationId};messageid=${replyToMessageId}`
@@ -72,54 +45,76 @@ export const CHATSVC_API = {
   },
   
   /** Get conversation metadata URL. */
-  conversation: (region: Region, conversationId: string) =>
+  conversation: (region: string, conversationId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}`,
   
   /** Save/unsave message metadata URL. */
-  messageMetadata: (region: Region, conversationId: string, messageId: string) =>
+  messageMetadata: (region: string, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/rcmetadata/${messageId}`,
   
   /** Edit a specific message URL. */
-  editMessage: (region: Region, conversationId: string, messageId: string) =>
+  editMessage: (region: string, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}`,
   
   /** Delete a specific message URL (soft delete). */
-  deleteMessage: (region: Region, conversationId: string, messageId: string) =>
+  deleteMessage: (region: string, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}?behavior=softDelete`,
   
   /** Get consumption horizons (read receipts) for a thread. */
-  consumptionHorizons: (region: Region, threadId: string) =>
+  consumptionHorizons: (region: string, threadId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/threads/${encodeURIComponent(threadId)}/consumptionhorizons`,
   
   /** Update consumption horizon (mark as read) for a conversation. */
-  updateConsumptionHorizon: (region: Region, conversationId: string) =>
+  updateConsumptionHorizon: (region: string, conversationId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/properties?name=consumptionhorizon`,
   
   /** Activity feed (notifications) messages. */
-  activityFeed: (region: Region) =>
+  activityFeed: (region: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(NOTIFICATIONS_ID)}/messages`,
   
   /** Message emotions (reactions) URL. */
-  messageEmotions: (region: Region, conversationId: string, messageId: string) =>
+  messageEmotions: (region: string, conversationId: string, messageId: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/users/ME/conversations/${encodeURIComponent(conversationId)}/messages/${messageId}/properties?name=emotions`,
   
   /** Create a new thread (group chat). */
-  createThread: (region: Region) =>
+  createThread: (region: string) =>
     `https://teams.microsoft.com/api/chatsvc/${region}/v1/threads`,
+} as const;
+
+/** 
+ * Calendar/Meeting API endpoints.
+ * 
+ * The mt/part endpoints use partitioned regions (e.g., amer-02, emea-03).
+ * Some tenants use non-partitioned URLs (e.g., /api/mt/emea).
+ * The correct format is extracted from the user's session via DISCOVER-REGION-GTM.
+ */
+export const CALENDAR_API = {
+  /**
+   * Get calendar view (meetings) for a date range.
+   * 
+   * Uses OData-style query parameters for filtering and pagination.
+   * 
+   * @param regionPartition - The full region-partition (e.g., "amer-02") or just region (e.g., "emea")
+   * @param hasPartition - Whether the tenant uses partitioned URLs
+   */
+  calendarView: (regionPartition: string, hasPartition: boolean) =>
+    hasPartition
+      ? `https://teams.microsoft.com/api/mt/part/${regionPartition}/v2.1/me/calendars/calendarView`
+      : `https://teams.microsoft.com/api/mt/${regionPartition}/v2.1/me/calendars/calendarView`,
 } as const;
 
 /** CSA (Chat Service Aggregator) API endpoints. */
 export const CSA_API = {
   /** Conversation folders (favourites) URL. */
-  conversationFolders: (region: Region) =>
+  conversationFolders: (region: string) =>
     `https://teams.microsoft.com/api/csa/${region}/api/v1/teams/users/me/conversationFolders?supportsAdditionalSystemGeneratedFolders=true&supportsSliceItems=true`,
   
   /** Teams list (all teams/channels user is a member of). */
-  teamsList: (region: Region) =>
+  teamsList: (region: string) =>
     `https://teams.microsoft.com/api/csa/${region}/api/v3/teams/users/me?isPrefetch=false&enableMembershipSummary=true`,
   
   /** Custom emoji metadata. */
-  customEmojis: (region: Region) =>
+  customEmojis: (region: string) =>
     `https://teams.microsoft.com/api/csa/${region}/api/v1/customemoji/metadata`,
 } as const;
 

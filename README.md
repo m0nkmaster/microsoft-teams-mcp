@@ -117,6 +117,14 @@ Then configure:
 
 **Quick reactions:** `like`, `heart`, `laugh`, `surprised`, `sad`, `angry` can be used directly without searching.
 
+### Calendar
+
+| Tool | Description |
+|------|-------------|
+| `teams_get_meetings` | Get meetings from calendar (defaults to next 7 days) |
+
+Returns: subject, times, organiser, join URL, `threadId` for meeting chat. Use with `teams_get_thread` to read meeting discussions.
+
 ### Session
 
 | Tool | Description |

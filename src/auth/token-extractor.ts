@@ -268,6 +268,136 @@ export function extractTeamsToken(state?: SessionState): TeamsTokenInfo | null {
 }
 
 /**
+ * Extracts the Skype Spaces API token from session state.
+ * 
+ * This token is required for the calendar/meetings API (mt/part endpoints).
+ * It has scope: https://api.spaces.skype.com/Authorization.ReadWrite
+ */
+export function extractSkypeSpacesToken(state?: SessionState): string | null {
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
+
+  let bestCandidate: { token: string; expiry: Date } | null = null;
+
+  for (const item of localStorage) {
+    try {
+      const entry = JSON.parse(item.value);
+      if (!entry.target || !isJwtToken(entry.secret)) continue;
+
+      // Look for api.spaces.skype.com token
+      if (!entry.target.includes('api.spaces.skype.com')) continue;
+
+      const payload = decodeJwtPayload(entry.secret);
+      if (!payload?.exp || typeof payload.exp !== 'number') continue;
+
+      const expiry = new Date(payload.exp * 1000);
+      
+      // Skip expired tokens
+      if (expiry.getTime() <= Date.now()) continue;
+
+      // Keep the one with the latest expiry
+      if (!bestCandidate || expiry > bestCandidate.expiry) {
+        bestCandidate = { token: entry.secret, expiry };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return bestCandidate?.token ?? null;
+}
+
+/** Region configuration from Teams discovery. */
+export interface RegionConfig {
+  /** Base region (e.g., "amer", "emea", "apac") - used by chatsvc, csa APIs. */
+  region: string;
+  /** Partition number (e.g., "02", "01") - only needed for mt/part APIs. */
+  partition: string;
+  /** Full region with partition (e.g., "amer-02") - for mt/part APIs. */
+  regionPartition: string;
+  /** Full middleTier URL. */
+  middleTierUrl: string;
+  /** Chat service URL (chatsvc). */
+  chatServiceUrl: string;
+  /** CSA service URL. */
+  csaServiceUrl: string;
+}
+
+/**
+ * Extracts the user's region and partition from the Teams discovery config.
+ * 
+ * Teams stores a DISCOVER-REGION-GTM config in localStorage that contains
+ * region-specific URLs for all APIs. There are two formats:
+ * 
+ * **Partitioned (most Enterprise tenants):**
+ * - middleTier: "https://teams.microsoft.com/api/mt/part/amer-02"
+ * - chatServiceAfd: "https://teams.microsoft.com/api/chatsvc/amer"
+ * 
+ * **Non-partitioned (some tenants, e.g., UK):**
+ * - middleTier: "https://teams.microsoft.com/api/mt/emea"
+ * - chatServiceAfd: "https://teams.microsoft.com/api/chatsvc/uk"
+ * 
+ * For chatsvc/csa, we extract the region from chatServiceAfd since it's more
+ * reliable than middleTier (which may use different regional naming).
+ */
+export function extractRegionConfig(state?: SessionState): RegionConfig | null {
+  const localStorage = getTeamsLocalStorage(state);
+  if (!localStorage) return null;
+
+  // Find the DISCOVER-REGION-GTM key
+  for (const item of localStorage) {
+    if (!item.name.includes('DISCOVER-REGION-GTM')) continue;
+
+    try {
+      const data = JSON.parse(item.value) as { item?: Record<string, string> };
+      const middleTierUrl = data.item?.middleTier;
+      const chatServiceUrl = data.item?.chatServiceAfd;
+      const csaServiceUrl = data.item?.chatSvcAggAfd;
+      
+      if (!chatServiceUrl) continue;
+
+      // Extract region from chatServiceAfd (e.g., /api/chatsvc/amer or /api/chatsvc/uk)
+      const chatMatch = chatServiceUrl.match(/\/api\/chatsvc\/([a-z]+)$/);
+      if (!chatMatch) continue;
+      const region = chatMatch[1];
+
+      // Try to extract partition from middleTier if it's partitioned
+      // Format: /api/mt/part/amer-02 (partitioned) or /api/mt/emea (non-partitioned)
+      let partition: string | undefined;
+      let regionPartition: string | undefined;
+      
+      if (middleTierUrl) {
+        const partitionMatch = middleTierUrl.match(/\/api\/mt\/part\/([a-z]+)-(\d+)$/);
+        if (partitionMatch) {
+          partition = partitionMatch[2];
+          regionPartition = `${partitionMatch[1]}-${partition}`;
+        } else {
+          // Non-partitioned format: /api/mt/emea
+          const simpleMatch = middleTierUrl.match(/\/api\/mt\/([a-z]+)$/);
+          if (simpleMatch) {
+            // No partition - calendar API might need different handling
+            regionPartition = simpleMatch[1];
+          }
+        }
+      }
+
+      return {
+        region,
+        partition: partition ?? '',
+        regionPartition: regionPartition ?? region,
+        middleTierUrl: middleTierUrl ?? '',
+        chatServiceUrl,
+        csaServiceUrl: csaServiceUrl ?? `https://teams.microsoft.com/api/csa/${region}`,
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extracts user MRI from the Substrate token's oid claim.
  */
 function extractUserMriFromSubstrate(state?: SessionState): string | null {

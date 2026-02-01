@@ -12,7 +12,10 @@ import {
   extractMessageAuth,
   extractCsaToken,
   extractSubstrateToken,
+  extractSkypeSpacesToken,
+  extractRegionConfig,
   type MessageAuthInfo,
+  type RegionConfig,
 } from '../auth/token-extractor.js';
 import { TOKEN_REFRESH_THRESHOLD_MS } from '../constants.js';
 import { refreshTokensViaBrowser } from '../auth/token-refresh.js';
@@ -113,4 +116,72 @@ export function requireCsaAuth(): Result<CsaAuthInfo, McpError> {
   }
 
   return ok({ auth, csaToken });
+}
+
+/** Authentication info for calendar/meetings API. */
+export interface CalendarAuthInfo {
+  skypeToken: string;
+  spacesToken: string;
+}
+
+/**
+ * Requires valid calendar authentication (Skype token + Spaces token).
+ * Use for mt/part calendar APIs.
+ */
+export function requireCalendarAuth(): Result<CalendarAuthInfo, McpError> {
+  const auth = extractMessageAuth();
+  const spacesToken = extractSkypeSpacesToken();
+
+  if (!auth?.skypeToken || !spacesToken) {
+    return err(createError(
+      ErrorCode.AUTH_REQUIRED,
+      'Calendar access requires authentication. Please run teams_login.',
+      { suggestions: ['Call teams_login to authenticate'] }
+    ));
+  }
+
+  return ok({ skypeToken: auth.skypeToken, spacesToken });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Region Configuration
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Default region when session config is unavailable. */
+const DEFAULT_REGION = 'amer';
+
+/** Cached region config to avoid repeated localStorage parsing. */
+let cachedRegionConfig: RegionConfig | null = null;
+
+/**
+ * Gets the user's region from session, with caching.
+ * 
+ * The region is extracted from the DISCOVER-REGION-GTM config in localStorage.
+ * Falls back to 'amer' if not available (shouldn't happen with valid session).
+ */
+export function getRegion(): string {
+  if (!cachedRegionConfig) {
+    cachedRegionConfig = extractRegionConfig();
+  }
+  return cachedRegionConfig?.region ?? DEFAULT_REGION;
+}
+
+/**
+ * Gets the full region config including partition.
+ * 
+ * Returns null if no valid session - caller should handle auth error.
+ */
+export function getRegionConfig(): RegionConfig | null {
+  if (!cachedRegionConfig) {
+    cachedRegionConfig = extractRegionConfig();
+  }
+  return cachedRegionConfig;
+}
+
+/**
+ * Clears the cached region config.
+ * Call this after login/logout to pick up new session.
+ */
+export function clearRegionCache(): void {
+  cachedRegionConfig = null;
 }
