@@ -309,22 +309,28 @@ export function extractSkypeSpacesToken(state?: SessionState): string | null {
 
 /** Region configuration from Teams discovery. */
 export interface RegionConfig {
-  /** Full region with partition (e.g., "amer-02", "emea-01"). */
-  regionPartition: string;
-  /** Base region (e.g., "amer", "emea", "apac"). */
+  /** Base region (e.g., "amer", "emea", "apac") - used by chatsvc, csa APIs. */
   region: string;
-  /** Partition number (e.g., "02", "01"). */
+  /** Partition number (e.g., "02", "01") - only needed for mt/part APIs. */
   partition: string;
+  /** Full region with partition (e.g., "amer-02") - for mt/part APIs. */
+  regionPartition: string;
   /** Full middleTier URL. */
   middleTierUrl: string;
+  /** Chat service URL (chatsvc). */
+  chatServiceUrl: string;
+  /** CSA service URL. */
+  csaServiceUrl: string;
 }
 
 /**
  * Extracts the user's region and partition from the Teams discovery config.
  * 
  * Teams stores a DISCOVER-REGION-GTM config in localStorage that contains
- * region-specific URLs including the middleTier URL with partition:
- * e.g., "https://teams.microsoft.com/api/mt/part/amer-02"
+ * region-specific URLs for all APIs:
+ * - middleTier: "https://teams.microsoft.com/api/mt/part/amer-02" (partitioned)
+ * - chatServiceAfd: "https://teams.microsoft.com/api/chatsvc/amer" (region only)
+ * - chatSvcAggAfd: "https://teams.microsoft.com/api/csa/amer" (region only)
  * 
  * This gives us the exact region/partition for the user's tenant without guessing.
  */
@@ -339,6 +345,8 @@ export function extractRegionConfig(state?: SessionState): RegionConfig | null {
     try {
       const data = JSON.parse(item.value) as { item?: Record<string, string> };
       const middleTierUrl = data.item?.middleTier;
+      const chatServiceUrl = data.item?.chatServiceAfd;
+      const csaServiceUrl = data.item?.chatSvcAggAfd;
       
       if (!middleTierUrl) continue;
 
@@ -348,10 +356,12 @@ export function extractRegionConfig(state?: SessionState): RegionConfig | null {
 
       const [, region, partition] = match;
       return {
-        regionPartition: `${region}-${partition}`,
         region,
         partition,
+        regionPartition: `${region}-${partition}`,
         middleTierUrl,
+        chatServiceUrl: chatServiceUrl || `https://teams.microsoft.com/api/chatsvc/${region}`,
+        csaServiceUrl: csaServiceUrl || `https://teams.microsoft.com/api/csa/${region}`,
       };
     } catch {
       continue;

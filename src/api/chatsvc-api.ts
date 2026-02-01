@@ -5,11 +5,11 @@
  */
 
 import { httpRequest } from '../utils/http.js';
-import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, getTeamsHeaders, validateRegion } from '../utils/api-config.js';
+import { CHATSVC_API, getMessagingHeaders, getSkypeAuthHeaders, getTeamsHeaders } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
 import { getUserDisplayName } from '../auth/token-extractor.js';
-import { requireMessageAuth } from '../utils/auth-guards.js';
+import { requireMessageAuth, getRegion } from '../utils/auth-guards.js';
 import { stripHtml, extractLinks, buildMessageLink, buildOneOnOneConversationId, extractObjectId, extractActivityTimestamp, parseVirtualConversationMessage, type ExtractedLink } from '../utils/parsers.js';
 import { DEFAULT_ACTIVITY_LIMIT, SAVED_MESSAGES_ID, FOLLOWED_THREADS_ID, VIRTUAL_CONVERSATION_PREFIX, SELF_CHAT_ID, MRI_ORGID_PREFIX } from '../constants.js';
 
@@ -105,8 +105,6 @@ interface Mention {
 
 /** Options for sending a message. */
 export interface SendMessageOptions {
-  /** Region for the API call (default: 'amer'). */
-  region?: string;
   /**
    * Message ID of the thread root to reply to.
    * 
@@ -141,8 +139,8 @@ export async function sendMessage(
   }
   const auth = authResult.value;
 
-  const { region = 'amer', replyToMessageId } = options;
-  const validRegion = validateRegion(region);
+  const { replyToMessageId } = options;
+  const region = getRegion();
   const displayName = getUserDisplayName() || 'User';
 
   // Generate unique message ID
@@ -183,7 +181,7 @@ export async function sendMessage(
     };
   }
 
-  const url = CHATSVC_API.messages(validRegion, conversationId, replyToMessageId);
+  const url = CHATSVC_API.messages(region, conversationId, replyToMessageId);
 
   const response = await httpRequest<{ OriginalArrivalTime?: number }>(
     url,
@@ -216,8 +214,7 @@ export async function sendNoteToSelf(content: string): Promise<Result<SendMessag
  */
 export async function getThreadMessages(
   conversationId: string,
-  options: { limit?: number; startTime?: number } = {},
-  region: string = 'amer'
+  options: { limit?: number; startTime?: number } = {}
 ): Promise<Result<GetThreadResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -225,10 +222,10 @@ export async function getThreadMessages(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
   const limit = options.limit ?? 50;
 
-  let url = CHATSVC_API.messages(validRegion, conversationId);
+  let url = CHATSVC_API.messages(region, conversationId);
   url += `?view=msnp24Equivalent&pageSize=${limit}`;
 
   if (options.startTime) {
@@ -324,8 +321,7 @@ const FOLLOWED_THREAD_PATTERN = /_P_(\d+)_Threads$/;
  * Returns messages the user has bookmarked across all conversations.
  */
 export async function getSavedMessages(
-  options: { limit?: number } = {},
-  region: string = 'amer'
+  options: { limit?: number } = {}
 ): Promise<Result<GetSavedMessagesResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -333,10 +329,10 @@ export async function getSavedMessages(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
   const limit = options.limit ?? 50;
 
-  let url = CHATSVC_API.messages(validRegion, SAVED_MESSAGES_ID);
+  let url = CHATSVC_API.messages(region, SAVED_MESSAGES_ID);
   url += `?view=msnp24Equivalent|supportsMessageProperties&pageSize=${limit}&startTime=1`;
 
   const response = await httpRequest<{ messages?: unknown[] }>(
@@ -388,8 +384,7 @@ export async function getSavedMessages(
  * Returns threads the user is following for updates.
  */
 export async function getFollowedThreads(
-  options: { limit?: number } = {},
-  region: string = 'amer'
+  options: { limit?: number } = {}
 ): Promise<Result<GetFollowedThreadsResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -397,10 +392,10 @@ export async function getFollowedThreads(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
   const limit = options.limit ?? 50;
 
-  let url = CHATSVC_API.messages(validRegion, FOLLOWED_THREADS_ID);
+  let url = CHATSVC_API.messages(region, FOLLOWED_THREADS_ID);
   url += `?view=msnp24Equivalent|supportsMessageProperties&pageSize=${limit}&startTime=1`;
 
   const response = await httpRequest<{ messages?: unknown[] }>(
@@ -456,10 +451,9 @@ export async function getFollowedThreads(
 export async function saveMessage(
   conversationId: string,
   messageId: string,
-  rootMessageId?: string,
-  region: string = 'amer'
+  rootMessageId?: string
 ): Promise<Result<SaveMessageResult>> {
-  return setMessageSavedState(conversationId, messageId, true, rootMessageId, region);
+  return setMessageSavedState(conversationId, messageId, true, rootMessageId);
 }
 
 /**
@@ -471,10 +465,9 @@ export async function saveMessage(
 export async function unsaveMessage(
   conversationId: string,
   messageId: string,
-  rootMessageId?: string,
-  region: string = 'amer'
+  rootMessageId?: string
 ): Promise<Result<SaveMessageResult>> {
-  return setMessageSavedState(conversationId, messageId, false, rootMessageId, region);
+  return setMessageSavedState(conversationId, messageId, false, rootMessageId);
 }
 
 /**
@@ -488,8 +481,7 @@ async function setMessageSavedState(
   conversationId: string,
   messageId: string,
   saved: boolean,
-  rootMessageId: string | undefined,
-  region: string
+  rootMessageId: string | undefined
 ): Promise<Result<SaveMessageResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -497,11 +489,11 @@ async function setMessageSavedState(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
   // For channel threaded replies, rootMessageId is the thread root post ID
   // For top-level posts and non-channel messages, use the messageId itself
   const urlMessageId = rootMessageId ?? messageId;
-  const url = CHATSVC_API.messageMetadata(validRegion, conversationId, urlMessageId);
+  const url = CHATSVC_API.messageMetadata(region, conversationId, urlMessageId);
 
   const response = await httpRequest<unknown>(
     url,
@@ -547,13 +539,11 @@ export interface DeleteMessageResult {
  * @param conversationId - The conversation containing the message
  * @param messageId - The ID of the message to edit
  * @param newContent - The new content for the message
- * @param region - API region (default: 'amer')
  */
 export async function editMessage(
   conversationId: string,
   messageId: string,
-  newContent: string,
-  region: string = 'amer'
+  newContent: string
 ): Promise<Result<EditMessageResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -561,7 +551,7 @@ export async function editMessage(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
   const displayName = getUserDisplayName() || 'User';
   
   // Wrap content in paragraph if not already HTML
@@ -579,7 +569,7 @@ export async function editMessage(
     imdisplayname: displayName,
   };
 
-  const url = CHATSVC_API.editMessage(validRegion, conversationId, messageId);
+  const url = CHATSVC_API.editMessage(region, conversationId, messageId);
 
   const response = await httpRequest<unknown>(
     url,
@@ -608,12 +598,10 @@ export async function editMessage(
  * 
  * @param conversationId - The conversation containing the message
  * @param messageId - The ID of the message to delete
- * @param region - API region (default: 'amer')
  */
 export async function deleteMessage(
   conversationId: string,
-  messageId: string,
-  region: string = 'amer'
+  messageId: string
 ): Promise<Result<DeleteMessageResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -621,8 +609,8 @@ export async function deleteMessage(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CHATSVC_API.deleteMessage(validRegion, conversationId, messageId);
+  const region = getRegion();
+  const url = CHATSVC_API.deleteMessage(region, conversationId, messageId);
 
   const response = await httpRequest<unknown>(
     url,
@@ -646,8 +634,7 @@ export async function deleteMessage(
  * Gets properties for a single conversation.
  */
 export async function getConversationProperties(
-  conversationId: string,
-  region: string = 'amer'
+  conversationId: string
 ): Promise<Result<{ displayName?: string; conversationType?: string }>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -655,8 +642,8 @@ export async function getConversationProperties(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CHATSVC_API.conversation(validRegion, conversationId) + '?view=msnp24Equivalent';
+  const region = getRegion();
+  const url = CHATSVC_API.conversation(region, conversationId) + '?view=msnp24Equivalent';
 
   const response = await httpRequest<Record<string, unknown>>(
     url,
@@ -743,8 +730,7 @@ export async function getConversationProperties(
  * Extracts unique participant names from recent messages.
  */
 export async function extractParticipantNames(
-  conversationId: string,
-  region: string = 'amer'
+  conversationId: string
 ): Promise<Result<string | undefined>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -752,8 +738,8 @@ export async function extractParticipantNames(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  let url = CHATSVC_API.messages(validRegion, conversationId);
+  const region = getRegion();
+  let url = CHATSVC_API.messages(region, conversationId);
   url += '?view=msnp24Equivalent&pageSize=10';
 
   const response = await httpRequest<{ messages?: unknown[] }>(
@@ -1000,8 +986,7 @@ export interface CreateGroupChatResult {
  */
 export async function createGroupChat(
   memberIdentifiers: string[],
-  topic?: string,
-  region: string = 'amer'
+  topic?: string
 ): Promise<Result<CreateGroupChatResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -1017,7 +1002,7 @@ export async function createGroupChat(
     ));
   }
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
 
   // Build MRI list for all members, including current user
   const memberMris: string[] = [auth.userMri];
@@ -1056,7 +1041,7 @@ export async function createGroupChat(
     (body.properties as Record<string, unknown>).topic = topic;
   }
 
-  const url = CHATSVC_API.createThread(validRegion);
+  const url = CHATSVC_API.createThread(region);
 
   const response = await httpRequest<{ threadResource?: { id?: string } }>(
     url,
@@ -1142,8 +1127,7 @@ export interface MarkAsReadResult {
  * The consumption horizon indicates where each user has read up to.
  */
 export async function getConsumptionHorizon(
-  conversationId: string,
-  region: string = 'amer'
+  conversationId: string
 ): Promise<Result<ConsumptionHorizonInfo>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -1151,8 +1135,8 @@ export async function getConsumptionHorizon(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CHATSVC_API.consumptionHorizons(validRegion, conversationId);
+  const region = getRegion();
+  const url = CHATSVC_API.consumptionHorizons(region, conversationId);
 
   const response = await httpRequest<{
     id?: string;
@@ -1209,8 +1193,7 @@ export async function getConsumptionHorizon(
  */
 export async function markAsRead(
   conversationId: string,
-  messageId: string,
-  region: string = 'amer'
+  messageId: string
 ): Promise<Result<MarkAsReadResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -1218,8 +1201,8 @@ export async function markAsRead(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CHATSVC_API.updateConsumptionHorizon(validRegion, conversationId);
+  const region = getRegion();
+  const url = CHATSVC_API.updateConsumptionHorizon(region, conversationId);
 
   // Format: "{messageId};{messageId};{messageId}" - all three values are the same
   const consumptionHorizon = `${messageId};${messageId};${messageId}`;
@@ -1250,8 +1233,7 @@ export async function markAsRead(
  * with recent messages.
  */
 export async function getUnreadStatus(
-  conversationId: string,
-  region: string = 'amer'
+  conversationId: string
 ): Promise<Result<{
   conversationId: string;
   unreadCount: number;
@@ -1259,13 +1241,13 @@ export async function getUnreadStatus(
   latestMessageId?: string;
 }>> {
   // Get consumption horizon
-  const horizonResult = await getConsumptionHorizon(conversationId, region);
+  const horizonResult = await getConsumptionHorizon(conversationId);
   if (!horizonResult.ok) {
     return horizonResult;
   }
 
   // Get recent messages
-  const messagesResult = await getThreadMessages(conversationId, { limit: 50 }, region);
+  const messagesResult = await getThreadMessages(conversationId, { limit: 50 });
   if (!messagesResult.ok) {
     return messagesResult;
   }
@@ -1383,8 +1365,7 @@ function detectActivityType(msg: Record<string, unknown>): ActivityType {
  * Includes mentions, reactions, replies, and other notifications.
  */
 export async function getActivityFeed(
-  options: { limit?: number } = {},
-  region: string = 'amer'
+  options: { limit?: number } = {}
 ): Promise<Result<GetActivityResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -1392,10 +1373,10 @@ export async function getActivityFeed(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
   const limit = options.limit ?? DEFAULT_ACTIVITY_LIMIT;
 
-  let url = CHATSVC_API.activityFeed(validRegion);
+  let url = CHATSVC_API.activityFeed(region);
   url += `?view=msnp24Equivalent&pageSize=${limit}`;
 
   const response = await httpRequest<{ messages?: unknown[]; syncState?: string }>(
@@ -1514,13 +1495,11 @@ export interface ReactionResult {
  * @param conversationId - The conversation containing the message
  * @param messageId - The message ID to react to
  * @param emojiKey - The emoji key (e.g., 'like', 'heart', 'laugh')
- * @param region - API region (default: 'amer')
  */
 export async function addReaction(
   conversationId: string,
   messageId: string,
-  emojiKey: string,
-  region: string = 'amer'
+  emojiKey: string
 ): Promise<Result<ReactionResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -1528,8 +1507,8 @@ export async function addReaction(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CHATSVC_API.messageEmotions(validRegion, conversationId, messageId);
+  const region = getRegion();
+  const url = CHATSVC_API.messageEmotions(region, conversationId, messageId);
 
   const response = await httpRequest<unknown>(
     url,
@@ -1566,13 +1545,11 @@ export async function addReaction(
  * @param conversationId - The conversation containing the message
  * @param messageId - The message ID to remove the reaction from
  * @param emojiKey - The emoji key to remove (e.g., 'like', 'heart')
- * @param region - API region (default: 'amer')
  */
 export async function removeReaction(
   conversationId: string,
   messageId: string,
-  emojiKey: string,
-  region: string = 'amer'
+  emojiKey: string
 ): Promise<Result<ReactionResult>> {
   const authResult = requireMessageAuth();
   if (!authResult.ok) {
@@ -1580,8 +1557,8 @@ export async function removeReaction(
   }
   const auth = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CHATSVC_API.messageEmotions(validRegion, conversationId, messageId);
+  const region = getRegion();
+  const url = CHATSVC_API.messageEmotions(region, conversationId, messageId);
 
   const response = await httpRequest<unknown>(
     url,

@@ -15,6 +15,7 @@ import {
   writeSessionState,
   readSessionState,
 } from '../auth/session-store.js';
+import { clearRegionCache } from '../utils/auth-guards.js';
 
 export interface BrowserManager {
   browser: Browser;
@@ -140,6 +141,8 @@ export async function createBrowserContext(
 export async function saveSessionState(context: BrowserContext): Promise<void> {
   const state = await context.storageState();
   writeSessionState(state);
+  // Clear cached region config so new session values are picked up
+  clearRegionCache();
 }
 
 /**

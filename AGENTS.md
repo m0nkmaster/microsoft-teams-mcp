@@ -84,7 +84,9 @@ src/
 
 5. **HTTP Utilities**: Centralised HTTP client (`utils/http.ts`) provides automatic retry with exponential backoff, request timeouts, and rate limit tracking.
 
-6. **MCP Resources**: Passive resources (`teams://me/profile`, `teams://me/favorites`, `teams://status`) provide context discovery without tool calls.
+6. **Region Discovery**: API region (e.g., `amer`, `emea`, `apac`) and partition (e.g., `02`) are extracted from the user's session via `DISCOVER-REGION-GTM` localStorage config. The `getRegion()` helper in `auth-guards.ts` provides cached access. This ensures all API calls use the correct region for the user's tenant without hardcoding.
+
+7. **MCP Resources**: Passive resources (`teams://me/profile`, `teams://me/favorites`, `teams://status`) provide context discovery without tool calls.
 
 7. **Tool Registry Pattern**: Tools are organised into logical groups (`search-tools.ts`, `message-tools.ts`, etc.) with a central registry (`tools/registry.ts`). This enables:
    - Better separation of concerns
@@ -143,7 +145,9 @@ Different Teams APIs use different authentication mechanisms:
 | **Threads** (chatsvc) | `skypetoken_asm` cookie | `auth/token-extractor` | `extractMessageAuth()` |
 | **Calendar** (mt/part/calendarView) | Skype Spaces token (`api.spaces.skype.com` scope) + `skypetoken_asm` | `auth/token-extractor` | `extractSkypeSpacesToken()` |
 
-**Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body. The Calendar API uses partitioned regions (e.g., `amer-02`) - the correct partition is extracted from the session's `DISCOVER-REGION-GTM` config.
+**Important**: The CSA API (for favorites) requires a GET request to retrieve data, POST only for modifications. The Substrate suggestions API requires `cvid` and `logicalId` correlation IDs in the request body.
+
+**Region Discovery**: All regional APIs (chatsvc, csa, mt/part) use the region from the user's session via `getRegion()` in `auth-guards.ts`. This extracts the region from `DISCOVER-REGION-GTM` in localStorage (e.g., `amer`, `emea`, `apac`). For partitioned endpoints like mt/part (Calendar), the partition suffix (e.g., `02`) is also extracted from the same config.
 
 ### Session Persistence
 

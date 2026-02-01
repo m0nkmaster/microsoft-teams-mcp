@@ -5,10 +5,10 @@
  */
 
 import { httpRequest } from '../utils/http.js';
-import { CSA_API, getCsaHeaders, validateRegion } from '../utils/api-config.js';
+import { CSA_API, getCsaHeaders } from '../utils/api-config.js';
 import { ErrorCode, createError } from '../types/errors.js';
 import { type Result, ok, err } from '../types/result.js';
-import { requireCsaAuth } from '../utils/auth-guards.js';
+import { requireCsaAuth, getRegion } from '../utils/auth-guards.js';
 import {
   getConversationProperties,
   extractParticipantNames,
@@ -37,17 +37,15 @@ export interface FavoritesResult {
 /**
  * Gets the user's favourite/pinned conversations.
  */
-export async function getFavorites(
-  region: string = 'amer'
-): Promise<Result<FavoritesResult>> {
+export async function getFavorites(): Promise<Result<FavoritesResult>> {
   const authResult = requireCsaAuth();
   if (!authResult.ok) {
     return authResult;
   }
   const { auth, csaToken } = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CSA_API.conversationFolders(validRegion);
+  const region = getRegion();
+  const url = CSA_API.conversationFolders(region);
 
   const response = await httpRequest<Record<string, unknown>>(
     url,
@@ -89,7 +87,7 @@ export async function getFavorites(
 
   // Enrich favorites with display names in parallel
   const enrichmentPromises = favorites.map(async (fav) => {
-    const props = await getConversationProperties(fav.conversationId, validRegion);
+    const props = await getConversationProperties(fav.conversationId);
     if (props.ok) {
       fav.displayName = props.value.displayName;
       fav.conversationType = props.value.conversationType;
@@ -97,7 +95,7 @@ export async function getFavorites(
 
     // Fallback: extract from recent messages if no display name
     if (!fav.displayName) {
-      const names = await extractParticipantNames(fav.conversationId, validRegion);
+      const names = await extractParticipantNames(fav.conversationId);
       if (names.ok && names.value) {
         fav.displayName = names.value;
       }
@@ -117,20 +115,18 @@ export async function getFavorites(
  * Adds a conversation to the user's favourites.
  */
 export async function addFavorite(
-  conversationId: string,
-  region: string = 'amer'
+  conversationId: string
 ): Promise<Result<void>> {
-  return modifyFavorite(conversationId, 'AddItem', region);
+  return modifyFavorite(conversationId, 'AddItem');
 }
 
 /**
  * Removes a conversation from the user's favourites.
  */
 export async function removeFavorite(
-  conversationId: string,
-  region: string = 'amer'
+  conversationId: string
 ): Promise<Result<void>> {
-  return modifyFavorite(conversationId, 'RemoveItem', region);
+  return modifyFavorite(conversationId, 'RemoveItem');
 }
 
 /**
@@ -138,8 +134,7 @@ export async function removeFavorite(
  */
 async function modifyFavorite(
   conversationId: string,
-  action: 'AddItem' | 'RemoveItem',
-  region: string
+  action: 'AddItem' | 'RemoveItem'
 ): Promise<Result<void>> {
   const authResult = requireCsaAuth();
   if (!authResult.ok) {
@@ -147,10 +142,10 @@ async function modifyFavorite(
   }
   const { auth, csaToken } = authResult.value;
 
-  const validRegion = validateRegion(region);
+  const region = getRegion();
 
   // Get current folder state
-  const currentState = await getFavorites(validRegion);
+  const currentState = await getFavorites();
   if (!currentState.ok) {
     return err(currentState.error);
   }
@@ -162,7 +157,7 @@ async function modifyFavorite(
     ));
   }
 
-  const url = CSA_API.conversationFolders(validRegion);
+  const url = CSA_API.conversationFolders(region);
 
   const response = await httpRequest<unknown>(
     url,
@@ -200,17 +195,15 @@ export interface TeamsListResult {
  * This returns the complete list of teams with their channels - not a search,
  * but a full enumeration of the user's memberships.
  */
-export async function getMyTeamsAndChannels(
-  region: string = 'amer'
-): Promise<Result<TeamsListResult>> {
+export async function getMyTeamsAndChannels(): Promise<Result<TeamsListResult>> {
   const authResult = requireCsaAuth();
   if (!authResult.ok) {
     return authResult;
   }
   const { auth, csaToken } = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CSA_API.teamsList(validRegion);
+  const region = getRegion();
+  const url = CSA_API.teamsList(region);
 
   const response = await httpRequest<Record<string, unknown>>(
     url,
@@ -253,17 +246,15 @@ export interface CustomEmojisResult {
 /**
  * Gets the organisation's custom emojis.
  */
-export async function getCustomEmojis(
-  region: string = 'amer'
-): Promise<Result<CustomEmojisResult>> {
+export async function getCustomEmojis(): Promise<Result<CustomEmojisResult>> {
   const authResult = requireCsaAuth();
   if (!authResult.ok) {
     return authResult;
   }
   const { auth, csaToken } = authResult.value;
 
-  const validRegion = validateRegion(region);
-  const url = CSA_API.customEmojis(validRegion);
+  const region = getRegion();
+  const url = CSA_API.customEmojis(region);
 
   const response = await httpRequest<Record<string, unknown>>(
     url,
