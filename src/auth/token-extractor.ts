@@ -327,12 +327,18 @@ export interface RegionConfig {
  * Extracts the user's region and partition from the Teams discovery config.
  * 
  * Teams stores a DISCOVER-REGION-GTM config in localStorage that contains
- * region-specific URLs for all APIs:
- * - middleTier: "https://teams.microsoft.com/api/mt/part/amer-02" (partitioned)
- * - chatServiceAfd: "https://teams.microsoft.com/api/chatsvc/amer" (region only)
- * - chatSvcAggAfd: "https://teams.microsoft.com/api/csa/amer" (region only)
+ * region-specific URLs for all APIs. There are two formats:
  * 
- * This gives us the exact region/partition for the user's tenant without guessing.
+ * **Partitioned (most Enterprise tenants):**
+ * - middleTier: "https://teams.microsoft.com/api/mt/part/amer-02"
+ * - chatServiceAfd: "https://teams.microsoft.com/api/chatsvc/amer"
+ * 
+ * **Non-partitioned (some tenants, e.g., UK):**
+ * - middleTier: "https://teams.microsoft.com/api/mt/emea"
+ * - chatServiceAfd: "https://teams.microsoft.com/api/chatsvc/uk"
+ * 
+ * For chatsvc/csa, we extract the region from chatServiceAfd since it's more
+ * reliable than middleTier (which may use different regional naming).
  */
 export function extractRegionConfig(state?: SessionState): RegionConfig | null {
   const localStorage = getTeamsLocalStorage(state);
@@ -348,20 +354,40 @@ export function extractRegionConfig(state?: SessionState): RegionConfig | null {
       const chatServiceUrl = data.item?.chatServiceAfd;
       const csaServiceUrl = data.item?.chatSvcAggAfd;
       
-      if (!middleTierUrl) continue;
+      if (!chatServiceUrl) continue;
 
-      // Extract region-partition from URL like "https://teams.microsoft.com/api/mt/part/amer-02"
-      const match = middleTierUrl.match(/\/api\/mt\/part\/([a-z]+)-(\d+)$/);
-      if (!match) continue;
+      // Extract region from chatServiceAfd (e.g., /api/chatsvc/amer or /api/chatsvc/uk)
+      const chatMatch = chatServiceUrl.match(/\/api\/chatsvc\/([a-z]+)$/);
+      if (!chatMatch) continue;
+      const region = chatMatch[1];
 
-      const [, region, partition] = match;
+      // Try to extract partition from middleTier if it's partitioned
+      // Format: /api/mt/part/amer-02 (partitioned) or /api/mt/emea (non-partitioned)
+      let partition: string | undefined;
+      let regionPartition: string | undefined;
+      
+      if (middleTierUrl) {
+        const partitionMatch = middleTierUrl.match(/\/api\/mt\/part\/([a-z]+)-(\d+)$/);
+        if (partitionMatch) {
+          partition = partitionMatch[2];
+          regionPartition = `${partitionMatch[1]}-${partition}`;
+        } else {
+          // Non-partitioned format: /api/mt/emea
+          const simpleMatch = middleTierUrl.match(/\/api\/mt\/([a-z]+)$/);
+          if (simpleMatch) {
+            // No partition - calendar API might need different handling
+            regionPartition = simpleMatch[1];
+          }
+        }
+      }
+
       return {
         region,
-        partition,
-        regionPartition: `${region}-${partition}`,
-        middleTierUrl,
-        chatServiceUrl: chatServiceUrl || `https://teams.microsoft.com/api/chatsvc/${region}`,
-        csaServiceUrl: csaServiceUrl || `https://teams.microsoft.com/api/csa/${region}`,
+        partition: partition ?? '',
+        regionPartition: regionPartition ?? region,
+        middleTierUrl: middleTierUrl ?? '',
+        chatServiceUrl,
+        csaServiceUrl: csaServiceUrl ?? `https://teams.microsoft.com/api/csa/${region}`,
       };
     } catch {
       continue;

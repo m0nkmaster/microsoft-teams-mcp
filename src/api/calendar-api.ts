@@ -224,7 +224,9 @@ export async function getCalendarView(
   });
 
   // Use the exact region-partition from session discovery
-  const baseUrl = CALENDAR_API.calendarView(regionConfig.region, regionConfig.partition);
+  // Some tenants use partitioned URLs (/api/mt/part/amer-02), others don't (/api/mt/emea)
+  const hasPartition = !!regionConfig.partition;
+  const baseUrl = CALENDAR_API.calendarView(regionConfig.regionPartition, hasPartition);
   const url = `${baseUrl}?${params.toString()}`;
 
   const response = await httpRequest<Record<string, unknown>>(
